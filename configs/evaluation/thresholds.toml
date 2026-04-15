@@ -1,0 +1,12 @@
+# Evaluation threshold configuration.
+# Factors that fail these thresholds are auto-rejected by the evaluator.
+
+[thresholds]
+min_ic = 0.02
+min_rank_ic = 0.03
+min_quantile_spread = 0.005
+
+[settings]
+n_quantiles = 5
+min_periods = 60
+min_assets = 10

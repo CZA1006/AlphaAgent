@@ -1,0 +1,9 @@
+# Hermes runtime integration settings.
+# These configure how Alpha Harness connects to the Hermes runtime substrate.
+
+[hermes]
+# Path to the vendored Hermes runtime (relative to repo root)
+vendor_path = "vendor/hermes-agent"
+
+# Use stub mode when Hermes is not yet available
+stub_mode = true

@@ -1,0 +1,18 @@
+# AlphaAgent default configuration
+# Override per-environment via configs/local.toml or environment variables.
+#
+# Database credentials: .env / environment variables (see .env.example)
+# Evaluation thresholds: configs/evaluation/thresholds.toml
+# Data sources: configs/data/sources.toml
+# Hermes runtime: configs/hermes/runtime.toml
+# Promotion policies: configs/policies/promotion.toml
+
+[data]
+base_path = "data"
+raw_path = "data/raw"
+bronze_path = "data/bronze"
+silver_path = "data/silver"
+gold_path = "data/gold"
+
+[artifacts]
+base_path = "artifacts"

@@ -1,0 +1,12 @@
+# Promotion policy configuration.
+# Defines when a factor candidate gets promoted vs. rejected.
+
+[promotion]
+# A candidate must pass all threshold checks
+require_all_thresholds = true
+
+# Maximum number of retries before auto-archiving
+max_retries = 3
+
+# Decision labels
+decisions = ["reject", "refine", "archive_only", "promote_candidate"]

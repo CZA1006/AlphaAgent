@@ -1,0 +1,11 @@
+# Data source configuration.
+# Phase 1: local files only. API integrations added in later rounds.
+
+[equities]
+# Source type: "local_csv", "local_parquet", or future API names
+source = "local_parquet"
+path = "data/silver/equities"
+
+[crypto]
+source = "local_parquet"
+path = "data/silver/crypto"
