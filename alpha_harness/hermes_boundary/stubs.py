@@ -182,8 +182,7 @@ class StubContextInjector:
             recent_summaries.append(summary)
             chars_used += len(summary)
 
-        # Counts
-        all_exps = self._experiments.list_all()
+        # Counts (reuse all_experiments from above)
         promoted_count = len(self._experiments.list_promoted())
 
         return MemoryContext(
@@ -192,7 +191,7 @@ class StubContextInjector:
             recent_experiment_summaries=recent_summaries,
             active_hypotheses_count=0,  # would need HypothesisRegistry
             promoted_factors_count=promoted_count,
-            total_experiments=len(all_exps),
+            total_experiments=len(all_experiments),
             token_budget_used=chars_used // self.CHARS_PER_TOKEN,
         )
 

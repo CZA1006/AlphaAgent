@@ -3,8 +3,7 @@
 from datetime import date
 
 from alpha_harness.evaluators.promotion_judge import PromotionJudge
-from alpha_harness.evaluators.signal_quality import SignalQualityEvaluator
-from alpha_harness.factors.stub_compiler import StubFactorCompiler
+from alpha_harness.factors.compiler import FactorDslCompiler
 from alpha_harness.hermes_boundary.contracts import (
     CycleGoal,
     CycleOutcome,
@@ -24,6 +23,7 @@ from alpha_harness.registries.memory import MemoryRegistry
 from alpha_harness.schemas.evaluation import EvaluationRequest
 from alpha_harness.schemas.memory import MemoryCategory, MemoryEntry
 from alpha_harness.service import AlphaHarnessService
+from tests.helpers.stubs import StubSignalQualityEvaluator
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -41,8 +41,8 @@ def _build_stack() -> (
     tuple[ResearchOrchestrator, ExperimentRegistry, HypothesisRegistry, MemoryRegistry]
 ):
     """Build a full harness stack with stub implementations."""
-    compiler = StubFactorCompiler()
-    evaluator = SignalQualityEvaluator()
+    compiler = FactorDslCompiler()
+    evaluator = StubSignalQualityEvaluator()
     judge = PromotionJudge()
     service = AlphaHarnessService(compiler=compiler, evaluator=evaluator, judge=judge)
     exp_reg = ExperimentRegistry()
@@ -118,7 +118,7 @@ class TestStubAgentRuntimeAdapter:
         adapter = StubAgentRuntimeAdapter(experiment_registry=exp_reg)
 
         # Run a research cycle
-        hypothesis = Hypothesis(text="volume spike reversal")
+        hypothesis = Hypothesis(text="ts_delta(volume, 5)")
         record = orch.run_cycle(hypothesis, _default_eval_request())
 
         # Translate the result
@@ -223,7 +223,7 @@ class TestStubContextInjector:
         ))
 
         # Run a research cycle to populate experiments
-        hypothesis = Hypothesis(text="context test factor")
+        hypothesis = Hypothesis(text="ts_mean(close, 10)")
         orch.run_cycle(hypothesis, _default_eval_request())
 
         ctx = injector.build_context()
@@ -266,7 +266,7 @@ class TestEndToEndBoundary:
         adapter = StubAgentRuntimeAdapter(experiment_registry=exp_reg)
 
         # 1. Agent "says" a hypothesis
-        agent_text = "high volume stocks revert after earnings"
+        agent_text = "zscore(volume, 20)"
 
         # 2. Adapter translates to request
         request = adapter.translate_to_request(agent_text)

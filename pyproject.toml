@@ -9,14 +9,13 @@ license = { text = "MIT" }
 dependencies = [
     # -- Core domain modelling --
     "pydantic>=2.0,<3",           # typed schemas for all domain objects
-    "pyyaml>=6.0,<7",             # config loading (YAML configs alongside TOML)
 
     # -- Database layer --
     "sqlalchemy>=2.0,<3",         # registry persistence (Core, not ORM)
     "psycopg[binary]>=3.1,<4",    # modern async-ready Postgres driver
 
     # -- Research data stack --
-    "duckdb>=0.9,<2",             # analytical queries on local research data
+    "numpy>=1.24,<3",             # numerical operations in DSL executor and evaluator
     "pandas>=2.0,<3",             # dataframes for factor computation and evaluation
     "pyarrow>=14,<19",            # Parquet read/write for market data storage
 
@@ -83,6 +82,5 @@ warn_unused_configs = true
 [[tool.mypy.overrides]]
 module = [
     "ccxt.*",
-    "duckdb.*",
 ]
 ignore_missing_imports = true

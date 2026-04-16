@@ -3,8 +3,10 @@
 This is the single source of truth for registry table schemas.
 bootstrap_db.py and registry accessors both import from here.
 
-TODO: Postgres-backed registry implementations will use these tables
-via insert/select queries. For Milestone 1, registries use InMemoryRegistry.
+The ``data`` column on each table holds the full Pydantic model serialized
+as JSON.  Indexed columns (``decision``, ``status``, ``name``, etc.) are
+denormalized copies kept in sync by the SQL registry implementations so
+that common queries can be answered without parsing JSON.
 """
 
 from __future__ import annotations
@@ -20,6 +22,7 @@ experiments = Table(
     Column("data", Text, nullable=False),  # JSON-serialized ExperimentRecord
     Column("decision", String(32), nullable=False),
     Column("created_at", DateTime, server_default=func.now()),
+    Column("updated_at", DateTime, server_default=func.now(), onupdate=func.now()),
 )
 
 hypotheses = Table(
@@ -29,6 +32,7 @@ hypotheses = Table(
     Column("data", Text, nullable=False),  # JSON-serialized Hypothesis
     Column("status", String(32), nullable=False),
     Column("created_at", DateTime, server_default=func.now()),
+    Column("updated_at", DateTime, server_default=func.now(), onupdate=func.now()),
 )
 
 factors = Table(

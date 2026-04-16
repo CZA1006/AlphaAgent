@@ -11,11 +11,14 @@ import logging
 from alpha_harness.evaluators.promotion_judge import PromotionJudge
 from alpha_harness.registries.experiment import ExperimentRegistry
 from alpha_harness.registries.hypothesis import HypothesisRegistry
-from alpha_harness.schemas.evaluation import EvaluationRequest
+from alpha_harness.schemas.evaluation import EvaluationBundle, EvaluationRequest
 from alpha_harness.schemas.experiment import (
     ExperimentDecision,
     ExperimentRecord,
+    FailureCategory,
+    FailureRecord,
 )
+from alpha_harness.schemas.factor import FactorSpec
 from alpha_harness.schemas.hypothesis import Hypothesis, HypothesisStatus
 from alpha_harness.service import AlphaHarnessService
 
@@ -77,17 +80,38 @@ class ResearchOrchestrator:
             hypothesis.id,
             hypothesis.text[:80],
         )
-        record = self._service.run_research_cycle(hypothesis, eval_request)
+        try:
+            record = self._service.run_research_cycle(hypothesis, eval_request)
+        except Exception as exc:
+            # Compilation or evaluation failure → record as REJECT
+            logger.warning(
+                "Cycle failed for hypothesis %s: %s",
+                hypothesis.id,
+                exc,
+            )
+            record = ExperimentRecord(
+                hypothesis=hypothesis,
+                factor=FactorSpec(name="failed", expression=""),
+                evaluation=EvaluationBundle(),
+                eval_request=eval_request,
+                decision=ExperimentDecision.REJECT,
+                failure=FailureRecord(
+                    category=FailureCategory.COMPILATION_ERROR,
+                    detail=str(exc),
+                ),
+                notes=f"Cycle failed: {exc}",
+            )
 
         # ── 3. Attach rich detail from judge ───────────────────────────
-        detail = self._judge.last_detail
-        if detail is not None:
-            record = record.model_copy(
-                update={
-                    "failure": detail.failure,
-                    "notes": detail.notes,
-                },
-            )
+        if record.failure is None:
+            detail = self._judge.last_detail
+            if detail is not None:
+                record = record.model_copy(
+                    update={
+                        "failure": detail.failure,
+                        "notes": detail.notes,
+                    },
+                )
 
         # ── 4. Update hypothesis status ────────────────────────────────
         new_status = _decision_to_status(record.decision)
