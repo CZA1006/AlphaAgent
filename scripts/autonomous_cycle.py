@@ -33,6 +33,7 @@ import json
 import logging
 import os
 import sys
+import uuid
 from datetime import date
 
 import pandas as pd
@@ -48,7 +49,16 @@ from alpha_harness.hermes_boundary.contracts import (
     ThemeCycleResponse,
 )
 from alpha_harness.hermes_boundary.harness_adapter import HarnessAgentAdapter
-from alpha_harness.llm import LLMClient, MockLLMClient
+from alpha_harness.llm import (
+    BudgetedLLMClient,
+    BudgetExceededError,
+    LLMCallLogger,
+    LLMClient,
+    LoggingLLMClient,
+    MockLLMClient,
+    TokenBudget,
+    default_log_path,
+)
 from alpha_harness.orchestrator.refinement import RefinementConfig, RefinementRunner
 from alpha_harness.orchestrator.research_loop import ResearchOrchestrator
 from alpha_harness.proposer import HypothesisProposer
@@ -200,6 +210,41 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Use the offline mock LLM client (no API key required).",
     )
 
+    # Guardrails (Round 4A.1) — budget + call logging.
+    p.add_argument(
+        "--token-budget",
+        type=int,
+        default=None,
+        help=(
+            "Hard cap on cumulative total_tokens for this cycle. "
+            "Falls back to ALPHA_AGENT_TOKEN_BUDGET.  Unset = no cap."
+        ),
+    )
+    p.add_argument(
+        "--cost-budget-usd",
+        type=float,
+        default=None,
+        help=(
+            "Hard cap on cumulative LLM cost in USD.  Falls back to "
+            "ALPHA_AGENT_COST_BUDGET_USD.  Requires cost-per-1k env vars "
+            "to be meaningful: ALPHA_AGENT_PROMPT_COST_PER_1K / "
+            "ALPHA_AGENT_COMPLETION_COST_PER_1K."
+        ),
+    )
+    p.add_argument(
+        "--llm-log-dir",
+        default=None,
+        help=(
+            "Directory for per-cycle LLM call JSONL logs.  Falls back to "
+            "ALPHA_AGENT_LLM_LOG_DIR, then artifacts/llm_calls/."
+        ),
+    )
+    p.add_argument(
+        "--cycle-id",
+        default=None,
+        help="Override the auto-generated cycle id (used in the log filename).",
+    )
+
     # Output
     p.add_argument(
         "--json",
@@ -212,8 +257,41 @@ def _build_parser() -> argparse.ArgumentParser:
 # ── Entry point ─────────────────────────────────────────────────────────────
 
 
+def _resolve_token_budget(args: argparse.Namespace) -> TokenBudget | None:
+    """Build a :class:`TokenBudget` from CLI + env, or ``None`` if no cap is set."""
+    token_cap = args.token_budget
+    if token_cap is None:
+        raw = os.environ.get("ALPHA_AGENT_TOKEN_BUDGET", "").strip()
+        token_cap = int(raw) if raw else None
+
+    cost_cap = args.cost_budget_usd
+    if cost_cap is None:
+        raw = os.environ.get("ALPHA_AGENT_COST_BUDGET_USD", "").strip()
+        cost_cap = float(raw) if raw else None
+
+    if token_cap is None and cost_cap is None:
+        return None
+
+    prompt_rate = float(
+        os.environ.get("ALPHA_AGENT_PROMPT_COST_PER_1K", "0") or "0"
+    )
+    completion_rate = float(
+        os.environ.get("ALPHA_AGENT_COMPLETION_COST_PER_1K", "0") or "0"
+    )
+    return TokenBudget(
+        max_total_tokens=token_cap,
+        max_cost_usd=cost_cap,
+        prompt_cost_per_1k=prompt_rate,
+        completion_cost_per_1k=completion_rate,
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
+
+    # Cycle id drives the LLM call log filename.  Stable across the cycle.
+    cycle_id: str = args.cycle_id or f"cycle-{uuid.uuid4().hex[:12]}"
+    logger.info("Cycle id: %s", cycle_id)
 
     # ── 1. Data ────────────────────────────────────────────────────────────
     if args.data_source in ("parquet", "polygon"):
@@ -317,6 +395,23 @@ def main(argv: list[str] | None = None) -> int:
 
         llm_client = OpenRouterClient(OpenRouterConfig.from_env())
 
+    # Round 4A.1 guardrails — applied to every real *and* mock path so
+    # every cycle writes a call log and every cycle can be budget-capped.
+    log_path = default_log_path(cycle_id, args.llm_log_dir)
+    call_logger = LLMCallLogger(path=log_path, cycle_id=cycle_id)
+    logger.info("LLM call log: %s", log_path)
+    llm_client = LoggingLLMClient(
+        llm_client, call_logger, purpose="autonomous_cycle",
+    )
+    budget = _resolve_token_budget(args)
+    if budget is not None:
+        logger.info(
+            "Token budget: max_tokens=%s max_cost_usd=%s",
+            budget.max_total_tokens,
+            budget.max_cost_usd,
+        )
+        llm_client = BudgetedLLMClient(llm_client, budget)
+
     proposer = HypothesisProposer(llm_client=llm_client, compiler=compiler)
 
     # ── 6. Evaluation request ─────────────────────────────────────────────
@@ -351,12 +446,21 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     logger.info("Dispatching theme %r to HarnessAgentAdapter.", args.theme)
-    response = adapter.run_theme(ThemeCycleRequest(
-        theme=args.theme,
-        n_candidates=args.n_candidates,
-        extra_guidance=args.extra_guidance,
-        tags=["autonomous_cycle"],
-    ))
+    try:
+        response = adapter.run_theme(ThemeCycleRequest(
+            theme=args.theme,
+            n_candidates=args.n_candidates,
+            extra_guidance=args.extra_guidance,
+            tags=["autonomous_cycle"],
+        ))
+    except BudgetExceededError as exc:
+        logger.error("Cycle halted by budget guard: %s", exc)
+        print(
+            f"error: cycle halted — {exc}\n"
+            f"       see LLM call log at {log_path} for per-call detail.",
+            file=sys.stderr,
+        )
+        return 3
 
     # ── 8. Output ─────────────────────────────────────────────────────────
     if args.json:

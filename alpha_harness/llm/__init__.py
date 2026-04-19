@@ -19,6 +19,17 @@ Design goals:
       mock client.
 """
 
+from alpha_harness.llm.budget import (
+    BudgetedLLMClient,
+    BudgetExceededError,
+    TokenBudget,
+)
+from alpha_harness.llm.call_log import (
+    DEFAULT_CALL_LOG_DIR,
+    LLMCallLogger,
+    LoggingLLMClient,
+    default_log_path,
+)
 from alpha_harness.llm.config import LLMConfigError, OpenRouterConfig
 from alpha_harness.llm.mock import MockLLMClient
 from alpha_harness.llm.openrouter import OpenRouterClient, OpenRouterError
@@ -35,16 +46,23 @@ from alpha_harness.llm.structured import (
 )
 
 __all__ = [
+    "DEFAULT_CALL_LOG_DIR",
+    "BudgetExceededError",
+    "BudgetedLLMClient",
+    "LLMCallLogger",
     "LLMClient",
     "LLMConfigError",
     "LLMError",
     "LLMMessage",
     "LLMRequest",
     "LLMResponse",
+    "LoggingLLMClient",
     "MockLLMClient",
     "OpenRouterClient",
     "OpenRouterConfig",
     "OpenRouterError",
     "StructuredLLMError",
+    "TokenBudget",
+    "default_log_path",
     "request_structured",
 ]

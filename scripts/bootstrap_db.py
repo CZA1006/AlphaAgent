@@ -1,7 +1,12 @@
 """Bootstrap the Postgres database with registry tables.
 
 Usage:
-    uv run python scripts/bootstrap_db.py
+    uv run python -m scripts.bootstrap_db
+
+Invoking this as a plain script (``python scripts/bootstrap_db.py``)
+does not add the project root to ``sys.path`` and fails with
+``ModuleNotFoundError: No module named 'alpha_harness'`` — always use
+the ``-m`` form (or ``make db-bootstrap``).
 
 Requires a running Postgres instance (see: make db-up).
 """

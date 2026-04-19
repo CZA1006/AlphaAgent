@@ -47,6 +47,11 @@ from alpha_harness.data.models import (
     DataRequest,
     DataResult,
 )
+from alpha_harness.data.rate_limit import (
+    RateLimiter,
+    polygon_rate_limiter_from_env,
+    request_with_retry,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +88,8 @@ class PolygonEquitiesLoader:
         api_key: str | None = None,
         base_url: str = _POLYGON_BASE_URL,
         client: httpx.Client | None = None,
+        rate_limiter: RateLimiter | None = None,
+        max_retries: int = 4,
     ) -> None:
         self._api_key = api_key or os.environ.get("POLYGON_API_KEY", "")
         if not self._api_key:
@@ -92,6 +99,10 @@ class PolygonEquitiesLoader:
             )
         self._base_url = base_url.rstrip("/")
         self._client = client
+        # Respect free-tier limits by default.  Callers (tests, paid-tier)
+        # can inject a permissive limiter or one with a custom rpm ceiling.
+        self._rate_limiter = rate_limiter or polygon_rate_limiter_from_env()
+        self._max_retries = max_retries
 
     def load_bars(
         self,
@@ -187,7 +198,13 @@ class PolygonEquitiesLoader:
         all_rows: list[dict[str, object]] = []
 
         while url:
-            resp = client.get(url, params=params)
+            resp = request_with_retry(
+                client,
+                url=url,
+                params=params,
+                max_retries=self._max_retries,
+                rate_limiter=self._rate_limiter,
+            )
             resp.raise_for_status()
             body = resp.json()
 

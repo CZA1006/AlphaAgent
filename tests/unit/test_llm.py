@@ -62,8 +62,10 @@ class TestOpenRouterConfig:
         assert cfg.base_url == "https://openrouter.ai/api/v1"
 
     def test_from_env_defaults(self) -> None:
+        from alpha_harness.llm.config import DEFAULT_MODEL
+
         cfg = OpenRouterConfig.from_env({"OPENROUTER_API_KEY": "sk-xxx"})
-        assert cfg.model == "anthropic/claude-3.5-sonnet"
+        assert cfg.model == DEFAULT_MODEL
         assert cfg.temperature == 0.2
         assert cfg.timeout_seconds == 60.0
 

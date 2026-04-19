@@ -64,7 +64,7 @@ db-status:
 		&& echo "Connection: OK" || echo "Connection: FAILED"
 
 db-bootstrap: db-up
-	uv run python scripts/bootstrap_db.py
+	uv run python -m scripts.bootstrap_db
 
 db-reset:
 	docker compose down -v

@@ -172,11 +172,88 @@ See `uv run python -m scripts.run_research_cycle --help` and
 
 ---
 
-## 5. What's deliberately deferred to Round 4
+## 5. Round 4A.1 guardrails — cost, rate limits, call hygiene
+
+Added in Round 4A.1.  All opt-in via env / CLI; defaults stay friendly to
+mock-mode dev.
+
+### 5.1 Per-cycle LLM token & cost budget
+
+| Variable / flag                           | Meaning                                                  |
+|-------------------------------------------|----------------------------------------------------------|
+| `ALPHA_AGENT_TOKEN_BUDGET` / `--token-budget`         | Hard cap on cumulative `total_tokens` per cycle   |
+| `ALPHA_AGENT_COST_BUDGET_USD` / `--cost-budget-usd`   | Hard cap in USD per cycle                         |
+| `ALPHA_AGENT_PROMPT_COST_PER_1K`          | Prompt rate (USD / 1K tokens) used to price calls        |
+| `ALPHA_AGENT_COMPLETION_COST_PER_1K`      | Completion rate (USD / 1K tokens)                        |
+
+When either cap is set, the autonomous cycle wraps its LLM client in a
+`BudgetedLLMClient`.  The call that would push the ledger over the cap is
+still issued and *logged* (so you can see what tripped the limit); the
+next call then raises `BudgetExceededError` and the cycle exits with
+code `3`.
+
+**Recommended starting values** (already present in `.env.example`):
+
+```
+ALPHA_AGENT_TOKEN_BUDGET=50000
+ALPHA_AGENT_COST_BUDGET_USD=0.50
+ALPHA_AGENT_PROMPT_COST_PER_1K=0.003
+ALPHA_AGENT_COMPLETION_COST_PER_1K=0.015
+```
+
+Adjust the `*_COST_PER_1K` rates to your actual OpenRouter model before
+leaning on the dollar cap — the defaults track
+`anthropic/claude-sonnet-4.6` and will mis-price anything else.
+
+### 5.2 Structured LLM call log
+
+Every cycle (mock or real) writes an append-only JSONL record per call
+to:
+
+```
+artifacts/llm_calls/{cycle_id}.jsonl
+```
+
+Override the base directory with `ALPHA_AGENT_LLM_LOG_DIR` or
+`--llm-log-dir`.  Override the cycle id with `--cycle-id` (default is
+`cycle-<12-hex>`).
+
+Each line contains: timestamp, `cycle_id`, `purpose`, `latency_ms`,
+request metadata (model, temperature, per-message role + length +
+80-char preview, SHA-256 fingerprint of the joined messages), response
+metadata (model, finish_reason, token counts, 200-char content preview,
+SHA-256 of the full content), and `error` (if any).
+
+**Redaction contract:** API keys and full prompt/response text are
+*never* written — only previews + SHA-256 fingerprints.  The preview
+cap is 80 chars per message / 200 chars per response.
+
+Quick inspection:
+
+```bash
+tail -n +1 artifacts/llm_calls/*.jsonl | jq '.response.total_tokens'
+```
+
+### 5.3 Polygon pacing & 429 retry
+
+| Variable         | Default | Meaning                                                    |
+|------------------|---------|------------------------------------------------------------|
+| `POLYGON_RPM`    | `5`     | Requests/min the Polygon loader paces itself at            |
+
+`PolygonEquitiesLoader` now goes through `request_with_retry`, which:
+
+1. Acquires a sliding-window rate limiter (5 rpm by default) before
+   every attempt.
+2. On HTTP 429, honours `Retry-After` when present; otherwise uses
+   exponential backoff (base `2.0`, up to `max_retries=4`).
+3. Returns the final 429 to the caller once retries are exhausted, so
+   `raise_for_status()` surfaces a normal error.
+
+### 5.4 What's deliberately deferred to later Round 4 phases
 
 - **Cloud / remote deployment.** Everything here assumes local dev.
-- **Automated retry / cost caps on LLM calls.** Manual for now — watch the
-  OpenRouter dashboard during real runs.
+- **Cross-cycle budget accumulation / dashboards.** Budgets are
+  per-cycle; aggregation over runs is not automated.
 - **Live-data ingestion pipelines beyond ad-hoc Polygon calls.** No
   scheduled refresh, no Parquet backfill automation.
 - **Hermes-side prompt assembly.** The adapter boundary is in place but

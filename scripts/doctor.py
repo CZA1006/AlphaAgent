@@ -145,6 +145,41 @@ def _check_postgres_reachable() -> CheckResult:
     )
 
 
+def _check_llm_log_dir() -> CheckResult:
+    """Verify the LLM call-log directory exists (or is creatable) and is writable."""
+    raw = os.environ.get("ALPHA_AGENT_LLM_LOG_DIR", "").strip()
+    path = raw or "artifacts/llm_calls"
+    try:
+        os.makedirs(path, exist_ok=True)
+    except OSError as exc:
+        return CheckResult(
+            name=f"LLM call-log dir writable at {path}",
+            passed=False,
+            required=True,
+            detail=f"{type(exc).__name__}: {exc}",
+        )
+
+    probe = os.path.join(path, ".doctor_probe")
+    try:
+        with open(probe, "w", encoding="utf-8") as fh:
+            fh.write("")
+        os.remove(probe)
+    except OSError as exc:
+        return CheckResult(
+            name=f"LLM call-log dir writable at {path}",
+            passed=False,
+            required=True,
+            detail=f"cannot write: {type(exc).__name__}: {exc}",
+        )
+
+    return CheckResult(
+        name=f"LLM call-log dir writable at {path}",
+        passed=True,
+        required=True,
+        detail="directory exists and accepts writes",
+    )
+
+
 def _check_parquet_path() -> CheckResult:
     """Look for a populated local Parquet store under data/silver/equities."""
     path = "data/silver/equities"
@@ -203,6 +238,17 @@ def run(mode: Mode) -> int:
             ),
             _check_openrouter_config(),
             _check_env("OPENROUTER_MODEL", required=False),
+            _check_llm_log_dir(),
+            _check_env(
+                "ALPHA_AGENT_TOKEN_BUDGET",
+                required=False,
+                hint="optional hard cap on cumulative tokens per cycle",
+            ),
+            _check_env(
+                "ALPHA_AGENT_COST_BUDGET_USD",
+                required=False,
+                hint="optional hard cap on cumulative LLM cost per cycle (USD)",
+            ),
         ]
         sections.append(("Real LLM (OpenRouter)", llm_checks))
 
@@ -215,6 +261,11 @@ def run(mode: Mode) -> int:
                         "POLYGON_API_KEY",
                         required=True,
                         hint="only needed for --data-source polygon",
+                    ),
+                    _check_env(
+                        "POLYGON_RPM",
+                        required=False,
+                        hint="override request pacing; default 5 rpm (free-tier safe)",
                     ),
                 ],
             ),
