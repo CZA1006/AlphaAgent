@@ -62,7 +62,7 @@ def _build_url() -> str:
     host = os.environ.get("POSTGRES_HOST", "localhost")
     port = os.environ.get("POSTGRES_PORT", "5432")
     db = os.environ.get("POSTGRES_DB", "alphaagent_test")
-    return f"postgresql://{user}:{password}@{host}:{port}/{db}"
+    return f"postgresql+psycopg://{user}:{password}@{host}:{port}/{db}"
 
 
 _skip_reason = "Postgres not available (set POSTGRES_* env vars and start the DB)"

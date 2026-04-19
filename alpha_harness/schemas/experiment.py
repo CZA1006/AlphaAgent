@@ -47,6 +47,19 @@ class FailureRecord(BaseModel):
     detail: str = ""  # free-form elaboration
 
 
+class JudgmentDetail(BaseModel):
+    """Rich output of one ``ExperimentJudge.judge()`` call.
+
+    Replaces the previous ``PromotionJudge.last_detail`` side channel —
+    the judge now returns this object directly so callers do not need
+    to share an instance to recover failure context.
+    """
+
+    decision: ExperimentDecision
+    failure: FailureRecord | None = None
+    notes: str = ""
+
+
 # ── Reproducibility snapshot ─────────────────────────────────────────────────
 
 

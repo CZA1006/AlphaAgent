@@ -1,6 +1,31 @@
 # Acceptance Criteria
 
-## Milestone 1 Definition of Done
+> **Status note.** Milestone 1 (Round 2 MVP) and the Round 3 autonomy
+> extension are both complete. For the current post-Round-3 status and
+> Round 4 scope, read [docs/ROUND3_SUMMARY.md](docs/ROUND3_SUMMARY.md)
+> first — this file is retained as historical reference.
+
+## Round 3 Exit Criteria — ✅ met
+
+- `HypothesisProposer` produces schema-valid, DSL-compiled candidates
+  from a free-form theme, using a typed `LLMClient`.
+- `RefinementRunner` expands `REFINE`-verdict experiments under hard
+  budgets with canonical-AST novelty checks.
+- Canonical AST novelty + related-experiment retrieval are wired into
+  the orchestrator.
+- Lineage memory is written on every cycle.
+- `HarnessAgentAdapter` exposes `ResearchCycleRequest` /
+  `ThemeCycleRequest` contracts; no deterministic decision is overridden
+  by the adapter.
+- `memory` and `sql` registry backends are selectable via CLI flag or
+  `ALPHA_AGENT_BACKEND`; business logic is typed against registry
+  protocols.
+- `scripts/autonomous_cycle.py` runs end-to-end in mock mode and in full
+  real mode (OpenRouter + Polygon), with `make doctor` preflight
+  validation.
+- Default test run (`make test`) requires no keys and no network.
+
+## Milestone 1 Definition of Done (historical)
 
 The first milestone is complete when all items below are true.
 

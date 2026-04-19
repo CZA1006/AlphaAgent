@@ -8,9 +8,12 @@ from __future__ import annotations
 
 import logging
 
-from alpha_harness.evaluators.promotion_judge import PromotionJudge
-from alpha_harness.registries.experiment import ExperimentRegistry
-from alpha_harness.registries.hypothesis import HypothesisRegistry
+from alpha_harness.memory.lineage import build_lineage_entry
+from alpha_harness.registries.protocols import (
+    ExperimentRegistryProtocol,
+    HypothesisRegistryProtocol,
+    MemoryRegistryProtocol,
+)
 from alpha_harness.schemas.evaluation import EvaluationBundle, EvaluationRequest
 from alpha_harness.schemas.experiment import (
     ExperimentDecision,
@@ -32,26 +35,36 @@ class ResearchOrchestrator:
     ----------
     service:
         The Alpha Harness domain service (compiler + evaluator + judge).
-    judge:
-        The promotion judge. Must be the same instance used inside ``service``
-        so that ``last_detail`` is available after ``service.run_research_cycle``.
+        The service's judge now returns a :class:`JudgmentDetail` directly,
+        so the orchestrator no longer needs a judge handle of its own.
     experiment_registry:
         Persists completed ExperimentRecords.
     hypothesis_registry:
         Persists hypothesis status updates.
+    memory_registry:
+        Optional. When supplied, every completed cycle writes a compact
+        EXPERIMENT_LINEAGE entry so parent/child relationships and headline
+        metrics can be reconstructed without re-reading full experiment
+        records.  Entries are factual and deterministic — no LLM summaries.
+    write_lineage:
+        Guard flag (default ``True``) allowing callers to suppress lineage
+        writes even when a memory registry is configured.
     """
 
     def __init__(
         self,
         service: AlphaHarnessService,
-        judge: PromotionJudge,
-        experiment_registry: ExperimentRegistry,
-        hypothesis_registry: HypothesisRegistry,
+        experiment_registry: ExperimentRegistryProtocol,
+        hypothesis_registry: HypothesisRegistryProtocol,
+        memory_registry: MemoryRegistryProtocol | None = None,
+        *,
+        write_lineage: bool = True,
     ) -> None:
         self._service = service
-        self._judge = judge
         self._experiments = experiment_registry
         self._hypotheses = hypothesis_registry
+        self._memory = memory_registry
+        self._write_lineage = write_lineage
 
     def run_cycle(
         self,
@@ -62,11 +75,11 @@ class ResearchOrchestrator:
 
         Steps:
             1. Mark hypothesis as TESTING.
-            2. Run compile → evaluate → judge via the service.
-            3. Attach rich failure/notes from the judge detail.
-            4. Update hypothesis status based on the decision.
-            5. Save hypothesis and experiment to registries.
-            6. Return the completed ExperimentRecord.
+            2. Run compile → evaluate → judge via the service; the service
+               already attaches failure/notes from the judge detail.
+            3. Update hypothesis status based on the decision.
+            4. Save hypothesis and experiment to registries.
+            5. Return the completed ExperimentRecord.
         """
         # ── 1. Mark hypothesis as testing ──────────────────────────────
         hypothesis = hypothesis.model_copy(
@@ -102,26 +115,26 @@ class ResearchOrchestrator:
                 notes=f"Cycle failed: {exc}",
             )
 
-        # ── 3. Attach rich detail from judge ───────────────────────────
-        if record.failure is None:
-            detail = self._judge.last_detail
-            if detail is not None:
-                record = record.model_copy(
-                    update={
-                        "failure": detail.failure,
-                        "notes": detail.notes,
-                    },
-                )
-
-        # ── 4. Update hypothesis status ────────────────────────────────
+        # ── 3. Update hypothesis status ────────────────────────────────
         new_status = _decision_to_status(record.decision)
         hypothesis = hypothesis.model_copy(
             update={"status": new_status},
         )
         self._hypotheses.save(hypothesis)
 
-        # ── 5. Persist experiment ──────────────────────────────────────
+        # ── 4. Persist experiment ──────────────────────────────────────
         self._experiments.save(record)
+
+        # ── 5. Optional lineage memory write ───────────────────────────
+        if self._memory is not None and self._write_lineage:
+            try:
+                self._memory.save(build_lineage_entry(record))
+            except Exception as exc:  # pragma: no cover — best-effort
+                logger.warning(
+                    "Failed to write lineage memory for experiment %s: %s",
+                    record.id,
+                    exc,
+                )
 
         logger.info(
             "Cycle complete for hypothesis %s → decision=%s",

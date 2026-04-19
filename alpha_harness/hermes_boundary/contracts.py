@@ -96,6 +96,49 @@ class ResearchCycleResponse(BaseModel):
 # ── Memory context for prompt injection ──────────────────────────────────────
 
 
+class ThemeCycleRequest(BaseModel):
+    """High-level request: take a research theme, run the full Round 3 loop.
+
+    Used by the concrete :class:`HarnessAgentAdapter` — the Hermes agent
+    (or a script standing in for it) hands over a free-form research theme
+    and a handful of knobs; the adapter owns the theme → proposer → cycle
+    → refinement pipeline.  Evaluation parameters are never part of this
+    request: they come from the harness-owned ``EvaluationRequest``.
+    """
+
+    theme: str
+    asset_class: str = "us_equity"
+    n_candidates: int = 3
+    extra_guidance: str = ""
+    tags: list[str] = Field(default_factory=list)
+    requested_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class ThemeCycleResponse(BaseModel):
+    """Structured summary of a theme-level run.
+
+    Contains one :class:`ResearchCycleResponse` per root hypothesis that
+    actually made it into the research loop, plus aggregate counts the
+    agent can reason about without pulling full records.
+    """
+
+    theme: str
+    proposals_requested: int
+    proposals_accepted: int
+    proposals_dropped: int
+    roots: list[ResearchCycleResponse] = Field(default_factory=list)
+    refinements: list[ResearchCycleResponse] = Field(default_factory=list)
+    dropped_reasons: list[str] = Field(default_factory=list)
+    completed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    @property
+    def total_cycles(self) -> int:
+        return len(self.roots) + len(self.refinements)
+
+
+# ── Memory context for prompt injection ──────────────────────────────────────
+
+
 class MemoryContext(BaseModel):
     """A curated package of research memory for injection into agent context.
 

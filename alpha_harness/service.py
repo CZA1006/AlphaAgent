@@ -15,7 +15,10 @@ from __future__ import annotations
 from typing import Protocol
 
 from alpha_harness.schemas.evaluation import EvaluationBundle, EvaluationRequest
-from alpha_harness.schemas.experiment import ExperimentDecision, ExperimentRecord
+from alpha_harness.schemas.experiment import (
+    ExperimentRecord,
+    JudgmentDetail,
+)
 from alpha_harness.schemas.factor import FactorSpec
 from alpha_harness.schemas.hypothesis import Hypothesis
 
@@ -38,7 +41,14 @@ class FactorEvaluator(Protocol):
 
 
 class ExperimentJudge(Protocol):
-    """Decide whether an evaluated factor should be promoted, refined, or rejected."""
+    """Decide whether an evaluated factor should be promoted, refined, or rejected.
+
+    The verdict is returned as a :class:`JudgmentDetail` — the decision
+    together with any structured failure and human-readable notes.
+    Returning a self-contained value (instead of the previous mutable
+    ``last_detail`` side channel) keeps the judge stateless and makes
+    cycle results safe under concurrency and retries.
+    """
 
     def judge(
         self,
@@ -46,7 +56,7 @@ class ExperimentJudge(Protocol):
         factor: FactorSpec,
         evaluation: EvaluationBundle,
         request: EvaluationRequest,
-    ) -> ExperimentDecision: ...
+    ) -> JudgmentDetail: ...
 
 
 class AlphaHarnessService:
@@ -86,12 +96,14 @@ class AlphaHarnessService:
         """Execute one full research cycle: compile → evaluate → judge → record."""
         factor = self.compile_factor(hypothesis)
         evaluation = self.evaluate_factor(factor, eval_request)
-        decision = self._judge.judge(hypothesis, factor, evaluation, eval_request)
+        detail = self._judge.judge(hypothesis, factor, evaluation, eval_request)
 
         return ExperimentRecord(
             hypothesis=hypothesis,
             factor=factor,
             evaluation=evaluation,
             eval_request=eval_request,
-            decision=decision,
+            decision=detail.decision,
+            failure=detail.failure,
+            notes=detail.notes,
         )

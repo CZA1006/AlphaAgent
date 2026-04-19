@@ -1,0 +1,209 @@
+# Local testing with real APIs
+
+This guide is for the step between "unit tests pass" and "Round 4 autonomy
+work begins" — it covers how to wire real keys into the repo and exercise the
+full stack locally.
+
+Everything here is **opt-in**.  The default `make test` path never touches
+the network or requires any key.
+
+---
+
+## 0. One-time setup
+
+```bash
+cp .env.example .env       # copy the template
+$EDITOR .env               # fill the REQUIRED fields for the paths you plan to run
+make install               # or `make dev` if you want lint/test tooling
+```
+
+The Makefile auto-loads `.env` — you do **not** need to `source` it yourself.
+If you invoke scripts directly from your shell, run `set -a; source .env; set +a`
+first.
+
+---
+
+## 1. What you must fill in `.env`
+
+The table below is the minimum.  Everything else in `.env.example` has sane
+defaults and can stay blank.
+
+| Variable              | Fill when you want to…                 | Where it's used                     |
+|-----------------------|-----------------------------------------|-------------------------------------|
+| `OPENROUTER_API_KEY`  | Run a real LLM (proposer / autonomous)  | `alpha_harness/llm/config.py`       |
+| `POLYGON_API_KEY`     | Load real US-equity bars                | `alpha_harness/data/polygon_equities.py` |
+| `POSTGRES_*`          | Use the SQL registry backend            | `alpha_harness/config.py` + `docker-compose.yml` |
+
+The `POSTGRES_*` defaults already match `docker-compose.yml`, so you only
+need to touch them if you run Postgres outside Docker or change the password.
+
+**Never commit `.env`.** It is listed in `.gitignore`; `git status` should
+not show it after you fill it in.
+
+---
+
+## 2. Preflight — `make doctor`
+
+Before your first real run, validate the configuration:
+
+```bash
+make doctor            # checks everything
+make doctor-mock       # only what mock mode needs (always passes)
+make doctor-real       # checks OPENROUTER_API_KEY loads cleanly
+make doctor-sql        # also tries a Postgres SELECT 1
+```
+
+The doctor never makes live LLM or Polygon calls — it only checks that
+variables are present, numeric fields parse, and Postgres is reachable.
+Exit code `0` means the matching `make run-*` command is safe to invoke.
+
+Typical failure → fix mapping:
+
+| Doctor says                                        | Fix                                         |
+|----------------------------------------------------|---------------------------------------------|
+| `OPENROUTER_API_KEY is set — empty or unset`       | Fill it in `.env`                            |
+| `OpenRouterConfig.from_env()` error about a float  | `OPENROUTER_TEMPERATURE` / `_TIMEOUT` malformed |
+| `Postgres reachable … ConnectionRefusedError`      | `make db-up && make db-bootstrap`            |
+| `Local Parquet store … empty`                      | `uv run python -m scripts.sample_ingest`     |
+
+---
+
+## 3. Test paths in recommended order
+
+Work your way down this list; each rung adds one external dependency.
+If a later rung fails, drop to the previous rung and `make doctor` to
+isolate the cause (config vs code vs provider).
+
+### 3.1 Mock mode — no keys required
+
+```bash
+make run-mock
+```
+
+Runs the full proposer → research → refinement loop with a mock LLM and
+synthetic price data.  This must succeed before you add any keys.
+
+### 3.2 Real LLM + synthetic data
+
+```bash
+make doctor-real
+make run-real                      # single-cycle, minimal tokens
+# or
+make autonomous-real ARGS="--n-candidates 2"
+```
+
+Uses real OpenRouter calls against synthetic price data.  This is the
+cheapest way to sanity-check that the LLM wiring works — a single
+autonomous cycle with two candidates typically costs well under a cent.
+
+### 3.3 Real LLM + real Polygon data
+
+```bash
+make doctor                        # need both keys
+make run-real-data ARGS="--symbols AAPL,MSFT --start-date 2024-01-01 --end-date 2024-03-31"
+```
+
+Pulls bars from Polygon and evaluates a factor on them.
+
+**Free-tier constraints (observed during Round 3 testing):**
+
+- ~5 requests/minute — keep `--symbols` to 5 or fewer per invocation.
+- Aggregates restricted to roughly the last 2 years — default
+  `--start-date` in `autonomous_cycle.py` is `2024-07-01` for that reason.
+
+A successful run looks like this (trimmed):
+
+```text
+INFO  Loaded 640 bars for 5 symbols from polygon
+INFO  Dispatching theme '...' to HarnessAgentAdapter.
+INFO  Running research cycle for hypothesis ...: rank(ts_mean(volume, 5) / ts_mean(volume, 20))
+INFO  Cycle complete for hypothesis ... → decision=reject
+...
+  Roots:
+    [rejected] rank_ts_mean_volume_5_ts_mean_volume_20 ic=-0.0072 rank_ic=0.0214
+```
+
+`decision=reject` on a tiny 5-name × 6-month panel is *expected and
+correct* — the evaluator is doing its job, not failing. Promoted
+candidates become more likely with a larger universe (Round 4).
+
+### 3.4 Real LLM + real Polygon + Postgres
+
+```bash
+make db-up            # start the container (first time only)
+make db-bootstrap     # create registry tables (first time only)
+make doctor-sql
+make run-real-sql
+```
+
+Same as 3.3 but experiments, hypotheses, and lineage memory land in
+Postgres instead of in-memory dicts.  Inspect them with any psql client:
+
+```bash
+docker compose exec postgres psql -U alphaagent -c "SELECT id, decision FROM experiments ORDER BY created_at DESC LIMIT 5;"
+```
+
+### 3.5 Passing extra flags
+
+Every `run-*` and `autonomous-*` target honours the `ARGS` variable:
+
+```bash
+make run-real ARGS="--expression 'rank(ts_std(close, 20))' --n-days 240"
+make autonomous-real ARGS="--theme 'intraday mean reversion' --n-candidates 3"
+```
+
+See `uv run python -m scripts.run_research_cycle --help` and
+`uv run python -m scripts.autonomous_cycle --help` for the full surface.
+
+---
+
+## 4. Debugging guide
+
+| Symptom                                         | Where to look first                          |
+|-------------------------------------------------|-----------------------------------------------|
+| Script exits immediately with non-zero          | `make doctor` — almost always a missing var  |
+| `LLMConfigError: OPENROUTER_API_KEY is not set` | `.env` not loaded; use Makefile target or `source .env` |
+| `psycopg.OperationalError: connection refused`  | `make db-up`; check `POSTGRES_HOST=localhost` |
+| `No data returned from polygon`                 | Date range, ticker spelling, or free-tier rate limit |
+| LLM returns nonsense / proposer drops all       | Try a different current slug (e.g. `anthropic/claude-opus-4.7`) or raise temperature. OpenRouter retires slugs periodically — check https://openrouter.ai/models if you get a 404. |
+| `429 Too Many Requests` from Polygon            | Free tier is ~5 req/min. Pass fewer `--symbols` or wait 60s between runs. |
+| `403 Forbidden` from Polygon aggregates         | Free tier restricts bars to roughly the last 2 years. Pick a recent `--start-date`. |
+| `make run-real` prints `OPENROUTER_API_KEY is empty` but `.env` has it | You exported the var in a prior shell with an empty value; `unset OPENROUTER_API_KEY && make run-real` |
+
+---
+
+## 5. What's deliberately deferred to Round 4
+
+- **Cloud / remote deployment.** Everything here assumes local dev.
+- **Automated retry / cost caps on LLM calls.** Manual for now — watch the
+  OpenRouter dashboard during real runs.
+- **Live-data ingestion pipelines beyond ad-hoc Polygon calls.** No
+  scheduled refresh, no Parquet backfill automation.
+- **Hermes-side prompt assembly.** The adapter boundary is in place but
+  the runtime that actually calls `HarnessAgentAdapter.run_theme` from a
+  live agent loop ships in Round 4.
+- **Secrets management.** For local dev `.env` + `make doctor` is enough;
+  production secret rotation is out of scope.
+
+---
+
+## 6. Quick reference
+
+```bash
+# first time
+cp .env.example .env && $EDITOR .env
+make install
+make doctor-mock && make run-mock         # confirms baseline
+
+# add real LLM
+make doctor-real && make run-real
+
+# add real data
+make doctor && make run-real-data
+
+# add SQL
+make db-up && make db-bootstrap
+make doctor-sql && make run-real-sql
+```
+
+Every step above is idempotent; re-running it is safe.

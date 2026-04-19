@@ -59,6 +59,81 @@ The MVP is successful when the system can:
 - retrieve related past experiments
 - let the research orchestrator use that context in the next cycle
 
+## Round 3 capabilities (what works today)
+
+**Round 3 is complete.** For the full accomplishments / limitations /
+Round-4 scope writeup, see [docs/ROUND3_SUMMARY.md](docs/ROUND3_SUMMARY.md).
+
+The research loop now runs end-to-end from a free-form research theme:
+
+- **Canonical AST novelty** — structural DSL equality; rename / whitespace
+  variants collapse to the same form.
+- **Related experiment retrieval** — prior experiments feed back into new
+  cycles by canonical AST + evaluation-profile match.
+- **LLM provider layer** (`alpha_harness/llm/`) — typed `LLMClient`
+  protocol, `OpenRouterClient`, `MockLLMClient`, env-loaded config.
+
+- **Hypothesis proposer** — `HypothesisProposer` turns a theme into a
+  bounded list of DSL-validated candidates via schema-constrained LLM
+  calls. Invalid expressions are dropped with the exact compiler error,
+  never re-emitted into the loop.
+- **Bounded refinement** — `RefinementRunner` expands REFINE-verdict
+  experiments with deterministic mutation templates (window scaling,
+  wrap/unwrap `rank`/`zscore`, unwrap outer) under hard budgets, and
+  novelty-checks every child against root + siblings.
+- **Lineage memory** — every cycle writes a compact `MemoryEntry` to the
+  memory registry so experiment graphs can be walked without extra
+  bookkeeping.
+- **Configurable persistence** — `memory` (default) or `sql` via
+  `--backend sql` / `ALPHA_AGENT_BACKEND=sql`. All orchestrators are
+  typed against registry protocols — no backend branching in business
+  logic.
+- **Hermes-facing adapter** — `HarnessAgentAdapter` composes the above
+  behind the `ResearchCycleRequest` / `ThemeCycleRequest` boundary
+  contracts. The adapter never overrides deterministic decisions; it only
+  arranges calls.
+- **Autonomous cycle script** — `scripts/autonomous_cycle.py` drives the
+  full theme → proposals → cycles → auto-refine → summary path. Pass
+  `--mock-llm` for a hermetic no-key local run:
+
+  ```bash
+  uv run python -m scripts.autonomous_cycle --mock-llm --n-candidates 3
+  ```
+
+### Still deferred (Round 4 and beyond)
+
+- LLM-driven mutation suggestions (current mutations are syntactic only)
+- Skill distillation and reuse across cycles
+- Sector / beta neutralization in evaluator; multi-horizon labels
+- Persistent `FactorRegistry` / `SkillRegistry` — still in-process
+- Hermes actually driving the adapter from a live agent loop
+- Token / rate-limit budgets on LLM calls
+- Live trading execution, multi-agent debate, cloud-native deployment
+
+## Persistence backends
+
+Registries (experiments, hypotheses, lineage memory) run against one of two
+backends:
+
+- `memory` — default, zero setup, used by every test and local run.
+- `sql` — Postgres-backed, opt-in via `--backend sql` or
+  `ALPHA_AGENT_BACKEND=sql`.
+
+See [docs/BACKENDS.md](docs/BACKENDS.md) for selection rules, Postgres
+prerequisites, and the boundary contract business logic relies on.
+
+## Running locally with real APIs
+
+For wiring real OpenRouter / Polygon / Postgres keys into the stack — and
+the `make doctor` preflight that validates them — see
+[docs/LOCAL_TESTING.md](docs/LOCAL_TESTING.md).  Short version:
+
+```bash
+cp .env.example .env && $EDITOR .env
+make doctor && make run-mock          # baseline, no keys
+make doctor-real && make run-real     # real LLM, synthetic data
+```
+
 ## What not to do yet
 
 Do not prioritize these in the first milestone:

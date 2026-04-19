@@ -1,5 +1,10 @@
 # Implementation Sequence
 
+> **Historical document.** Steps 1–9 below shipped across Rounds 1–3.
+> For the current state and Round 4 sequencing, see
+> [docs/ROUND3_SUMMARY.md](docs/ROUND3_SUMMARY.md) and the Round 4
+> section of [ROADMAP.md](ROADMAP.md).
+
 ## Step 1
 Initialize repo and Python project.
 

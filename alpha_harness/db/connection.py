@@ -19,7 +19,7 @@ def get_database_url() -> str:
     host = os.environ.get("POSTGRES_HOST", "localhost")
     port = os.environ.get("POSTGRES_PORT", "5432")
     db = os.environ.get("POSTGRES_DB", "alphaagent")
-    return f"postgresql://{user}:{password}@{host}:{port}/{db}"
+    return f"postgresql+psycopg://{user}:{password}@{host}:{port}/{db}"
 
 
 def get_engine() -> Engine:

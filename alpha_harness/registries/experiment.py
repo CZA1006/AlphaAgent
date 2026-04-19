@@ -28,3 +28,13 @@ class ExperimentRegistry(InMemoryRegistry[ExperimentRecord]):
     def list_rejected(self) -> list[ExperimentRecord]:
         """Return all experiments that were rejected."""
         return self.list_by_decision(ExperimentDecision.REJECT)
+
+    def list_recent(self, limit: int = 20) -> list[ExperimentRecord]:
+        """Return the most recent experiments, newest first.
+
+        Mirrors the SQL-backed registry's method so retrieval / context
+        code can call either implementation interchangeably.
+        """
+        return sorted(
+            self.list_all(), key=lambda e: e.created_at, reverse=True
+        )[:limit]

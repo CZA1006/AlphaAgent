@@ -565,6 +565,74 @@ class TestNoveltyEvaluator:
         assert verdict.is_novel is True
         assert verdict.similarity_score == 0.0
 
+    def test_whitespace_variant_is_duplicate(self) -> None:
+        """Whitespace-only differences should still flag as duplicates."""
+        existing = [("f001", "ts_mean(close, 20)")]
+        evaluator = NoveltyEvaluator(existing_expressions=existing)
+        factor = FactorSpec(
+            name="dup", expression=" ts_mean( close , 20 ) "
+        )
+
+        verdict = evaluator.check_novelty(factor)
+        assert verdict.is_novel is False
+        assert verdict.similarity_score == 1.0
+        assert verdict.most_similar_factor_id == "f001"
+
+    def test_commutative_variant_is_duplicate(self) -> None:
+        """Operand order in commutative ops shouldn't matter."""
+        existing = [("f001", "close + volume")]
+        evaluator = NoveltyEvaluator(existing_expressions=existing)
+        factor = FactorSpec(name="dup", expression="volume + close")
+
+        verdict = evaluator.check_novelty(factor)
+        assert verdict.is_novel is False
+        assert verdict.similarity_score == 1.0
+
+    def test_near_duplicate_window_variation(self) -> None:
+        """ts_mean(close, 20) vs ts_mean(close, 21) → high similarity."""
+        existing = [("f001", "ts_mean(close, 20)")]
+        evaluator = NoveltyEvaluator(existing_expressions=existing)
+        factor = FactorSpec(name="near", expression="ts_mean(close, 21)")
+
+        verdict = evaluator.check_novelty(factor)
+        assert verdict.similarity_score >= 0.85
+        assert verdict.is_novel is False
+
+    def test_registry_backed_comparison(self) -> None:
+        """Registry-sourced experiments participate in the novelty check."""
+        from alpha_harness.registries.experiment import ExperimentRegistry
+        from alpha_harness.schemas.evaluation import EvaluationBundle
+        from alpha_harness.schemas.experiment import ExperimentRecord
+
+        registry = ExperimentRegistry()
+        seed_factor = FactorSpec(
+            name="seed_rank_close", expression="rank(close)"
+        )
+        seed_record = ExperimentRecord(
+            hypothesis=Hypothesis(text="rank(close)"),
+            factor=seed_factor,
+            evaluation=EvaluationBundle(n_periods=100, n_assets=50),
+            decision=ExperimentDecision.PROMOTE_CANDIDATE,
+        )
+        registry.save(seed_record)
+
+        evaluator = NoveltyEvaluator(experiment_registry=registry)
+        duplicate = FactorSpec(name="candidate", expression="rank(close)")
+
+        verdict = evaluator.check_novelty(duplicate)
+        assert verdict.is_novel is False
+        assert verdict.most_similar_factor_id == "seed_rank_close"
+
+    def test_unparseable_expression_falls_back_to_string(self) -> None:
+        """Expressions that don't parse still compare via string equality."""
+        existing = [("f001", "noise()")]  # noise() is not a whitelisted fn
+        evaluator = NoveltyEvaluator(existing_expressions=existing)
+        factor = FactorSpec(name="dup", expression="noise()")
+
+        verdict = evaluator.check_novelty(factor)
+        assert verdict.is_novel is False
+        assert verdict.similarity_score == 1.0
+
 
 # ── PromotionJudge ───────────────────────────────────────────────────────────
 
@@ -580,8 +648,8 @@ class TestPromotionJudge:
             n_periods=100, n_assets=50,
         )
 
-        decision = judge.judge(hypothesis, factor, evaluation, request)
-        assert decision == ExperimentDecision.PROMOTE_CANDIDATE
+        detail = judge.judge(hypothesis, factor, evaluation, request)
+        assert detail.decision == ExperimentDecision.PROMOTE_CANDIDATE
 
     def test_rejects_weak_signal(self) -> None:
         judge = PromotionJudge()
@@ -593,11 +661,8 @@ class TestPromotionJudge:
             n_periods=100, n_assets=50,
         )
 
-        decision = judge.judge(hypothesis, factor, evaluation, request)
-        assert decision == ExperimentDecision.REJECT
-
-        detail = judge.last_detail
-        assert detail is not None
+        detail = judge.judge(hypothesis, factor, evaluation, request)
+        assert detail.decision == ExperimentDecision.REJECT
         assert detail.failure is not None
         assert detail.failure.category == FailureCategory.WEAK_SIGNAL
 
@@ -612,11 +677,8 @@ class TestPromotionJudge:
             n_assets=50,
         )
 
-        decision = judge.judge(hypothesis, factor, evaluation, request)
-        assert decision == ExperimentDecision.REJECT
-
-        detail = judge.last_detail
-        assert detail is not None
+        detail = judge.judge(hypothesis, factor, evaluation, request)
+        assert detail.decision == ExperimentDecision.REJECT
         assert detail.failure is not None
         assert detail.failure.category == FailureCategory.DATA_INSUFFICIENT
 
@@ -633,11 +695,8 @@ class TestPromotionJudge:
             n_periods=100, n_assets=50,
         )
 
-        decision = judge.judge(hypothesis, factor, evaluation, request)
-        assert decision == ExperimentDecision.REJECT
-
-        detail = judge.last_detail
-        assert detail is not None
+        detail = judge.judge(hypothesis, factor, evaluation, request)
+        assert detail.decision == ExperimentDecision.REJECT
         assert detail.failure is not None
         assert detail.failure.category == FailureCategory.DUPLICATE
 
@@ -653,8 +712,8 @@ class TestPromotionJudge:
             n_periods=100, n_assets=50,
         )
 
-        decision = judge.judge(hypothesis, factor, evaluation, request)
-        assert decision == ExperimentDecision.REFINE
+        detail = judge.judge(hypothesis, factor, evaluation, request)
+        assert detail.decision == ExperimentDecision.REFINE
 
     def test_missing_required_metric_rejects(self) -> None:
         judge = PromotionJudge()
@@ -667,8 +726,8 @@ class TestPromotionJudge:
             n_periods=100, n_assets=50,
         )
 
-        decision = judge.judge(hypothesis, factor, evaluation, request)
-        assert decision == ExperimentDecision.REJECT
+        detail = judge.judge(hypothesis, factor, evaluation, request)
+        assert detail.decision == ExperimentDecision.REJECT
 
 
 # ── ResearchOrchestrator (end-to-end smoke test) ─────────────────────────────
@@ -689,7 +748,6 @@ class TestResearchOrchestrator:
         )
         return ResearchOrchestrator(
             service=service,
-            judge=judge,
             experiment_registry=ExperimentRegistry(),
             hypothesis_registry=HypothesisRegistry(),
         )

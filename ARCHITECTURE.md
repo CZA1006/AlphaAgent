@@ -91,34 +91,45 @@ We need structured research memory, including:
 - promotion history
 - meta-policy notes
 
-## Suggested first directory layout
+## Current directory layout (post-Round-3)
 
 ```text
 alpha-agent/
 ├── vendor/
 │   └── hermes-agent/
 ├── alpha_harness/
-│   ├── service.py          # domain service interface (entry point for external callers)
-│   ├── orchestrator/
-│   ├── evaluators/
-│   ├── registries/
-│   ├── memory/
-│   ├── skills/
-│   ├── data/
-│   ├── factors/
-│   ├── reports/
-│   ├── schemas/
-│   └── db/
+│   ├── service.py           # domain service interface
+│   ├── config.py            # BackendConfig + PostgresSettings
+│   ├── orchestrator/        # research loop + refinement runner
+│   ├── proposer/            # HypothesisProposer (LLM-facing)
+│   ├── llm/                 # LLMClient protocol + OpenRouter + Mock
+│   ├── hermes_boundary/     # adapter + ResearchCycle/ThemeCycle contracts
+│   ├── evaluators/          # deterministic IC / RankIC / quantile spread / judge
+│   ├── factors/             # DSL compiler + canonical AST + executor
+│   ├── retrieval/           # related-experiment retrieval
+│   ├── registries/          # experiment / hypothesis / memory (memory + sql)
+│   ├── memory/              # lineage memory schema + helpers
+│   ├── skills/              # skill registry stubs (not yet on main path)
+│   ├── data/                # synthetic + parquet + polygon loaders
+│   ├── reports/             # report builders
+│   ├── schemas/             # Pydantic/typed core entities
+│   └── db/                  # SQLAlchemy / psycopg connection glue
 ├── configs/
-├── scripts/
+├── scripts/                 # run_research_cycle, autonomous_cycle, doctor, bootstrap_db
 ├── tests/
-├── notebooks/
 └── artifacts/
 ```
 
-Note: `agents/` and `tools/` are intentionally absent from Alpha Harness.
-Those are Hermes runtime concepts. If a Hermes adapter layer is needed later,
-it should live outside `alpha_harness/` (e.g. in a separate `hermes_adapter/` package).
+Notes:
+
+- `agents/` and `tools/` are intentionally absent from Alpha Harness.
+  Those are Hermes runtime concepts. The `hermes_boundary/` package is
+  the *only* place Alpha Harness meets Hermes; it exposes typed
+  request/response contracts, nothing more.
+- The LLM lives strictly on the proposal side of the boundary:
+  `proposer/` calls `llm/`. No evaluator, judge, compiler, or registry
+  ever calls an LLM. This invariant is what lets every quantitative
+  decision remain deterministic and reproducible.
 
 ## First milestone architecture scope
 

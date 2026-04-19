@@ -3,7 +3,7 @@
 from datetime import date
 
 from alpha_harness.schemas.evaluation import EvaluationBundle, EvaluationRequest
-from alpha_harness.schemas.experiment import ExperimentDecision
+from alpha_harness.schemas.experiment import ExperimentDecision, JudgmentDetail
 from alpha_harness.schemas.factor import FactorSpec
 from alpha_harness.schemas.hypothesis import Hypothesis
 from alpha_harness.service import AlphaHarnessService
@@ -47,10 +47,10 @@ class StubJudge:
         factor: FactorSpec,
         evaluation: EvaluationBundle,
         request: EvaluationRequest,
-    ) -> ExperimentDecision:
+    ) -> JudgmentDetail:
         if evaluation.passes_profile(request.profile):
-            return ExperimentDecision.PROMOTE_CANDIDATE
-        return ExperimentDecision.REJECT
+            return JudgmentDetail(decision=ExperimentDecision.PROMOTE_CANDIDATE)
+        return JudgmentDetail(decision=ExperimentDecision.REJECT)
 
 
 # ── Tests ────────────────────────────────────────────────────────────────────

@@ -29,18 +29,19 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 from datetime import date
 
 import pandas as pd
 
+from alpha_harness.config import BackendConfig
 from alpha_harness.data.synthetic import generate_price_panel
 from alpha_harness.evaluators.promotion_judge import PromotionJudge
 from alpha_harness.evaluators.signal_quality import SignalQualityEvaluator
 from alpha_harness.factors.compiler import FactorDslCompiler
 from alpha_harness.orchestrator.research_loop import ResearchOrchestrator
-from alpha_harness.registries.experiment import ExperimentRegistry
-from alpha_harness.registries.hypothesis import HypothesisRegistry
+from alpha_harness.registries.factory import build_registries
 from alpha_harness.schemas.evaluation import (
     EvaluationProfile,
     EvaluationRequest,
@@ -77,9 +78,12 @@ def _build_parser() -> argparse.ArgumentParser:
     # Data
     p.add_argument(
         "--data-source",
-        choices=["synthetic", "parquet"],
+        choices=["synthetic", "parquet", "polygon"],
         default="synthetic",
-        help="Where to load price data from (default: synthetic).",
+        help=(
+            "Where to load price data from (default: synthetic). "
+            "'polygon' requires POLYGON_API_KEY and issues real API calls."
+        ),
     )
     p.add_argument(
         "--data-path",
@@ -90,6 +94,16 @@ def _build_parser() -> argparse.ArgumentParser:
         "--symbols",
         default=None,
         help="Comma-separated symbol list (default: 10 large-cap tickers for synthetic).",
+    )
+    p.add_argument(
+        "--start-date",
+        default="2024-01-01",
+        help="Start date for real/parquet data (YYYY-MM-DD, default 2024-01-01).",
+    )
+    p.add_argument(
+        "--end-date",
+        default="2024-06-30",
+        help="End date for real/parquet data (YYYY-MM-DD, default 2024-06-30).",
     )
     p.add_argument("--n-days", type=int, default=180, help="Days of synthetic data.")
     p.add_argument("--n-symbols", type=int, default=10, help="Symbols for synthetic data.")
@@ -115,6 +129,18 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Minimum assets for data sufficiency (default: 3).",
     )
 
+    # Persistence backend
+    p.add_argument(
+        "--backend",
+        choices=["memory", "sql"],
+        default=None,
+        help=(
+            "Persistence backend. 'memory' (default) needs no services; "
+            "'sql' uses Postgres via POSTGRES_* env vars. Falls back to "
+            "the ALPHA_AGENT_BACKEND env var when unset."
+        ),
+    )
+
     # Output
     p.add_argument(
         "--json",
@@ -129,26 +155,44 @@ def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
 
     # ── 1. Load or generate price data ─────────────────────────────────
-    if args.data_source == "parquet":
-        from alpha_harness.data.equities_loader import LocalEquitiesLoader
+    if args.data_source in ("parquet", "polygon"):
+        from alpha_harness.data.loader_factory import create_equities_loader
         from alpha_harness.data.models import DataRequest
 
-        symbols = args.symbols.split(",") if args.symbols else ["AAPL", "MSFT", "GOOG"]
-        loader = LocalEquitiesLoader(base_path=args.data_path)
-        request = DataRequest(
-            symbols=symbols,
-            start=date(2023, 1, 1),
-            end=date(2024, 12, 31),
+        symbols = (
+            args.symbols.split(",") if args.symbols else ["AAPL", "MSFT", "GOOG"]
         )
+        try:
+            start = date.fromisoformat(args.start_date)
+            end = date.fromisoformat(args.end_date)
+        except ValueError as exc:
+            logger.error("Bad date format (expected YYYY-MM-DD): %s", exc)
+            return 2
+
+        if args.data_source == "polygon" and not os.environ.get("POLYGON_API_KEY"):
+            logger.error(
+                "--data-source polygon requires POLYGON_API_KEY in the "
+                "environment.  Run `make doctor --mode data` to diagnose.",
+            )
+            return 2
+
+        loader = create_equities_loader(
+            source=args.data_source,
+            base_path=args.data_path,
+        )
+        request = DataRequest(symbols=symbols, start=start, end=end)
         price_data, meta = loader.load_bars(request)
         if meta.bars_returned == 0:
-            logger.error("No data found at %s for symbols %s", args.data_path, symbols)
+            logger.error(
+                "No data returned from %s for symbols %s in %s..%s",
+                args.data_source, symbols, start, end,
+            )
             return 1
         logger.info(
             "Loaded %d bars for %d symbols from %s",
             meta.bars_returned,
             meta.symbols_returned,
-            args.data_path,
+            args.data_source,
         )
     else:
         symbols_list: list[str] | None = None
@@ -186,18 +230,19 @@ def main(argv: list[str] | None = None) -> int:
     judge = PromotionJudge(refine_margin=0.20)
     service = AlphaHarnessService(compiler=compiler, evaluator=evaluator, judge=judge)
 
-    experiment_registry = ExperimentRegistry()
-    hypothesis_registry = HypothesisRegistry()
+    backend_config = BackendConfig.from_env(override=args.backend)
+    logger.info("Using %s backend for registries.", backend_config.backend)
+    registries = build_registries(backend_config)
 
     orchestrator = ResearchOrchestrator(
         service=service,
-        judge=judge,
-        experiment_registry=experiment_registry,
-        hypothesis_registry=hypothesis_registry,
+        experiment_registry=registries.experiments,
+        hypothesis_registry=registries.hypotheses,
+        memory_registry=registries.memories,
     )
 
     # ── 4. Build evaluation request ────────────────────────────────────
-    ts_dates = pd.to_datetime(price_data["timestamp"]).dt.date  # type: ignore[union-attr]
+    ts_dates = pd.to_datetime(price_data["timestamp"]).dt.date
     eval_start = ts_dates.min()
     eval_end = ts_dates.max()
 

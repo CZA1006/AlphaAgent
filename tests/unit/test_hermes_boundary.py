@@ -50,7 +50,6 @@ def _build_stack() -> (
     mem_reg = MemoryRegistry()
     orch = ResearchOrchestrator(
         service=service,
-        judge=judge,
         experiment_registry=exp_reg,
         hypothesis_registry=hyp_reg,
     )

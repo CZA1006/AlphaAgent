@@ -89,7 +89,6 @@ def _build_orchestrator(
     hyp_reg = HypothesisRegistry()
     orch = ResearchOrchestrator(
         service=service,
-        judge=judge,
         experiment_registry=exp_reg,
         hypothesis_registry=hyp_reg,
     )

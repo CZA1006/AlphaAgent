@@ -1,5 +1,11 @@
 # Initial Build Tasks for Claude Code
 
+> **Historical document.** Every task group below shipped in Rounds 1–2
+> and was extended in Round 3. For the current status and the Round 4
+> task queue, read [docs/ROUND3_SUMMARY.md](docs/ROUND3_SUMMARY.md) and
+> the Round 4 section of [ROADMAP.md](ROADMAP.md). This file is kept for
+> traceability only; do not use it as a live to-do list.
+
 This file defines the first implementation wave.
 
 ## Objective

@@ -16,3 +16,13 @@ class HypothesisRegistry(InMemoryRegistry[Hypothesis]):
     def list_actionable(self) -> list[Hypothesis]:
         """Return hypotheses that are ready for testing."""
         return self.list_by_status(HypothesisStatus.DRAFT)
+
+    def list_recent(self, limit: int = 20) -> list[Hypothesis]:
+        """Return the most recent hypotheses, newest first.
+
+        Mirrors :class:`SqlHypothesisRegistry.list_recent` so the shared
+        protocol is satisfied by both backends.
+        """
+        return sorted(
+            self.list_all(), key=lambda h: h.created_at, reverse=True
+        )[:limit]
