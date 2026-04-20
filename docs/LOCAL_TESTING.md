@@ -332,7 +332,36 @@ uv run python -m scripts.autonomous_cycle \
 - `--cost-bps 5.0` — round-trip bps applied to `turnover` to produce
   `net_quantile_spread = quantile_spread - (cost_bps/10000) * turnover`.
 
-### 5.5 What's deliberately deferred to later Round 4 phases
+### 5.5 Round 4A.4 proposer memory
+
+`autonomous_cycle.py` now passes a compact "what has already been tried"
+digest into the proposer prompt, built from the last N entries in the
+experiment registry.  The digest lists rolling decision counts, promoted
+expressions (to avoid re-proposing near-duplicates), top rejection
+categories, and recently-tried fingerprints.  Cap is hard-limited to
+~1.2 KB so it can't bloat the prompt.
+
+```bash
+# Default: 20-experiment rolling digest.
+uv run python -m scripts.autonomous_cycle --mock-llm --backend sql
+
+# Widen the look-back.
+uv run python -m scripts.autonomous_cycle --mock-llm --backend sql \
+  --memory-depth 50
+
+# A/B comparison against memory-off.
+uv run python -m scripts.autonomous_cycle --mock-llm --backend sql --no-memory
+```
+
+Notes
+- In-memory backend: the digest is populated only if prior experiments
+  exist in the same Python process. Use `--backend sql` (or the SQL
+  Makefile targets) for multi-process persistence.
+- Mock LLM runs exercise the plumbing but the mock client ignores the
+  enriched prompt; verification via real LLM or by inspecting the
+  `jsonl` call log.
+
+### 5.6 What's deliberately deferred to later Round 4 phases
 
 - **Cloud / remote deployment.** Everything here assumes local dev.
 - **Cross-cycle budget accumulation / dashboards.** Budgets are

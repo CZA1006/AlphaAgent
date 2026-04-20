@@ -111,6 +111,10 @@ class ThemeCycleRequest(BaseModel):
     n_candidates: int = 3
     extra_guidance: str = ""
     tags: list[str] = Field(default_factory=list)
+    # Optional rolling-memory digest built from the experiment registry.
+    # Empty string means "no memory context" — proposer prompt stays
+    # byte-identical to pre-4A.4 behaviour.
+    prior_memory: str = ""
     requested_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 

@@ -99,6 +99,15 @@ def build_user_prompt(request: ProposalRequest) -> str:
             "failure modes of the REJECTED entries."
         )
 
+    if request.prior_memory.strip():
+        sections.append(
+            "\n## What has already been tried (rolling memory)\n"
+            f"{request.prior_memory.strip()}\n"
+            "Use this to avoid re-proposing near-duplicates of prior "
+            "promoted factors and to steer clear of the recent failure "
+            "modes above."
+        )
+
     if request.extra_guidance.strip():
         sections.append(f"\n## Extra guidance\n{request.extra_guidance.strip()}")
 

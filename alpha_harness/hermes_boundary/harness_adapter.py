@@ -182,6 +182,7 @@ class HarnessAgentAdapter:
             asset_class=_coerce_asset_class(request.asset_class),
             n_candidates=request.n_candidates,
             extra_guidance=request.extra_guidance,
+            prior_memory=request.prior_memory,
         )
         logger.info(
             "Theme cycle: theme=%r n_candidates=%d",

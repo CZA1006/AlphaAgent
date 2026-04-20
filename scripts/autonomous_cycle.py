@@ -62,6 +62,10 @@ from alpha_harness.llm import (
 from alpha_harness.orchestrator.refinement import RefinementConfig, RefinementRunner
 from alpha_harness.orchestrator.research_loop import ResearchOrchestrator
 from alpha_harness.proposer import HypothesisProposer
+from alpha_harness.proposer.memory import (
+    DEFAULT_MEMORY_DEPTH,
+    build_memory_digest,
+)
 from alpha_harness.proposer.schemas import RawProposal, RawProposalBatch
 from alpha_harness.registries.factory import build_registries
 from alpha_harness.schemas.evaluation import (
@@ -229,6 +233,27 @@ def _build_parser() -> argparse.ArgumentParser:
             "Comma-separated extra forward horizons (bars) to evaluate "
             "alongside the primary 5-bar horizon, e.g. '1,20'.  When set, "
             "the judge also enforces IC-sign consistency across horizons."
+        ),
+    )
+
+    # Memory (Round 4A.4)
+    p.add_argument(
+        "--memory-depth",
+        type=int,
+        default=DEFAULT_MEMORY_DEPTH,
+        help=(
+            f"Number of most-recent experiments summarized into the "
+            f"proposer memory digest (default: {DEFAULT_MEMORY_DEPTH}).  "
+            "Only meaningful when the registry has prior entries "
+            "(i.e. --backend sql or a reused in-memory process)."
+        ),
+    )
+    p.add_argument(
+        "--no-memory",
+        action="store_true",
+        help=(
+            "Disable the memory digest even when prior experiments exist. "
+            "Useful for A/B comparisons against memory-aware runs."
         ),
     )
 
@@ -519,6 +544,18 @@ def main(argv: list[str] | None = None) -> int:
         refinement_runner=refinement_runner,
     )
 
+    # ── 6b. Build the rolling-memory digest (Round 4A.4) ─────────────────
+    if args.no_memory:
+        prior_memory = ""
+    else:
+        recent = registries.experiments.list_recent(limit=args.memory_depth)
+        prior_memory = build_memory_digest(recent, depth=args.memory_depth)
+        if prior_memory:
+            logger.info(
+                "Memory digest: %d chars from %d prior experiments.",
+                len(prior_memory), len(recent),
+            )
+
     logger.info("Dispatching theme %r to HarnessAgentAdapter.", args.theme)
     try:
         response = adapter.run_theme(ThemeCycleRequest(
@@ -526,6 +563,7 @@ def main(argv: list[str] | None = None) -> int:
             n_candidates=args.n_candidates,
             extra_guidance=args.extra_guidance,
             tags=["autonomous_cycle"],
+            prior_memory=prior_memory,
         ))
     except BudgetExceededError as exc:
         logger.error("Cycle halted by budget guard: %s", exc)

@@ -65,6 +65,11 @@ class ProposalRequest(BaseModel):
     related: list[RelatedExperiment] = Field(default_factory=list)
     extra_guidance: str = ""  # optional operator-supplied hints
 
+    # Compact, globally-scoped recency digest built by
+    # :func:`alpha_harness.proposer.memory.build_memory_digest`.  Independent
+    # of ``related`` (which is theme/AST-scored).  Empty string disables.
+    prior_memory: str = ""
+
     model_config = {"arbitrary_types_allowed": True}
 
 
