@@ -17,6 +17,7 @@ artifact is a convenience mirror.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
@@ -55,7 +56,10 @@ def read_index(base_dir: Path | str = DEFAULT_PROMOTED_DIR) -> list[dict[str, An
                 entries.append(json.loads(line))
             except json.JSONDecodeError as exc:
                 logger.warning(
-                    "Skipping corrupt index line %d in %s: %s", i, path, exc,
+                    "Skipping corrupt index line %d in %s: %s",
+                    i,
+                    path,
+                    exc,
                 )
     return entries
 
@@ -65,7 +69,10 @@ def _git_head() -> str:
     try:
         out = subprocess.run(
             ["git", "rev-parse", "--short", "HEAD"],
-            capture_output=True, text=True, timeout=2, check=False,
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=False,
         )
     except (OSError, subprocess.SubprocessError):
         return ""
@@ -78,7 +85,9 @@ def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
     """Write ``payload`` to ``path`` atomically via a temp-file + rename."""
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp_name = tempfile.mkstemp(
-        prefix=f".{path.name}.", suffix=".tmp", dir=str(path.parent),
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+        dir=str(path.parent),
     )
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
@@ -86,10 +95,8 @@ def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
             fh.write("\n")
         os.replace(tmp_name, path)
     except Exception:
-        try:
+        with contextlib.suppress(OSError):
             os.unlink(tmp_name)
-        except OSError:
-            pass
         raise
 
 
@@ -151,7 +158,8 @@ class PromotedArtifactWriter:
         except OSError as exc:  # pragma: no cover — defensive
             logger.warning(
                 "Failed to write promotion artifact for %s: %s",
-                record.id, exc,
+                record.id,
+                exc,
             )
             return None
 
@@ -166,7 +174,8 @@ class PromotedArtifactWriter:
         self._upsert_index(factor_id, self._build_index_entry(record, payload))
         logger.info(
             "promotion artifact written: %s (factor_id=%s)",
-            artifact_path, factor_id,
+            artifact_path,
+            factor_id,
         )
         return artifact_path
 
@@ -198,9 +207,7 @@ class PromotedArtifactWriter:
                 "metadata": ev.metadata,
             },
             "reproducibility": {
-                "code_version": (
-                    record.reproducibility.code_version or _git_head()
-                ),
+                "code_version": (record.reproducibility.code_version or _git_head()),
                 "dataset_snapshot_id": record.reproducibility.dataset_snapshot_id,
                 "universe_snapshot_id": record.reproducibility.universe_snapshot_id,
                 "config_snapshot": record.reproducibility.config_snapshot,
@@ -211,7 +218,9 @@ class PromotedArtifactWriter:
         }
 
     def _build_index_entry(
-        self, record: ExperimentRecord, payload: dict[str, Any],
+        self,
+        record: ExperimentRecord,
+        payload: dict[str, Any],
     ) -> dict[str, Any]:
         ev = record.evaluation
         return {
@@ -235,10 +244,7 @@ class PromotedArtifactWriter:
         case without losing the latest values.
         """
         path = index_path(self._base_dir)
-        existing = [
-            e for e in _iter_index_entries(path)
-            if e.get("factor_id") != factor_id
-        ]
+        existing = [e for e in _iter_index_entries(path) if e.get("factor_id") != factor_id]
         existing.append(entry)
         path.parent.mkdir(parents=True, exist_ok=True)
         _rewrite_index(path, existing)

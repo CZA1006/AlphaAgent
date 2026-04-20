@@ -164,16 +164,18 @@ def _build_parser() -> argparse.ArgumentParser:
             "'parquet' reads a local Parquet store at --data-path."
         ),
     )
-    p.add_argument("--data-path", default="data/silver/equities",
-                   help="Base path for --data-source parquet.")
     p.add_argument(
-        "--symbols", default=None,
+        "--data-path", default="data/silver/equities", help="Base path for --data-source parquet."
+    )
+    p.add_argument(
+        "--symbols",
+        default=None,
         help="Comma-separated tickers for parquet/polygon sources.",
     )
-    p.add_argument("--start-date", default="2024-07-01",
-                   help="Start date for real data (YYYY-MM-DD).")
-    p.add_argument("--end-date", default="2024-12-31",
-                   help="End date for real data (YYYY-MM-DD).")
+    p.add_argument(
+        "--start-date", default="2024-07-01", help="Start date for real data (YYYY-MM-DD)."
+    )
+    p.add_argument("--end-date", default="2024-12-31", help="End date for real data (YYYY-MM-DD).")
     p.add_argument("--n-days", type=int, default=180, help="Days of synthetic data.")
     p.add_argument("--n-symbols", type=int, default=10, help="Symbols for synthetic data.")
     p.add_argument("--seed", type=int, default=42, help="Random seed for synthetic data.")
@@ -242,8 +244,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--promoted-dir",
         default=str(DEFAULT_PROMOTED_DIR),
         help=(
-            f"Directory for per-promotion JSON artifacts + index "
-            f"(default: {DEFAULT_PROMOTED_DIR})."
+            f"Directory for per-promotion JSON artifacts + index (default: {DEFAULT_PROMOTED_DIR})."
         ),
     )
     p.add_argument(
@@ -274,7 +275,17 @@ def _build_parser() -> argparse.ArgumentParser:
     )
 
     # Refinement budgets
-    p.add_argument("--max-depth", type=int, default=1)
+    p.add_argument(
+        "--max-refinement-rounds",
+        "--max-depth",
+        dest="max_refinement_rounds",
+        type=int,
+        default=1,
+        help=(
+            "Hard cap on refinement depth (root = 0).  Kept as "
+            "--max-depth for backwards compatibility."
+        ),
+    )
     p.add_argument("--max-variants-per-step", type=int, default=3)
     p.add_argument("--max-total-children", type=int, default=6)
 
@@ -353,12 +364,8 @@ def _resolve_token_budget(args: argparse.Namespace) -> TokenBudget | None:
     if token_cap is None and cost_cap is None:
         return None
 
-    prompt_rate = float(
-        os.environ.get("ALPHA_AGENT_PROMPT_COST_PER_1K", "0") or "0"
-    )
-    completion_rate = float(
-        os.environ.get("ALPHA_AGENT_COMPLETION_COST_PER_1K", "0") or "0"
-    )
+    prompt_rate = float(os.environ.get("ALPHA_AGENT_PROMPT_COST_PER_1K", "0") or "0")
+    completion_rate = float(os.environ.get("ALPHA_AGENT_COMPLETION_COST_PER_1K", "0") or "0")
     return TokenBudget(
         max_total_tokens=token_cap,
         max_cost_usd=cost_cap,
@@ -379,9 +386,7 @@ def main(argv: list[str] | None = None) -> int:
         from alpha_harness.data.loader_factory import create_equities_loader
         from alpha_harness.data.models import DataRequest
 
-        symbols_list = (
-            args.symbols.split(",") if args.symbols else ["AAPL", "MSFT", "GOOG"]
-        )
+        symbols_list = args.symbols.split(",") if args.symbols else ["AAPL", "MSFT", "GOOG"]
         try:
             start = date.fromisoformat(args.start_date)
             end = date.fromisoformat(args.end_date)
@@ -405,12 +410,17 @@ def main(argv: list[str] | None = None) -> int:
         if meta.bars_returned == 0:
             logger.error(
                 "No data returned from %s for symbols %s in %s..%s",
-                args.data_source, symbols_list, start, end,
+                args.data_source,
+                symbols_list,
+                start,
+                end,
             )
             return 1
         logger.info(
             "Loaded %d bars for %d symbols from %s",
-            meta.bars_returned, meta.symbols_returned, args.data_source,
+            meta.bars_returned,
+            meta.symbols_returned,
+            args.data_source,
         )
     else:
         symbols: list[str] | None = None
@@ -419,7 +429,9 @@ def main(argv: list[str] | None = None) -> int:
         elif args.n_symbols != 10:
             symbols = [f"SYM_{i:02d}" for i in range(args.n_symbols)]
         price_data = generate_price_panel(
-            symbols=symbols, n_days=args.n_days, seed=args.seed,
+            symbols=symbols,
+            n_days=args.n_days,
+            seed=args.seed,
         )
         logger.info(
             "Generated synthetic panel: %d symbols x %d dates",
@@ -432,7 +444,9 @@ def main(argv: list[str] | None = None) -> int:
     evaluator = SignalQualityEvaluator(price_data)
     judge = PromotionJudge(refine_margin=0.20)
     service = AlphaHarnessService(
-        compiler=compiler, evaluator=evaluator, judge=judge,
+        compiler=compiler,
+        evaluator=evaluator,
+        judge=judge,
     )
 
     # ── 3. Registries (memory by default, SQL opt-in) ─────────────────────
@@ -444,7 +458,8 @@ def main(argv: list[str] | None = None) -> int:
     artifact_writer: PromotedArtifactWriter | None = None
     if not args.no_promoted_artifacts:
         artifact_writer = PromotedArtifactWriter(
-            base_dir=args.promoted_dir, cycle_id=cycle_id,
+            base_dir=args.promoted_dir,
+            cycle_id=cycle_id,
         )
     orchestrator = ResearchOrchestrator(
         service=service,
@@ -456,7 +471,7 @@ def main(argv: list[str] | None = None) -> int:
     refinement_runner = RefinementRunner(
         orchestrator,
         config=RefinementConfig(
-            max_depth=args.max_depth,
+            max_depth=args.max_refinement_rounds,
             max_variants_per_step=args.max_variants_per_step,
             max_total_children=args.max_total_children,
         ),
@@ -488,7 +503,9 @@ def main(argv: list[str] | None = None) -> int:
     call_logger = LLMCallLogger(path=log_path, cycle_id=cycle_id)
     logger.info("LLM call log: %s", log_path)
     llm_client = LoggingLLMClient(
-        llm_client, call_logger, purpose="autonomous_cycle",
+        llm_client,
+        call_logger,
+        purpose="autonomous_cycle",
     )
     budget = _resolve_token_budget(args)
     if budget is not None:
@@ -508,9 +525,7 @@ def main(argv: list[str] | None = None) -> int:
     extra_horizons: list[int] = []
     if args.extra_horizons.strip():
         try:
-            extra_horizons = [
-                int(h) for h in args.extra_horizons.split(",") if h.strip()
-            ]
+            extra_horizons = [int(h) for h in args.extra_horizons.split(",") if h.strip()]
         except ValueError:
             logger.error("--extra-horizons must be a comma list of ints.")
             return 2
@@ -519,15 +534,14 @@ def main(argv: list[str] | None = None) -> int:
     sector_map: dict[str, str] = {}
     if args.sector_map:
         from pathlib import Path
+
         sm_path = Path(args.sector_map)
         if not sm_path.is_file():
             logger.error("--sector-map file not found: %s", sm_path)
             return 2
         sm_df = pd.read_csv(sm_path, comment="#")
         if {"symbol", "sector"} - set(sm_df.columns):
-            logger.error(
-                "--sector-map CSV must have 'symbol' and 'sector' columns."
-            )
+            logger.error("--sector-map CSV must have 'symbol' and 'sector' columns.")
             return 2
         sector_map = dict(
             zip(sm_df["symbol"].astype(str), sm_df["sector"].astype(str), strict=False)
@@ -539,7 +553,9 @@ def main(argv: list[str] | None = None) -> int:
         eval_start=ts_dates.min(),
         eval_end=ts_dates.max(),
         label=LabelDefinition(
-            forecast_horizon_bars=5, lag_bars=1, return_type="simple",
+            forecast_horizon_bars=5,
+            lag_bars=1,
+            return_type="simple",
             extra_horizons=extra_horizons,
         ),
         profile=EvaluationProfile(
@@ -575,18 +591,21 @@ def main(argv: list[str] | None = None) -> int:
         if prior_memory:
             logger.info(
                 "Memory digest: %d chars from %d prior experiments.",
-                len(prior_memory), len(recent),
+                len(prior_memory),
+                len(recent),
             )
 
     logger.info("Dispatching theme %r to HarnessAgentAdapter.", args.theme)
     try:
-        response = adapter.run_theme(ThemeCycleRequest(
-            theme=args.theme,
-            n_candidates=args.n_candidates,
-            extra_guidance=args.extra_guidance,
-            tags=["autonomous_cycle"],
-            prior_memory=prior_memory,
-        ))
+        response = adapter.run_theme(
+            ThemeCycleRequest(
+                theme=args.theme,
+                n_candidates=args.n_candidates,
+                extra_guidance=args.extra_guidance,
+                tags=["autonomous_cycle"],
+                prior_memory=prior_memory,
+            )
+        )
     except BudgetExceededError as exc:
         logger.error("Cycle halted by budget guard: %s", exc)
         print(
@@ -631,8 +650,7 @@ def _print_summary(response: ThemeCycleResponse) -> None:
             ic = f"{r.ic:.4f}" if r.ic is not None else "   n/a"
             ric = f"{r.rank_ic:.4f}" if r.rank_ic is not None else "   n/a"
             print(
-                f"    [{r.outcome.value:<8}] {r.factor_name:<32} "
-                f"ic={ic} rank_ic={ric}",
+                f"    [{r.outcome.value:<8}] {r.factor_name:<32} ic={ic} rank_ic={ric}",
             )
 
     _show("Roots", list(response.roots))
@@ -643,12 +661,14 @@ def _print_summary(response: ThemeCycleResponse) -> None:
     # downstream scripts can capture it without parsing the pretty header.
     logger.info(
         "theme_response_summary=%s",
-        json.dumps({
-            "theme": response.theme,
-            "total_cycles": response.total_cycles,
-            "proposals_accepted": response.proposals_accepted,
-            "proposals_dropped": response.proposals_dropped,
-        }),
+        json.dumps(
+            {
+                "theme": response.theme,
+                "total_cycles": response.total_cycles,
+                "proposals_accepted": response.proposals_accepted,
+                "proposals_dropped": response.proposals_dropped,
+            }
+        ),
     )
 
 

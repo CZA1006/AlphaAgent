@@ -23,6 +23,11 @@ class FactorSpec(BaseModel):
     universe_id: str = ""  # references a UniverseSpec.id
     params: dict[str, float | int | str] = Field(default_factory=dict)
     hypothesis_id: str | None = None
+    # Refinement lineage — populated when this factor was produced by a
+    # bounded mutation of another factor under ``RefinementRunner``.
+    # Root factors have ``parent_factor_id=None`` and ``refinement_round=0``.
+    parent_factor_id: str | None = None
+    refinement_round: int = 0
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(UTC),
     )

@@ -32,11 +32,15 @@ import copy
 from typing import Any
 
 from alpha_harness.factors.dsl_parser import DslParseError, parse_expression
+from alpha_harness.refiner import RefinementBrief
 
 # ── Public API ──────────────────────────────────────────────────────────────
 
 
-def propose_mutations(expression: str) -> list[tuple[str, str]]:
+def propose_mutations(
+    expression: str,
+    brief: RefinementBrief | None = None,
+) -> list[tuple[str, str]]:
     """Return an ordered, deduplicated list of ``(expression, label)`` mutations.
 
     The input may be any string; if it fails to parse as DSL, the function
@@ -46,6 +50,12 @@ def propose_mutations(expression: str) -> list[tuple[str, str]]:
     Ordering prioritises the most meaningful edits first so that callers
     who only take the first ``k`` variants still get a representative
     sample.
+
+    When a :class:`~alpha_harness.refiner.RefinementBrief` is supplied, the
+    candidate list is re-sorted (stably) by how well each template targets
+    the flagged weakness — a ``turnover_high`` brief, for example, promotes
+    ``window_double`` ahead of ``window_halve``.  Absent a brief, ordering
+    is the legacy default.
     """
     try:
         ast = parse_expression(expression)
@@ -76,7 +86,54 @@ def propose_mutations(expression: str) -> list[tuple[str, str]]:
     for new_ast, label in _wrap_cross_sectional(ast):
         _emit(new_ast, label)
 
+    if brief is not None and not brief.is_empty:
+        candidates = _prioritize(candidates, brief)
+
     return candidates
+
+
+def _prioritize(
+    candidates: list[tuple[str, str]],
+    brief: RefinementBrief,
+) -> list[tuple[str, str]]:
+    """Re-order ``candidates`` by how well each label targets the brief.
+
+    Higher score = runs first.  Python's ``sorted`` is stable so equal-
+    scored candidates preserve the legacy pre-order.
+    """
+
+    def score(item: tuple[str, str]) -> int:
+        _, label = item
+        s = 0
+        # Smoothing (window_double) helps turnover, sign-flipping, cost drag.
+        if label.startswith("window_double"):
+            if brief.turnover_high:
+                s += 3
+            if brief.sign_inconsistent:
+                s += 2
+            if brief.cost_drag_large:
+                s += 2
+        # Sharper windows usually make things worse when those flags are set.
+        if label.startswith("window_halve"):
+            if brief.turnover_high:
+                s -= 3
+            if brief.sign_inconsistent:
+                s -= 2
+            if brief.cost_drag_large:
+                s -= 1
+        # Cross-sectional wrapping is the standard lever for weak IC.
+        if label in ("wrap_rank", "wrap_zscore") and brief.weak_cross_sectional:
+            s += 3
+        # Unwrapping exposes a raw signal — rarely what you want when the
+        # cross-sectional rank is already borderline or turnover is hot.
+        if label == "unwrap_outer":
+            if brief.weak_cross_sectional:
+                s -= 2
+            if brief.turnover_high:
+                s -= 1
+        return -s  # sorted ascending; negate so higher-score comes first
+
+    return sorted(candidates, key=score)
 
 
 def render(ast: dict[str, Any]) -> str:
@@ -116,10 +173,18 @@ def render(ast: dict[str, Any]) -> str:
 # ── Internal: individual templates ──────────────────────────────────────────
 
 
-_WINDOWED_FUNCTIONS = frozenset({
-    "lag", "ts_lag",
-    "ts_mean", "ts_std", "ts_sum", "ts_min", "ts_max", "ts_delta",
-})
+_WINDOWED_FUNCTIONS = frozenset(
+    {
+        "lag",
+        "ts_lag",
+        "ts_mean",
+        "ts_std",
+        "ts_sum",
+        "ts_min",
+        "ts_max",
+        "ts_delta",
+    }
+)
 _CROSS_SECTIONAL = frozenset({"rank", "zscore"})
 
 
@@ -140,9 +205,7 @@ def _wrap_cross_sectional(
 ) -> list[tuple[dict[str, Any], str]]:
     """Wrap the expression in ``rank(...)`` and ``zscore(...)`` as appropriate."""
     out: list[tuple[dict[str, Any], str]] = []
-    current_outer = (
-        ast.get("name") if ast.get("type") == "function" else None
-    )
+    current_outer = ast.get("name") if ast.get("type") == "function" else None
     for wrapper in ("rank", "zscore"):
         if wrapper == current_outer:
             continue
@@ -168,15 +231,19 @@ def _scale_first_window(
 
     variants: list[tuple[dict[str, Any], str]] = []
     if halved != int(current):
-        variants.append((
-            _set_at_path(ast, path, float(halved)),
-            f"window_halve:{int(current)}->{halved}",
-        ))
+        variants.append(
+            (
+                _set_at_path(ast, path, float(halved)),
+                f"window_halve:{int(current)}->{halved}",
+            )
+        )
     if doubled != int(current):
-        variants.append((
-            _set_at_path(ast, path, float(doubled)),
-            f"window_double:{int(current)}->{doubled}",
-        ))
+        variants.append(
+            (
+                _set_at_path(ast, path, float(doubled)),
+                f"window_double:{int(current)}->{doubled}",
+            )
+        )
     return variants
 
 
@@ -195,11 +262,7 @@ def _find_first_window_path(
         if ntype == "function":
             name = node.get("name")
             args = node.get("args", [])
-            if (
-                name in _WINDOWED_FUNCTIONS
-                and len(args) >= 2
-                and args[1].get("type") == "number"
-            ):
+            if name in _WINDOWED_FUNCTIONS and len(args) >= 2 and args[1].get("type") == "number":
                 return (
                     [*path, "args", 1, "value"],
                     float(args[1]["value"]),

@@ -76,6 +76,9 @@ class ResearchOrchestrator:
         self,
         hypothesis: Hypothesis,
         eval_request: EvaluationRequest,
+        *,
+        parent_factor_id: str | None = None,
+        refinement_round: int = 0,
     ) -> ExperimentRecord:
         """Execute one complete research cycle.
 
@@ -119,6 +122,21 @@ class ResearchOrchestrator:
                     detail=str(exc),
                 ),
                 notes=f"Cycle failed: {exc}",
+            )
+
+        # ── 2b. Stamp refinement lineage onto the factor ───────────────
+        # Done before persistence so every downstream reader (registry,
+        # artifact writer, lineage memory) sees the same object.
+        if parent_factor_id is not None or refinement_round > 0:
+            record = record.model_copy(
+                update={
+                    "factor": record.factor.model_copy(
+                        update={
+                            "parent_factor_id": parent_factor_id,
+                            "refinement_round": refinement_round,
+                        },
+                    ),
+                },
             )
 
         # ── 3. Update hypothesis status ────────────────────────────────

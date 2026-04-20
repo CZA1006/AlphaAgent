@@ -43,6 +43,7 @@ from alpha_harness.evaluators.novelty import NoveltyEvaluator
 from alpha_harness.factors.compiler import DslCompilationError, FactorDslCompiler
 from alpha_harness.orchestrator.mutations import propose_mutations
 from alpha_harness.orchestrator.research_loop import ResearchOrchestrator
+from alpha_harness.refiner import build_brief
 from alpha_harness.schemas.evaluation import EvaluationRequest
 from alpha_harness.schemas.experiment import ExperimentDecision, ExperimentRecord
 from alpha_harness.schemas.factor import FactorSpec
@@ -123,9 +124,7 @@ class RefinementRunner:
         Always runs the root cycle first so the caller gets at least one
         record back, even when no refinement is warranted.
         """
-        root_record = self._orchestrator.run_cycle(
-            root_hypothesis, eval_request
-        )
+        root_record = self._orchestrator.run_cycle(root_hypothesis, eval_request)
         result = RefinementResult(root=root_record)
 
         if root_record.decision != ExperimentDecision.REFINE:
@@ -159,9 +158,22 @@ class RefinementRunner:
         if len(result.children) >= cfg.max_total_children:
             return
 
-        mutations = propose_mutations(parent_record.factor.expression)
+        # Build a diagnostic brief from the parent record so mutation
+        # ordering targets the specific weakness that earned REFINE.  The
+        # brief is advisory only — it reorders, never filters.
+        brief = build_brief(parent_record, eval_request.profile)
+        mutations = propose_mutations(
+            parent_record.factor.expression,
+            brief=brief,
+        )
         if not mutations:
             return
+        if not brief.is_empty:
+            logger.info(
+                "Refinement brief for %s: %s",
+                parent_record.factor.id,
+                brief.describe(),
+            )
 
         sibling_expressions: list[str] = []
         children_this_level = 0
@@ -176,6 +188,8 @@ class RefinementRunner:
                 expression=expression,
                 label=label,
                 parent_hypothesis=parent_hypothesis,
+                parent_factor_id=parent_record.factor.id,
+                refinement_round=depth + 1,
                 root_expression=root_expression,
                 sibling_expressions=sibling_expressions,
                 eval_request=eval_request,
@@ -205,6 +219,8 @@ class RefinementRunner:
         expression: str,
         label: str,
         parent_hypothesis: Hypothesis,
+        parent_factor_id: str,
+        refinement_round: int,
         root_expression: str,
         sibling_expressions: list[str],
         eval_request: EvaluationRequest,
@@ -227,14 +243,10 @@ class RefinementRunner:
         # 3. Build the child hypothesis with proper lineage + tags.
         child = Hypothesis(
             text=expression,
-            rationale=(
-                f"Refined from {parent_hypothesis.id} via {label}"
-            ),
+            rationale=(f"Refined from {parent_hypothesis.id} via {label}"),
             source=parent_hypothesis.source or "refinement",
             asset_class=parent_hypothesis.asset_class,
-            tags=list(
-                dict.fromkeys([*parent_hypothesis.tags, self._config.refine_tag])
-            ),
+            tags=list(dict.fromkeys([*parent_hypothesis.tags, self._config.refine_tag])),
             parent_id=parent_hypothesis.id,
         )
 
@@ -244,7 +256,12 @@ class RefinementRunner:
             label,
             parent_hypothesis.id,
         )
-        return self._orchestrator.run_cycle(child, eval_request)
+        return self._orchestrator.run_cycle(
+            child,
+            eval_request,
+            parent_factor_id=parent_factor_id,
+            refinement_round=refinement_round,
+        )
 
     def _is_novel(
         self,
@@ -274,10 +291,7 @@ class RefinementRunner:
 
         # 2. Strict refinement-scoped check vs. root + siblings.
         comparisons: list[tuple[str, str]] = [("__root__", root_expression)]
-        comparisons.extend(
-            (f"__sibling_{i}__", expr)
-            for i, expr in enumerate(sibling_expressions)
-        )
+        comparisons.extend((f"__sibling_{i}__", expr) for i, expr in enumerate(sibling_expressions))
         evaluator = NoveltyEvaluator(
             existing_expressions=comparisons,
             similarity_threshold=self._config.novelty_threshold,
