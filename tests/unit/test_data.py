@@ -570,6 +570,15 @@ class TestLoaderFactory:
         loader = create_equities_loader("local", base_path="/tmp/test")
         assert isinstance(loader, LocalEquitiesLoader)
 
+    def test_create_parquet_is_alias_for_local(self) -> None:
+        """The CLI / env var spell it ``parquet``; the factory must accept
+        both spellings so ``--data-source parquet`` doesn't crash."""
+        from alpha_harness.data.equities_loader import LocalEquitiesLoader
+        from alpha_harness.data.loader_factory import create_equities_loader
+
+        loader = create_equities_loader("parquet", base_path="/tmp/test")
+        assert isinstance(loader, LocalEquitiesLoader)
+
     def test_create_local_crypto(self) -> None:
         from alpha_harness.data.crypto_loader import LocalCryptoLoader
         from alpha_harness.data.loader_factory import create_crypto_loader

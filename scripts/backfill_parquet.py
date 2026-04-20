@@ -61,9 +61,21 @@ logger = logging.getLogger("alpha_harness.backfill")
 
 DEFAULT_UNIVERSE = Path("configs/universes/sp50.txt")
 DEFAULT_OUTPUT = Path("data/silver/equities")
-DEFAULT_START = date(2023, 1, 1)
+
+# Polygon's free tier serves roughly the last 2 years of aggregates and
+# caps responses at 500 rows, so asking for 3+ years silently truncates.
+# Default to a 2-year rolling window instead of a fixed start date; this
+# is what free-tier users will actually receive.
+DEFAULT_START_LOOKBACK = timedelta(days=365 * 2)
+
 # Default end is "yesterday" — Polygon does not always serve same-day bars.
 DEFAULT_END_OFFSET = timedelta(days=1)
+
+# Cache-check slack on the end side: Polygon's own bar-latency plus
+# weekends means a freshly-backfilled file will commonly trail the
+# requested end by a few days.  Treat that as a hit so day-over-day
+# reruns don't refetch the universe.
+CACHE_END_SLACK_DAYS = 7
 
 
 # ── Universe parsing ────────────────────────────────────────────────────────
@@ -118,7 +130,10 @@ def _parquet_covers_range(path: Path, start: date, end: date) -> bool:
     ts = pd.to_datetime(df["timestamp"], utc=True)
     file_start = ts.min().date()
     file_end = ts.max().date()
-    return file_start <= start and file_end >= end
+    # Allow a small tail gap on the end side — Polygon's bar-latency and
+    # weekends routinely leave the cache a few days behind "yesterday".
+    effective_end = end - timedelta(days=CACHE_END_SLACK_DAYS)
+    return file_start <= start and file_end >= effective_end
 
 
 def select_missing(
@@ -239,8 +254,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--start-date",
         type=_parse_date,
-        default=DEFAULT_START,
-        help="Start date YYYY-MM-DD (default: 2023-01-01).",
+        default=None,
+        help=(
+            "Start date YYYY-MM-DD.  Default: ~2 years before today "
+            "(matches Polygon free-tier coverage; asking for more will "
+            "silently truncate)."
+        ),
     )
     parser.add_argument(
         "--end-date",
@@ -268,7 +287,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     end = args.end_date or (date.today() - DEFAULT_END_OFFSET)
-    start = args.start_date
+    start = args.start_date or (date.today() - DEFAULT_START_LOOKBACK)
     if end <= start:
         logger.error("end-date (%s) must be after start-date (%s)", end, start)
         return 1

@@ -57,6 +57,13 @@ logger = logging.getLogger(__name__)
 
 _POLYGON_BASE_URL = "https://api.polygon.io"
 
+# Polygon's free tier caps each aggregates response at exactly this many
+# rows and does not issue a ``next_url``, so pagination cannot recover
+# the earlier bars in a requested window.  When we see this exact count
+# we log a warning pointing the user at the paid tier or a narrower range.
+_FREE_TIER_ROW_CAP = 5000
+_FREE_TIER_SUSPICIOUS_COUNT = 500
+
 # Map our BarFrequency to Polygon's multiplier/timespan pair
 _FREQUENCY_MAP: dict[BarFrequency, tuple[int, str]] = {
     BarFrequency.DAILY: (1, "day"),
@@ -232,6 +239,25 @@ class PolygonEquitiesLoader:
                 params = {"apiKey": self._api_key}
             else:
                 url = ""  # exit loop
+
+        # Heuristic: Polygon's free tier silently truncates to 500 rows with
+        # no ``next_url``, so a user asking for "2023-01-01 → today" gets
+        # only the most recent ~2 years.  Warn loudly the first time we see
+        # this so the operator knows the data is a window, not the full
+        # requested range.
+        if len(all_rows) == _FREE_TIER_SUSPICIOUS_COUNT:
+            first_ts = all_rows[0]["timestamp"]
+            last_ts = all_rows[-1]["timestamp"]
+            logger.warning(
+                "Polygon returned exactly %d rows for %s — likely the free-tier "
+                "response cap.  The window stored is [%s..%s], not the full "
+                "requested range.  Upgrade the Polygon plan or narrow --start-date "
+                "to silence this warning.",
+                _FREE_TIER_SUSPICIOUS_COUNT,
+                symbol,
+                first_ts.date() if isinstance(first_ts, datetime) else first_ts,
+                last_ts.date() if isinstance(last_ts, datetime) else last_ts,
+            )
 
         return pd.DataFrame(all_rows)
 

@@ -100,6 +100,39 @@ def test_select_missing_skips_fully_cached(tmp_path: Path) -> None:
     assert missing == ["MSFT", "NVDA"]
 
 
+def test_select_missing_tolerates_small_end_gap(tmp_path: Path) -> None:
+    """File ends a few days before the requested end — still a hit.
+
+    Pins the slack behavior: Polygon's own bar-latency routinely leaves
+    the cache 1 to 4 days behind 'yesterday'. Without slack, day-over-day
+    reruns refetch the entire universe.
+    """
+    _write_parquet(
+        tmp_path / "AAPL.parquet",
+        date(2023, 1, 1),
+        date(2024, 5, 28),   # 4 days short of requested end
+    )
+    missing = select_missing(
+        ["AAPL"], output_dir=tmp_path,
+        start=date(2023, 6, 1), end=date(2024, 6, 1),
+    )
+    assert missing == []
+
+
+def test_select_missing_rejects_large_end_gap(tmp_path: Path) -> None:
+    """Same file, but now the gap exceeds the slack → refetch."""
+    _write_parquet(
+        tmp_path / "AAPL.parquet",
+        date(2023, 1, 1),
+        date(2024, 5, 1),    # 31 days short — well past the 7-day slack
+    )
+    missing = select_missing(
+        ["AAPL"], output_dir=tmp_path,
+        start=date(2023, 6, 1), end=date(2024, 6, 1),
+    )
+    assert missing == ["AAPL"]
+
+
 def test_select_missing_handles_corrupt_file(tmp_path: Path) -> None:
     bad = tmp_path / "BAD.parquet"
     bad.write_bytes(b"not a parquet file")

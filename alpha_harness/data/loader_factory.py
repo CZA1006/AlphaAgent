@@ -41,7 +41,10 @@ def create_equities_loader(
     ValueError:
         If ``source`` is not a recognised loader name.
     """
-    if source == "local":
+    # "parquet" is the user-facing name (matches the CLI flag and the
+    # ALPHA_AGENT_DATA_SOURCE env var); "local" is kept as a historical
+    # alias.  Both route to the same Parquet-backed loader.
+    if source in ("local", "parquet"):
         return LocalEquitiesLoader(base_path=base_path)
 
     if source == "polygon":
@@ -49,7 +52,11 @@ def create_equities_loader(
 
         return PolygonEquitiesLoader(api_key=api_key)
 
-    msg = f"Unknown equities source: {source!r}. Use 'local' or 'polygon'."
+    msg = (
+        f"Unknown equities source: {source!r}. "
+        "Use 'parquet' (or 'local') for the local Parquet store, "
+        "or 'polygon' for live API calls."
+    )
     raise ValueError(msg)
 
 

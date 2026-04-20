@@ -181,12 +181,21 @@ Tips:
 - **Free-tier pacing.** Polygon limits you to ~5 rpm. 50 symbols ≈ 10
   minutes — leave the terminal alone; the rate limiter will sleep as
   needed.  Tune via `POLYGON_RPM` if you have a paid plan.
-- **History window.** Free-tier aggregates are restricted to roughly
-  the last 2 years; the default `--start-date 2023-01-01` stays inside
-  that window.
-- **Refresh.** To pull fresher data later, either move the end date
-  forward (the cache check requires the file to cover the *new* window,
-  which forces a refetch) or pass `--force` to unconditionally rewrite.
+- **Free-tier row cap — important.** Polygon's free tier silently
+  truncates each aggregates response at exactly **500 rows** and does
+  not issue a pagination token, so a paid-tier-style "2023-01-01 →
+  today" request actually returns roughly the most recent 2 years per
+  symbol.  The backfill default now matches this (`--start-date =
+  today − 2 years`) and the Polygon loader logs a warning the first
+  time it sees a suspicious 500-row response.  Paid plans lift the cap
+  — set `--start-date` further back as soon as you upgrade.
+- **Idempotency on reruns.** The cache predicate allows a 7-day slack
+  on the end side (Polygon bar-latency + weekends), so running
+  `make backfill-sp50` the next day does not refetch the whole
+  universe.  Gaps longer than a week still trigger a refetch.
+- **Force-refresh.** Pass `--force` to unconditionally rewrite every
+  file, or move the start date further back to explicitly request
+  older data.
 
 ### 3.6 Passing extra flags
 
