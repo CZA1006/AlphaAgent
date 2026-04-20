@@ -197,7 +197,11 @@ def _check_parquet_path() -> CheckResult:
             name=f"Local Parquet store present at {path}",
             passed=False,
             required=False,
-            detail="directory exists but is empty; run `uv run python -m scripts.sample_ingest`",
+            detail=(
+                "directory exists but is empty; run `make backfill-sp50` for the "
+                "Round 4 research universe, or `uv run python -m scripts.sample_ingest` "
+                "for a tiny synthetic slice"
+            ),
         )
     return CheckResult(
         name=f"Local Parquet store present at {path}",

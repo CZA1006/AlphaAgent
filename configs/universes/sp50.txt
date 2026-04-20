@@ -1,0 +1,72 @@
+# AlphaAgent — "SP50" research universe
+# ---------------------------------------
+# 50 large-cap US equities with deep liquidity and long continuous history,
+# chosen for Round 4 research cycles on Polygon.io free-tier data.
+#
+# Format: one ticker per line.  Blank lines and '#' comments are ignored.
+# Edit freely — the backfill script reads this file at invocation time.
+#
+# Coverage rationale (not a performance benchmark — just a usable slice):
+#   * all eleven GICS sectors represented
+#   * no recent IPOs (every symbol has ≥ 5 years of daily bars)
+#   * no tickers with known survivorship-bias pitfalls for this window
+
+# Tech / communications
+AAPL
+MSFT
+NVDA
+GOOGL
+META
+AMZN
+NFLX
+ADBE
+CRM
+ORCL
+AVGO
+CSCO
+INTC
+QCOM
+TXN
+
+# Consumer discretionary / staples
+TSLA
+HD
+NKE
+MCD
+SBUX
+LOW
+COST
+WMT
+PG
+KO
+PEP
+PM
+
+# Financials
+JPM
+BAC
+WFC
+GS
+MS
+C
+AXP
+BLK
+
+# Health care
+JNJ
+LLY
+PFE
+UNH
+MRK
+ABBV
+TMO
+
+# Industrials / energy / materials / utilities / real estate
+CAT
+BA
+HON
+XOM
+CVX
+NEE
+LIN
+AMT

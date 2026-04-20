@@ -2,7 +2,8 @@
        db-up db-down db-status db-bootstrap db-reset check clean \
        doctor doctor-mock doctor-real doctor-sql \
        run-mock run-real run-real-data run-real-sql \
-       autonomous-mock autonomous-real
+       autonomous-mock autonomous-real \
+       backfill-sp50 backfill
 
 # ── Local env auto-load ──────────────────────────────────────────────────────
 # When `.env` exists, export every variable it declares so the targets below
@@ -131,6 +132,21 @@ autonomous-mock:
 autonomous-real:
 	@test -n "$$OPENROUTER_API_KEY" || { echo "error: OPENROUTER_API_KEY is empty." >&2; exit 2; }
 	uv run python -m scripts.autonomous_cycle $(ARGS)
+
+# ── Parquet backfill (Round 4A.2) ────────────────────────────────────────────
+# One-time population of data/silver/equities from Polygon.  Idempotent —
+# subsequent runs skip symbols whose Parquet file already covers the window.
+# Honours POLYGON_RPM; expect roughly (n_symbols / rpm) minutes on free tier.
+backfill-sp50:
+	@test -n "$$POLYGON_API_KEY" || { echo "error: POLYGON_API_KEY is empty." >&2; exit 2; }
+	uv run python -m scripts.backfill_parquet \
+		--universe configs/universes/sp50.txt \
+		$(ARGS)
+
+# Generic backfill: pass `ARGS="--universe ... --start-date ..."` to override.
+backfill:
+	@test -n "$$POLYGON_API_KEY" || { echo "error: POLYGON_API_KEY is empty." >&2; exit 2; }
+	uv run python -m scripts.backfill_parquet $(ARGS)
 
 # ── Cleanup ──────────────────────────────────────────────────────────────────
 

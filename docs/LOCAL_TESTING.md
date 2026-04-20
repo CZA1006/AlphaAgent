@@ -143,7 +143,52 @@ Postgres instead of in-memory dicts.  Inspect them with any psql client:
 docker compose exec postgres psql -U alphaagent -c "SELECT id, decision FROM experiments ORDER BY created_at DESC LIMIT 5;"
 ```
 
-### 3.5 Passing extra flags
+### 3.5 Real research universe — one-time Parquet backfill
+
+```bash
+make doctor-real                  # need POLYGON_API_KEY
+make backfill-sp50                # ~10 minutes on free-tier (5 rpm × 50 names)
+```
+
+Populates `data/silver/equities/{symbol}.parquet` for the 50 tickers in
+`configs/universes/sp50.txt`.  After the first successful run, every
+`--data-source parquet` cycle reads locally and no longer hits Polygon:
+
+```bash
+make run-real ARGS="--data-source parquet --symbols AAPL,MSFT,NVDA --start-date 2024-01-01 --end-date 2024-06-30"
+make autonomous-real ARGS="--data-source parquet --n-candidates 3"
+```
+
+The backfill is **idempotent and resumable** — each symbol whose file
+already covers the requested window is skipped with a ``cache-hit`` log
+line.  Re-running `make backfill-sp50` after an interruption (Ctrl-C,
+network blip, sleep) picks up where it left off.
+
+Customising the universe:
+
+```bash
+# A narrower slice (one-off)
+make backfill ARGS="--universe configs/universes/sp50.txt --start-date 2024-01-01 --end-date 2024-06-30"
+
+# Your own list
+cp configs/universes/sp50.txt configs/universes/my_watchlist.txt
+$EDITOR configs/universes/my_watchlist.txt
+make backfill ARGS="--universe configs/universes/my_watchlist.txt"
+```
+
+Tips:
+
+- **Free-tier pacing.** Polygon limits you to ~5 rpm. 50 symbols ≈ 10
+  minutes — leave the terminal alone; the rate limiter will sleep as
+  needed.  Tune via `POLYGON_RPM` if you have a paid plan.
+- **History window.** Free-tier aggregates are restricted to roughly
+  the last 2 years; the default `--start-date 2023-01-01` stays inside
+  that window.
+- **Refresh.** To pull fresher data later, either move the end date
+  forward (the cache check requires the file to cover the *new* window,
+  which forces a refetch) or pass `--force` to unconditionally rewrite.
+
+### 3.6 Passing extra flags
 
 Every `run-*` and `autonomous-*` target honours the `ARGS` variable:
 
