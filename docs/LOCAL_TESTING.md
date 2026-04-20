@@ -303,7 +303,36 @@ tail -n +1 artifacts/llm_calls/*.jsonl | jq '.response.total_tokens'
 3. Returns the final 429 to the caller once retries are exhausted, so
    `raise_for_status()` surfaces a normal error.
 
-### 5.4 What's deliberately deferred to later Round 4 phases
+### 5.4 Round 4A.3 evaluator richness (sector/beta/horizons/cost)
+
+`scripts/autonomous_cycle.py` now exposes four evaluator knobs.  All are
+optional — omitting them preserves the prior single-horizon, no-neutralize
+behaviour.
+
+```bash
+uv run python -m scripts.autonomous_cycle \
+  --mock-llm \
+  --data-source parquet --symbols AAPL,MSFT,JPM,XOM \
+  --neutralize sector \
+  --sector-map configs/universes/sp50_sectors.csv \
+  --extra-horizons 1,20 \
+  --cost-bps 5.0
+```
+
+- `--neutralize {none,sector,beta,both}` — cross-sectional residualization
+  applied to forward returns.  `sector` subtracts the per-date sector mean;
+  `beta` subtracts `beta_i * universe_mean[t]` using in-sample beta.
+- `--sector-map PATH` — required for `sector` / `both`.  A
+  `{symbol,sector}` CSV; `configs/universes/sp50_sectors.csv` ships for the
+  default universe.  Unmapped symbols land in `UNKNOWN`.
+- `--extra-horizons 1,20` — additionally evaluate at 1- and 20-bar forward
+  returns.  Results land in `metadata.ic_by_horizon`; the judge rejects
+  factors whose IC sign agrees with the primary horizon in fewer than two
+  of the evaluated horizons.
+- `--cost-bps 5.0` — round-trip bps applied to `turnover` to produce
+  `net_quantile_spread = quantile_spread - (cost_bps/10000) * turnover`.
+
+### 5.5 What's deliberately deferred to later Round 4 phases
 
 - **Cloud / remote deployment.** Everything here assumes local dev.
 - **Cross-cycle budget accumulation / dashboards.** Budgets are

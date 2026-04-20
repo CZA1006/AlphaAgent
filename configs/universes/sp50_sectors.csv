@@ -1,0 +1,55 @@
+symbol,sector
+# Hand-curated GICS-ish sector tags for the sp50.txt universe.
+# Used by evaluator --neutralize {sector,both} to demean forward returns
+# per (date, sector) bucket.  Symbols not in this file fall through to
+# "UNKNOWN" at evaluation time.
+AAPL,Technology
+MSFT,Technology
+NVDA,Technology
+GOOGL,Communication
+META,Communication
+AMZN,ConsumerDiscretionary
+NFLX,Communication
+ADBE,Technology
+CRM,Technology
+ORCL,Technology
+AVGO,Technology
+CSCO,Technology
+INTC,Technology
+QCOM,Technology
+TXN,Technology
+TSLA,ConsumerDiscretionary
+HD,ConsumerDiscretionary
+NKE,ConsumerDiscretionary
+MCD,ConsumerDiscretionary
+SBUX,ConsumerDiscretionary
+LOW,ConsumerDiscretionary
+COST,ConsumerStaples
+WMT,ConsumerStaples
+PG,ConsumerStaples
+KO,ConsumerStaples
+PEP,ConsumerStaples
+PM,ConsumerStaples
+JPM,Financials
+BAC,Financials
+WFC,Financials
+GS,Financials
+MS,Financials
+C,Financials
+AXP,Financials
+BLK,Financials
+JNJ,HealthCare
+LLY,HealthCare
+PFE,HealthCare
+UNH,HealthCare
+MRK,HealthCare
+ABBV,HealthCare
+TMO,HealthCare
+CAT,Industrials
+BA,Industrials
+HON,Industrials
+XOM,Energy
+CVX,Energy
+NEE,Utilities
+LIN,Materials
+AMT,RealEstate

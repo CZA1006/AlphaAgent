@@ -81,6 +81,15 @@ class PromotionJudge:
                 notes="Signal quality below required thresholds.",
             )
 
+        # ── 2b. Multi-horizon sign consistency ─────────────────────────
+        failure = self._check_sign_consistency(evaluation)
+        if failure is not None:
+            return JudgmentDetail(
+                decision=ExperimentDecision.REJECT,
+                failure=failure,
+                notes="IC sign flipped across forecast horizons.",
+            )
+
         # ── 3. Novelty ────────────────────────────────────────────────
         verdict = self._novelty.check_novelty(factor)
         if not verdict.is_novel:
@@ -155,6 +164,32 @@ class PromotionJudge:
                         f"< threshold={threshold:.4f}"
                     ),
                 )
+        return None
+
+    def _check_sign_consistency(
+        self, evaluation: EvaluationBundle
+    ) -> FailureRecord | None:
+        """Reject multi-horizon evaluations whose IC sign isn't robust.
+
+        When the evaluator computed IC across multiple horizons (indicated
+        by ``metadata["ic_by_horizon"]``), require at least two horizons to
+        share the sign of the primary horizon's IC.  Absent that metadata,
+        this check is a no-op — single-horizon behaviour is unchanged.
+        """
+        horizons = evaluation.metadata.get("ic_by_horizon")
+        if not isinstance(horizons, dict) or len(horizons) < 2:
+            return None
+        same_sign = evaluation.metadata.get("ic_sign_consistent_horizons")
+        if not isinstance(same_sign, int):
+            return None
+        if same_sign < 2:
+            return FailureRecord(
+                category=FailureCategory.WEAK_SIGNAL,
+                detail=(
+                    f"ic_sign_consistent_horizons={same_sign} "
+                    f"across {len(horizons)} horizons (need >= 2)."
+                ),
+            )
         return None
 
     def _is_borderline(

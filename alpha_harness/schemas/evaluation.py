@@ -19,6 +19,23 @@ class MetricName(StrEnum):
     MONOTONICITY = "monotonicity"
     TURNOVER = "turnover"
     SHARPE = "sharpe"
+    NET_QUANTILE_SPREAD = "net_quantile_spread"
+
+
+class NeutralizeMode(StrEnum):
+    """Cross-sectional neutralization applied to forward returns.
+
+    ``NONE``    — raw returns (backwards-compatible default).
+    ``SECTOR``  — subtract the per-date sector mean return.
+    ``BETA``    — subtract ``beta * universe_mean_return`` (in-sample beta
+                  estimated on the eval window; documented limitation).
+    ``BOTH``    — sector de-meaning, then beta neutralization on the residual.
+    """
+
+    NONE = "none"
+    SECTOR = "sector"
+    BETA = "beta"
+    BOTH = "both"
 
 
 class EvaluationProfile(BaseModel):
@@ -58,6 +75,13 @@ class LabelDefinition(BaseModel):
     lag_bars: int = 1                     # gap between signal and label start
     return_type: str = "simple"           # "simple" or "log"
 
+    # Optional auxiliary horizons for sign-consistency checks.  When set,
+    # the evaluator additionally computes IC / rank-IC at each horizon and
+    # stores them under ``metadata["ic_by_horizon"]``.  The *primary* metrics
+    # (``ic``, ``rank_ic``, ``quantile_spread``) always use
+    # ``forecast_horizon_bars`` — keeping single-horizon behaviour intact.
+    extra_horizons: list[int] = Field(default_factory=list)
+
 
 class EvaluationRequest(BaseModel):
     """All inputs required to run a deterministic factor evaluation.
@@ -85,6 +109,20 @@ class EvaluationRequest(BaseModel):
     # Evaluation strictness
     profile: EvaluationProfile = Field(default_factory=EvaluationProfile)
 
+    # Cross-sectional neutralization applied to forward returns.  Default
+    # ``NONE`` preserves legacy behaviour for every existing caller.
+    neutralize: NeutralizeMode = NeutralizeMode.NONE
+
+    # Optional ``{symbol: sector}`` map.  Only used when ``neutralize`` is
+    # ``SECTOR`` or ``BOTH``.  Symbols not present fall back to a single
+    # ``"UNKNOWN"`` bucket (i.e. no effective sector neutralization).
+    sector_map: dict[str, str] = Field(default_factory=dict)
+
+    # Round-trip trading cost in basis points, applied to the quantile-spread
+    # portfolio via turnover.  ``0.0`` (default) disables the cost adjustment,
+    # so ``net_quantile_spread`` equals ``quantile_spread``.
+    cost_bps: float = 0.0
+
 
 # ── Evaluation output ────────────────────────────────────────────────────────
 
@@ -103,13 +141,19 @@ class EvaluationBundle(BaseModel):
     turnover: float | None = None
     sharpe: float | None = None
 
+    # Quantile spread adjusted for round-trip trading cost.  Equals
+    # ``quantile_spread`` when ``cost_bps`` is zero.
+    net_quantile_spread: float | None = None
+
     n_periods: int | None = None
     n_assets: int | None = None
     eval_start: date | None = None
     eval_end: date | None = None
     forecast_horizon_bars: int | None = None
 
-    metadata: dict[str, str | float | int | bool] = Field(default_factory=dict)
+    metadata: dict[
+        str, str | float | int | bool | dict[str, float] | list[float]
+    ] = Field(default_factory=dict)
     computed_at: datetime = Field(
         default_factory=lambda: datetime.now(UTC),
     )

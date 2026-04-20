@@ -68,6 +68,7 @@ from alpha_harness.schemas.evaluation import (
     EvaluationProfile,
     EvaluationRequest,
     LabelDefinition,
+    NeutralizeMode,
 )
 from alpha_harness.service import AlphaHarnessService
 
@@ -190,6 +191,45 @@ def _build_parser() -> argparse.ArgumentParser:
         type=int,
         default=3,
         help="Minimum assets for data sufficiency (default: 3).",
+    )
+
+    # Evaluator richness (Round 4A.3)
+    p.add_argument(
+        "--neutralize",
+        choices=[m.value for m in NeutralizeMode],
+        default=NeutralizeMode.NONE.value,
+        help=(
+            "Cross-sectional neutralization applied to forward returns. "
+            "'sector' demeans by (date, sector); 'beta' subtracts "
+            "beta*universe_mean; 'both' stacks them.  Default: none."
+        ),
+    )
+    p.add_argument(
+        "--sector-map",
+        default=None,
+        help=(
+            "Path to a {symbol,sector} CSV (e.g. "
+            "configs/universes/sp50_sectors.csv).  Required for "
+            "--neutralize {sector,both}."
+        ),
+    )
+    p.add_argument(
+        "--cost-bps",
+        type=float,
+        default=0.0,
+        help=(
+            "Round-trip trading cost in basis points applied via turnover "
+            "to produce net_quantile_spread.  Default: 0."
+        ),
+    )
+    p.add_argument(
+        "--extra-horizons",
+        default="",
+        help=(
+            "Comma-separated extra forward horizons (bars) to evaluate "
+            "alongside the primary 5-bar horizon, e.g. '1,20'.  When set, "
+            "the judge also enforces IC-sign consistency across horizons."
+        ),
     )
 
     # Refinement budgets
@@ -416,6 +456,36 @@ def main(argv: list[str] | None = None) -> int:
 
     # ── 6. Evaluation request ─────────────────────────────────────────────
     ts_dates = pd.to_datetime(price_data["timestamp"]).dt.date
+
+    # Extra forecast horizons for sign-consistency checks.
+    extra_horizons: list[int] = []
+    if args.extra_horizons.strip():
+        try:
+            extra_horizons = [
+                int(h) for h in args.extra_horizons.split(",") if h.strip()
+            ]
+        except ValueError:
+            logger.error("--extra-horizons must be a comma list of ints.")
+            return 2
+
+    # Sector map (only meaningful when --neutralize uses sector info).
+    sector_map: dict[str, str] = {}
+    if args.sector_map:
+        from pathlib import Path
+        sm_path = Path(args.sector_map)
+        if not sm_path.is_file():
+            logger.error("--sector-map file not found: %s", sm_path)
+            return 2
+        sm_df = pd.read_csv(sm_path, comment="#")
+        if {"symbol", "sector"} - set(sm_df.columns):
+            logger.error(
+                "--sector-map CSV must have 'symbol' and 'sector' columns."
+            )
+            return 2
+        sector_map = dict(
+            zip(sm_df["symbol"].astype(str), sm_df["sector"].astype(str), strict=False)
+        )
+
     eval_request = EvaluationRequest(
         factor_id="pending",
         universe_id=f"{args.data_source}_us_equity",
@@ -423,6 +493,7 @@ def main(argv: list[str] | None = None) -> int:
         eval_end=ts_dates.max(),
         label=LabelDefinition(
             forecast_horizon_bars=5, lag_bars=1, return_type="simple",
+            extra_horizons=extra_horizons,
         ),
         profile=EvaluationProfile(
             thresholds={
@@ -434,6 +505,9 @@ def main(argv: list[str] | None = None) -> int:
             min_assets=args.min_assets,
             n_quantiles=5,
         ),
+        neutralize=NeutralizeMode(args.neutralize),
+        sector_map=sector_map,
+        cost_bps=args.cost_bps,
     )
 
     # ── 7. Adapter.run_theme ──────────────────────────────────────────────
