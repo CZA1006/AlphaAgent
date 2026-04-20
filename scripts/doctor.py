@@ -180,6 +180,61 @@ def _check_llm_log_dir() -> CheckResult:
     )
 
 
+def _check_promoted_artifacts_dir() -> CheckResult:
+    """Verify the promoted-artifacts directory is writable and (if present)
+    has a well-formed index."""
+    from alpha_harness.artifacts import PROMOTED_INDEX_NAME, read_index
+
+    path = "artifacts/promoted"
+    try:
+        os.makedirs(path, exist_ok=True)
+    except OSError as exc:
+        return CheckResult(
+            name=f"Promoted-artifacts dir writable at {path}",
+            passed=False,
+            required=False,
+            detail=f"{type(exc).__name__}: {exc}",
+        )
+
+    probe = os.path.join(path, ".doctor_probe")
+    try:
+        with open(probe, "w", encoding="utf-8") as fh:
+            fh.write("")
+        os.remove(probe)
+    except OSError as exc:
+        return CheckResult(
+            name=f"Promoted-artifacts dir writable at {path}",
+            passed=False,
+            required=False,
+            detail=f"cannot write: {type(exc).__name__}: {exc}",
+        )
+
+    index_file = os.path.join(path, PROMOTED_INDEX_NAME)
+    if os.path.isfile(index_file):
+        try:
+            entries = read_index(path)
+        except OSError as exc:
+            return CheckResult(
+                name=f"Promoted-artifacts dir writable at {path}",
+                passed=False,
+                required=False,
+                detail=f"index unreadable: {exc}",
+            )
+        return CheckResult(
+            name=f"Promoted-artifacts dir writable at {path}",
+            passed=True,
+            required=False,
+            detail=f"{len(entries)} promoted factor(s) indexed",
+        )
+
+    return CheckResult(
+        name=f"Promoted-artifacts dir writable at {path}",
+        passed=True,
+        required=False,
+        detail="directory ready; no promotions recorded yet",
+    )
+
+
 def _check_parquet_path() -> CheckResult:
     """Look for a populated local Parquet store under data/silver/equities."""
     path = "data/silver/equities"
@@ -229,6 +284,7 @@ def run(mode: Mode) -> int:
                         hint="default 'memory' will be used",
                     ),
                     _check_parquet_path(),
+                    _check_promoted_artifacts_dir(),
                 ],
             ),
         )

@@ -361,7 +361,36 @@ Notes
   enriched prompt; verification via real LLM or by inspecting the
   `jsonl` call log.
 
-### 5.6 What's deliberately deferred to later Round 4 phases
+### 5.6 Round 4A.5 promotion artifacts + factor zoo
+
+Every PROMOTE_CANDIDATE decision now mirrors to disk:
+
+- `artifacts/promoted/{factor_id}.json` — full factor record (expression,
+  operator tree, evaluation bundle with IC by horizon / turnover / net
+  spread / neutralize mode, hypothesis lineage, git SHA, cycle id).
+  Atomic write via `os.replace`.
+- `artifacts/promoted/_index.jsonl` — append-only one-line-per-factor
+  index; re-promoting the same `factor_id` overwrites the row rather
+  than duplicating it.
+
+List the zoo:
+
+```bash
+uv run python -m scripts.list_factors
+uv run python -m scripts.list_factors --sort-by rank_ic --limit 10
+uv run python -m scripts.list_factors --since 2026-01-01 --json
+```
+
+Flags on `autonomous_cycle.py`:
+
+- `--promoted-dir PATH` — override the output directory.
+- `--no-promoted-artifacts` — skip disk writes even on promotion (for
+  ephemeral CI runs).
+
+`make doctor` now also probes the promoted-artifacts dir for writability
+and reports the current index size.
+
+### 5.7 What's deliberately deferred to later Round 4 phases
 
 - **Cloud / remote deployment.** Everything here assumes local dev.
 - **Cross-cycle budget accumulation / dashboards.** Budgets are

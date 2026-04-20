@@ -39,8 +39,9 @@ data/gold/
 *.duckdb
 *.duckdb.wal
 
-# Artifacts — generated outputs
-artifacts/
+# Artifacts — generated outputs (root-level dir only; keep
+# `alpha_harness/artifacts/` module code tracked).
+/artifacts/
 
 # OS
 .DS_Store

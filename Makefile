@@ -148,6 +148,11 @@ backfill:
 	@test -n "$$POLYGON_API_KEY" || { echo "error: POLYGON_API_KEY is empty." >&2; exit 2; }
 	uv run python -m scripts.backfill_parquet $(ARGS)
 
+# ── Factor zoo ───────────────────────────────────────────────────────────────
+
+list-factors:
+	uv run python -m scripts.list_factors $(ARGS)
+
 # ── Cleanup ──────────────────────────────────────────────────────────────────
 
 clean:

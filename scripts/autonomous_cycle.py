@@ -38,6 +38,7 @@ from datetime import date
 
 import pandas as pd
 
+from alpha_harness.artifacts import DEFAULT_PROMOTED_DIR, PromotedArtifactWriter
 from alpha_harness.config import BackendConfig
 from alpha_harness.data.synthetic import generate_price_panel
 from alpha_harness.evaluators.promotion_judge import PromotionJudge
@@ -236,6 +237,21 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
 
+    # Promotion artifacts (Round 4A.5)
+    p.add_argument(
+        "--promoted-dir",
+        default=str(DEFAULT_PROMOTED_DIR),
+        help=(
+            f"Directory for per-promotion JSON artifacts + index "
+            f"(default: {DEFAULT_PROMOTED_DIR})."
+        ),
+    )
+    p.add_argument(
+        "--no-promoted-artifacts",
+        action="store_true",
+        help="Skip writing promotion artifacts even when a factor is promoted.",
+    )
+
     # Memory (Round 4A.4)
     p.add_argument(
         "--memory-depth",
@@ -425,11 +441,17 @@ def main(argv: list[str] | None = None) -> int:
     registries = build_registries(backend_config)
 
     # ── 4. Orchestrator + refinement runner ───────────────────────────────
+    artifact_writer: PromotedArtifactWriter | None = None
+    if not args.no_promoted_artifacts:
+        artifact_writer = PromotedArtifactWriter(
+            base_dir=args.promoted_dir, cycle_id=cycle_id,
+        )
     orchestrator = ResearchOrchestrator(
         service=service,
         experiment_registry=registries.experiments,
         hypothesis_registry=registries.hypotheses,
         memory_registry=registries.memories,
+        artifact_writer=artifact_writer,
     )
     refinement_runner = RefinementRunner(
         orchestrator,

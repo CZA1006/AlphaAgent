@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 
+from alpha_harness.artifacts import PromotedArtifactWriter
 from alpha_harness.memory.lineage import build_lineage_entry
 from alpha_harness.registries.protocols import (
     ExperimentRegistryProtocol,
@@ -59,12 +60,17 @@ class ResearchOrchestrator:
         memory_registry: MemoryRegistryProtocol | None = None,
         *,
         write_lineage: bool = True,
+        artifact_writer: PromotedArtifactWriter | None = None,
     ) -> None:
         self._service = service
         self._experiments = experiment_registry
         self._hypotheses = hypothesis_registry
         self._memory = memory_registry
         self._write_lineage = write_lineage
+        # When supplied, every PROMOTE_CANDIDATE record also lands on disk
+        # as a diff-friendly JSON plus an append-only index entry.  The
+        # registry remains the source of truth; the artifact is a mirror.
+        self._artifact_writer = artifact_writer
 
     def run_cycle(
         self,
@@ -124,6 +130,10 @@ class ResearchOrchestrator:
 
         # ── 4. Persist experiment ──────────────────────────────────────
         self._experiments.save(record)
+
+        # ── 4b. Optional promotion artifact ────────────────────────────
+        if self._artifact_writer is not None:
+            self._artifact_writer.maybe_write(record)
 
         # ── 5. Optional lineage memory write ───────────────────────────
         if self._memory is not None and self._write_lineage:
