@@ -259,6 +259,30 @@ def _check_promoted_artifacts_dir() -> CheckResult:
     )
 
 
+def _check_boundary_audit() -> CheckResult:
+    """Run static auditors so boundary-rule failures surface early."""
+    from alpha_harness.audit import (
+        scan_clean_imports,
+        scan_evaluator_io,
+    )
+
+    violations = scan_clean_imports() + scan_evaluator_io()
+    if not violations:
+        return CheckResult(
+            name="Boundary + evaluator-IO audits clean",
+            passed=True,
+            required=False,
+            detail="alpha_harness imports respect AGENTS.md #8",
+        )
+    head = violations[0].render()
+    return CheckResult(
+        name="Boundary + evaluator-IO audits clean",
+        passed=False,
+        required=False,
+        detail=f"{len(violations)} violation(s); first: {head}",
+    )
+
+
 def _check_cycle_reports_dir() -> CheckResult:
     """Verify the cycle-report directory is writable and (if present) has
     a well-formed index — every row must carry ``cycle_id`` and any
@@ -387,6 +411,7 @@ def run(mode: Mode) -> int:
                     _check_parquet_path(),
                     _check_promoted_artifacts_dir(),
                     _check_cycle_reports_dir(),
+                    _check_boundary_audit(),
                 ],
             ),
         )

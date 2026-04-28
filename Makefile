@@ -1,6 +1,6 @@
 .PHONY: install dev lint format typecheck test test-unit test-integration \
        db-up db-down db-status db-bootstrap db-reset check clean \
-       doctor doctor-mock doctor-real doctor-sql \
+       doctor doctor-mock doctor-real doctor-sql audit \
        run-mock run-real run-real-data run-real-sql \
        autonomous-mock autonomous-real \
        backfill-sp50 backfill \
@@ -25,7 +25,13 @@ dev:
 
 # ── Quality gates ────────────────────────────────────────────────────────────
 
-check: lint typecheck test-unit
+check: lint typecheck audit test-unit
+
+# Run-time scope auditors — fail the build if alpha_harness imports the
+# Hermes runtime, or if an evaluator pulls in network / subprocess / LLM
+# SDKs.  Pure source inspection — no module side-effects.
+audit:
+	uv run python -m alpha_harness.audit
 
 lint:
 	uv run ruff check .
