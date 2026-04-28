@@ -204,13 +204,26 @@ class ResearchOrchestrator:
             results.append(record)
         return results
 
-    def summary(self) -> dict[str, int]:
-        """Return a count of experiments by decision category."""
+    def summary(self) -> dict[str, int | dict[int, int]]:
+        """Return a count of experiments by decision category.
+
+        Also includes ``refinement_rounds_seen`` — a histogram
+        ``{round: count}``.  Roots contribute to ``round=0`` so the
+        histogram sum equals the total experiment count; downstream
+        reports can answer "how much of this run was refinement churn
+        vs. fresh ideas?" without re-querying the registry.
+        """
         all_experiments = self._experiments.list_all()
-        counts: dict[str, int] = {}
+        counts: dict[str, int | dict[int, int]] = {}
+        rounds: dict[int, int] = {}
         for record in all_experiments:
             key = record.decision.value
-            counts[key] = counts.get(key, 0) + 1
+            prev = counts.get(key, 0)
+            assert isinstance(prev, int)
+            counts[key] = prev + 1
+            r = record.factor.refinement_round
+            rounds[r] = rounds.get(r, 0) + 1
+        counts["refinement_rounds_seen"] = dict(sorted(rounds.items()))
         return counts
 
 

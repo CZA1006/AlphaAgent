@@ -182,12 +182,14 @@ class PromotedArtifactWriter:
     def _build_payload(self, record: ExperimentRecord) -> dict[str, Any]:
         ev = record.evaluation
         return {
-            "schema_version": 1,
+            "schema_version": 2,
             "experiment_id": record.id,
             "factor_id": record.factor.id,
             "factor_name": record.factor.name,
             "expression": record.factor.expression,
             "operator_tree": record.factor.operator_tree,
+            "parent_factor_id": record.factor.parent_factor_id,
+            "refinement_round": record.factor.refinement_round,
             "hypothesis_id": record.hypothesis.id,
             "hypothesis_text": record.hypothesis.text,
             "hypothesis_rationale": record.hypothesis.rationale,
@@ -227,6 +229,8 @@ class PromotedArtifactWriter:
             "factor_id": record.factor.id,
             "factor_name": record.factor.name,
             "expression": record.factor.expression,
+            "parent_factor_id": record.factor.parent_factor_id,
+            "refinement_round": record.factor.refinement_round,
             "ic": ev.ic,
             "rank_ic": ev.rank_ic,
             "net_quantile_spread": ev.net_quantile_spread,

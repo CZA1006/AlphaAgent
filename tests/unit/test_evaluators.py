@@ -793,8 +793,11 @@ class TestResearchOrchestrator:
         orch.run_batch(hypotheses, request)
         summary = orch.summary()
 
-        total = sum(summary.values())
+        total = sum(v for v in summary.values() if isinstance(v, int))
         assert total == 2
+        rounds = summary["refinement_rounds_seen"]
+        assert isinstance(rounds, dict)
+        assert rounds.get(0) == 2
 
     def test_hypothesis_status_updated(self) -> None:
         """After a cycle, the hypothesis status should reflect the decision."""

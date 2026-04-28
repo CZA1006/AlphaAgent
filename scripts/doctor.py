@@ -220,11 +220,35 @@ def _check_promoted_artifacts_dir() -> CheckResult:
                 required=False,
                 detail=f"index unreadable: {exc}",
             )
+        # Schema-drift probe: every row should at minimum carry a
+        # ``factor_id``.  ``parent_factor_id`` and ``refinement_round``
+        # are optional (legacy rows are pre-4A.7), but when present
+        # ``refinement_round`` must be a non-negative integer.
+        bad = [
+            i
+            for i, e in enumerate(entries, 1)
+            if not isinstance(e.get("factor_id"), str)
+            or (
+                "refinement_round" in e
+                and not (isinstance(e["refinement_round"], int) and e["refinement_round"] >= 0)
+            )
+        ]
+        if bad:
+            return CheckResult(
+                name=f"Promoted-artifacts dir writable at {path}",
+                passed=False,
+                required=False,
+                detail=(
+                    f"{len(entries)} indexed; {len(bad)} row(s) "
+                    f"with malformed schema (lines {bad[:3]}...)"
+                ),
+            )
+        with_lineage = sum(1 for e in entries if e.get("parent_factor_id"))
         return CheckResult(
             name=f"Promoted-artifacts dir writable at {path}",
             passed=True,
             required=False,
-            detail=f"{len(entries)} promoted factor(s) indexed",
+            detail=(f"{len(entries)} promoted factor(s) indexed ({with_lineage} from refinement)"),
         )
 
     return CheckResult(
