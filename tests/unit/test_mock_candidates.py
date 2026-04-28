@@ -1,0 +1,45 @@
+"""Round 4A.10 — fast unit guard on the mock-LLM candidate fixtures.
+
+The autonomous-cycle smoke test depends on every entry in
+``scripts.autonomous_cycle._MOCK_CANDIDATES`` compiling cleanly through
+the factor DSL.  A typo there would only surface during the slow
+integration smoke run; this unit test catches it in milliseconds.
+"""
+
+from __future__ import annotations
+
+from alpha_harness.factors.compiler import FactorDslCompiler
+from alpha_harness.proposer.schemas import RawProposalBatch
+from alpha_harness.schemas.hypothesis import Hypothesis
+from scripts.autonomous_cycle import _MOCK_CANDIDATES
+
+
+def test_mock_candidates_are_non_empty() -> None:
+    assert len(_MOCK_CANDIDATES) >= 3
+
+
+def test_mock_candidates_form_valid_batch() -> None:
+    """The handler returns the batch JSON; it must be Pydantic-valid."""
+    batch = RawProposalBatch(proposals=_MOCK_CANDIDATES)
+    assert len(batch.proposals) == len(_MOCK_CANDIDATES)
+
+
+def test_every_mock_candidate_compiles() -> None:
+    compiler = FactorDslCompiler()
+    for cand in _MOCK_CANDIDATES:
+        spec = compiler.compile(
+            Hypothesis(text=cand.expression, rationale=cand.rationale),
+        )
+        assert spec.expression == cand.expression
+        assert spec.operator_tree is not None
+
+
+# ── Doctor probe ────────────────────────────────────────────────────────────
+
+
+def test_doctor_smoke_probe_passes_on_clean_tree() -> None:
+    from scripts.doctor import _check_smoke_can_run
+
+    result = _check_smoke_can_run()
+    assert result.passed is True
+    assert "compile" in result.detail

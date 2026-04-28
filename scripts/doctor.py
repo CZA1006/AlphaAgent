@@ -259,6 +259,67 @@ def _check_promoted_artifacts_dir() -> CheckResult:
     )
 
 
+def _check_smoke_can_run() -> CheckResult:
+    """Verify the synthetic-data path constructs and every mock-LLM
+    candidate compiles.  Catches a corrupt fixture before the slow
+    integration smoke test runs."""
+    try:
+        from alpha_harness.data.synthetic import generate_price_panel
+        from alpha_harness.factors.compiler import (
+            DslCompilationError,
+            FactorDslCompiler,
+        )
+        from alpha_harness.schemas.hypothesis import Hypothesis
+        from scripts.autonomous_cycle import _MOCK_CANDIDATES
+    except Exception as exc:  # pragma: no cover — import bug
+        return CheckResult(
+            name="Mock-LLM smoke prerequisites",
+            passed=False,
+            required=False,
+            detail=f"import failed: {type(exc).__name__}: {exc}",
+        )
+
+    try:
+        df = generate_price_panel(n_days=3, symbols=["AAA", "BBB"], seed=0)
+    except Exception as exc:
+        return CheckResult(
+            name="Mock-LLM smoke prerequisites",
+            passed=False,
+            required=False,
+            detail=f"synthetic data failed: {exc}",
+        )
+    if df.empty:
+        return CheckResult(
+            name="Mock-LLM smoke prerequisites",
+            passed=False,
+            required=False,
+            detail="generate_price_panel returned empty frame",
+        )
+
+    compiler = FactorDslCompiler()
+    bad: list[str] = []
+    for cand in _MOCK_CANDIDATES:
+        try:
+            compiler.compile(
+                Hypothesis(text=cand.expression, rationale=cand.rationale),
+            )
+        except DslCompilationError as exc:
+            bad.append(f"{cand.expression!r}: {exc}")
+    if bad:
+        return CheckResult(
+            name="Mock-LLM smoke prerequisites",
+            passed=False,
+            required=False,
+            detail=f"{len(bad)} candidate(s) failed to compile: {bad[0]}",
+        )
+    return CheckResult(
+        name="Mock-LLM smoke prerequisites",
+        passed=True,
+        required=False,
+        detail=(f"{len(_MOCK_CANDIDATES)} mock candidates compile; synthetic data path OK"),
+    )
+
+
 def _check_boundary_audit() -> CheckResult:
     """Run static auditors so boundary-rule failures surface early."""
     from alpha_harness.audit import (
@@ -412,6 +473,7 @@ def run(mode: Mode) -> int:
                     _check_promoted_artifacts_dir(),
                     _check_cycle_reports_dir(),
                     _check_boundary_audit(),
+                    _check_smoke_can_run(),
                 ],
             ),
         )

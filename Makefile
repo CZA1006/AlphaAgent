@@ -1,6 +1,6 @@
 .PHONY: install dev lint format typecheck test test-unit test-integration \
-       db-up db-down db-status db-bootstrap db-reset check clean \
-       doctor doctor-mock doctor-real doctor-sql audit \
+       db-up db-down db-status db-bootstrap db-reset check check-full clean \
+       doctor doctor-mock doctor-real doctor-sql audit smoke \
        run-mock run-real run-real-data run-real-sql \
        autonomous-mock autonomous-real \
        backfill-sp50 backfill \
@@ -27,11 +27,22 @@ dev:
 
 check: lint typecheck audit test-unit
 
+# `check-full` adds the integration smoke run (~30s) on top of `check`.
+# CI can pick which gate to spend its budget on; local devs typically
+# run `check` for fast feedback and `check-full` before pushing.
+check-full: check smoke
+
 # Run-time scope auditors — fail the build if alpha_harness imports the
 # Hermes runtime, or if an evaluator pulls in network / subprocess / LLM
 # SDKs.  Pure source inspection — no module side-effects.
 audit:
 	uv run python -m alpha_harness.audit
+
+# End-to-end smoke: drive the autonomous cycle through mock-LLM with
+# tmp-dir wiring and assert reports + factor-zoo round-trip.  Marked
+# `integration` so unit gates skip it.
+smoke:
+	uv run pytest tests/integration/test_autonomous_smoke.py -m integration
 
 lint:
 	uv run ruff check .
