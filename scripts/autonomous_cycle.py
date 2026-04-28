@@ -34,7 +34,7 @@ import logging
 import os
 import sys
 import uuid
-from datetime import date
+from datetime import UTC, date, datetime
 
 import pandas as pd
 
@@ -69,6 +69,12 @@ from alpha_harness.proposer.memory import (
 )
 from alpha_harness.proposer.schemas import RawProposal, RawProposalBatch
 from alpha_harness.registries.factory import build_registries
+from alpha_harness.reports import (
+    DEFAULT_REPORT_DIR,
+    CycleReportWriter,
+    build_cycle_report,
+)
+from alpha_harness.reports.cycle_report import snapshot_budget
 from alpha_harness.schemas.evaluation import (
     EvaluationProfile,
     EvaluationRequest,
@@ -253,6 +259,18 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Skip writing promotion artifacts even when a factor is promoted.",
     )
 
+    # Cycle reports (Round 4A.8)
+    p.add_argument(
+        "--report-dir",
+        default=None,
+        help=("Directory for per-cycle audit reports + index (default: artifacts/reports)."),
+    )
+    p.add_argument(
+        "--no-report",
+        action="store_true",
+        help="Skip writing the cycle audit report.",
+    )
+
     # Memory (Round 4A.4)
     p.add_argument(
         "--memory-depth",
@@ -380,6 +398,10 @@ def main(argv: list[str] | None = None) -> int:
     # Cycle id drives the LLM call log filename.  Stable across the cycle.
     cycle_id: str = args.cycle_id or f"cycle-{uuid.uuid4().hex[:12]}"
     logger.info("Cycle id: %s", cycle_id)
+
+    # Capture wall-clock start before any I/O so the cycle report's
+    # duration covers data load, LLM calls, evaluation, and persistence.
+    started_at = datetime.now(UTC)
 
     # ── 1. Data ────────────────────────────────────────────────────────────
     if args.data_source in ("parquet", "polygon"):
@@ -614,6 +636,24 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 3
+
+    # ── 7b. Cycle report (Round 4A.8) ─────────────────────────────────────
+    if not args.no_report:
+        experiment_ids = [r.experiment_id for r in response.roots]
+        experiment_ids.extend(r.experiment_id for r in response.refinements)
+        report = build_cycle_report(
+            cycle_id=cycle_id,
+            theme=args.theme,
+            started_at=started_at,
+            experiment_registry=registries.experiments,
+            experiment_ids=experiment_ids,
+            budget=snapshot_budget(budget),
+            llm_log_path=str(log_path),
+        )
+        report_dir = args.report_dir or str(DEFAULT_REPORT_DIR)
+        path = CycleReportWriter(base_dir=report_dir).write(report)
+        if path is not None:
+            logger.info("cycle report: %s", path)
 
     # ── 8. Output ─────────────────────────────────────────────────────────
     if args.json:

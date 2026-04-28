@@ -259,6 +259,83 @@ def _check_promoted_artifacts_dir() -> CheckResult:
     )
 
 
+def _check_cycle_reports_dir() -> CheckResult:
+    """Verify the cycle-report directory is writable and (if present) has
+    a well-formed index — every row must carry ``cycle_id`` and any
+    counts must be non-negative integers."""
+    from alpha_harness.reports import REPORT_INDEX_NAME, read_index
+
+    path = "artifacts/reports"
+    try:
+        os.makedirs(path, exist_ok=True)
+    except OSError as exc:
+        return CheckResult(
+            name=f"Cycle-report dir writable at {path}",
+            passed=False,
+            required=False,
+            detail=f"{type(exc).__name__}: {exc}",
+        )
+
+    probe = os.path.join(path, ".doctor_probe")
+    try:
+        with open(probe, "w", encoding="utf-8") as fh:
+            fh.write("")
+        os.remove(probe)
+    except OSError as exc:
+        return CheckResult(
+            name=f"Cycle-report dir writable at {path}",
+            passed=False,
+            required=False,
+            detail=f"cannot write: {type(exc).__name__}: {exc}",
+        )
+
+    index_file = os.path.join(path, REPORT_INDEX_NAME)
+    if not os.path.isfile(index_file):
+        return CheckResult(
+            name=f"Cycle-report dir writable at {path}",
+            passed=True,
+            required=False,
+            detail="directory ready; no cycles recorded yet",
+        )
+    try:
+        entries = read_index(path)
+    except OSError as exc:
+        return CheckResult(
+            name=f"Cycle-report dir writable at {path}",
+            passed=False,
+            required=False,
+            detail=f"index unreadable: {exc}",
+        )
+    bad = [
+        i
+        for i, e in enumerate(entries, 1)
+        if not isinstance(e.get("cycle_id"), str)
+        or any(
+            k in e and not (isinstance(e[k], int) and e[k] >= 0)
+            for k in ("n_experiments", "n_promoted", "n_refined", "n_rejected")
+        )
+    ]
+    if bad:
+        return CheckResult(
+            name=f"Cycle-report dir writable at {path}",
+            passed=False,
+            required=False,
+            detail=(
+                f"{len(entries)} indexed; {len(bad)} row(s) with malformed "
+                f"schema (lines {bad[:3]}...)"
+            ),
+        )
+    promoted = sum(int(e.get("n_promoted", 0)) for e in entries)
+    return CheckResult(
+        name=f"Cycle-report dir writable at {path}",
+        passed=True,
+        required=False,
+        detail=(
+            f"{len(entries)} cycle report(s) indexed ({promoted} promotions across all cycles)"
+        ),
+    )
+
+
 def _check_parquet_path() -> CheckResult:
     """Look for a populated local Parquet store under data/silver/equities."""
     path = "data/silver/equities"
@@ -309,6 +386,7 @@ def run(mode: Mode) -> int:
                     ),
                     _check_parquet_path(),
                     _check_promoted_artifacts_dir(),
+                    _check_cycle_reports_dir(),
                 ],
             ),
         )

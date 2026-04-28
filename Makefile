@@ -3,7 +3,8 @@
        doctor doctor-mock doctor-real doctor-sql \
        run-mock run-real run-real-data run-real-sql \
        autonomous-mock autonomous-real \
-       backfill-sp50 backfill
+       backfill-sp50 backfill \
+       list-factors list-cycles
 
 # ── Local env auto-load ──────────────────────────────────────────────────────
 # When `.env` exists, export every variable it declares so the targets below
@@ -152,6 +153,9 @@ backfill:
 
 list-factors:
 	uv run python -m scripts.list_factors $(ARGS)
+
+list-cycles:
+	uv run python -m scripts.list_cycles $(ARGS)
 
 # ── Cleanup ──────────────────────────────────────────────────────────────────
 
