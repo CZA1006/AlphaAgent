@@ -84,9 +84,7 @@ def build_forward_returns(
         future_start = close.shift(-lag)
 
     if label.return_type == "log":
-        result: pd.Series = pd.Series(
-            np.log(future_end / future_start), index=close.index
-        )
+        result: pd.Series = pd.Series(np.log(future_end / future_start), index=close.index)
     else:
         result = future_end / future_start - 1
 
@@ -201,9 +199,7 @@ def compute_quantile_spread(
         if len(s_cs) < n_quantiles:
             continue
         try:
-            q_labels: pd.Series = pd.qcut(
-                s_cs, n_quantiles, labels=False, duplicates="drop"
-            )
+            q_labels: pd.Series = pd.qcut(s_cs, n_quantiles, labels=False, duplicates="drop")
         except ValueError:
             continue
         q_means: pd.Series = f_cs.groupby(q_labels).mean()
@@ -248,9 +244,7 @@ class SignalQualityEvaluator:
             msg = f"Price data missing required columns: {sorted(missing)}"
             raise ValueError(msg)
 
-    def evaluate(
-        self, factor: FactorSpec, request: EvaluationRequest
-    ) -> EvaluationBundle:
+    def evaluate(self, factor: FactorSpec, request: EvaluationRequest) -> EvaluationBundle:
         """Run evaluation and return an EvaluationBundle.
 
         Steps:
@@ -274,17 +268,13 @@ class SignalQualityEvaluator:
             )
 
         # ── 2. Execute the factor DSL ─────────────────────────────────
-        ast: dict[str, Any] = factor.operator_tree or parse_expression(
-            factor.expression
-        )
+        ast: dict[str, Any] = factor.operator_tree or parse_expression(factor.expression)
         executor = DslExecutor(df)
         signal = executor.execute(ast)
 
         # ── 3. Build forward returns ──────────────────────────────────
         groups = df["symbol"] if "symbol" in df.columns else None
-        fwd_returns = build_forward_returns(
-            df["close"].astype(float), groups, request.label
-        )
+        fwd_returns = build_forward_returns(df["close"].astype(float), groups, request.label)
 
         # ── 3b. Cross-sectional neutralization ────────────────────────
         timestamps = df["timestamp"]
@@ -299,13 +289,27 @@ class SignalQualityEvaluator:
         # ── 4. Compute primary metrics ────────────────────────────────
         ic = compute_mean_ic(signal, fwd_returns, timestamps)
         rank_ic = compute_mean_rank_ic(signal, fwd_returns, timestamps)
-        qs = compute_quantile_spread(
-            signal, fwd_returns, timestamps, request.profile.n_quantiles
-        )
+        qs = compute_quantile_spread(signal, fwd_returns, timestamps, request.profile.n_quantiles)
 
         # ── 4b. Turnover + cost-adjusted quantile spread ──────────────
         turnover = compute_factor_turnover(signal, timestamps, groups)
         net_qs = apply_cost(qs, turnover, request.cost_bps)
+
+        # ── 4b'. Risk-aware portfolio metrics (Round 4C) ──────────────
+        # The same per-date long-short series that powers the spread mean
+        # also feeds Sharpe / drawdown / hit-rate / tail-concentration.
+        from alpha_harness.evaluators.portfolio import (
+            compute_long_short_returns,
+            compute_portfolio_metrics,
+        )
+
+        ls_returns = compute_long_short_returns(
+            signal,
+            fwd_returns,
+            timestamps,
+            request.profile.n_quantiles,
+        )
+        portfolio_metrics = compute_portfolio_metrics(ls_returns)
 
         # ── 4c. Auxiliary horizons (optional, for sign-consistency) ──
         ic_by_horizon: dict[str, float] = {}
@@ -324,9 +328,7 @@ class SignalQualityEvaluator:
                 lag_bars=request.label.lag_bars,
                 return_type=request.label.return_type,
             )
-            aux_fwd = build_forward_returns(
-                df["close"].astype(float), groups, aux_label
-            )
+            aux_fwd = build_forward_returns(df["close"].astype(float), groups, aux_label)
             aux_fwd = neutralize_forward_returns(
                 aux_fwd,
                 timestamps=timestamps,
@@ -343,17 +345,14 @@ class SignalQualityEvaluator:
 
         # ── 5. Coverage stats ─────────────────────────────────────────
         n_periods = int(timestamps.nunique())
-        n_assets = (
-            int(df["symbol"].nunique()) if "symbol" in df.columns else 1
-        )
+        n_assets = int(df["symbol"].nunique()) if "symbol" in df.columns else 1
 
-        metadata: dict[
-            str, str | float | int | bool | dict[str, float] | list[float]
-        ] = {
+        metadata: dict[str, Any] = {
             "evaluator": "signal_quality",
             "mode": "real",
             "neutralize": request.neutralize.value,
             "cost_bps": float(request.cost_bps),
+            "portfolio": portfolio_metrics,
         }
         if len(ic_by_horizon) > 1:
             metadata["ic_by_horizon"] = ic_by_horizon
@@ -363,11 +362,11 @@ class SignalQualityEvaluator:
             # the raw dict.
             primary_ic = ic_by_horizon.get(str(primary_h))
             if primary_ic is not None:
-                same_sign = sum(
-                    1 for v in ic_by_horizon.values()
-                    if (v > 0) == (primary_ic > 0)
-                )
+                same_sign = sum(1 for v in ic_by_horizon.values() if (v > 0) == (primary_ic > 0))
                 metadata["ic_sign_consistent_horizons"] = int(same_sign)
+
+        sharpe_val = portfolio_metrics.get("sharpe")
+        sharpe = float(sharpe_val) if isinstance(sharpe_val, int | float) else None
 
         return EvaluationBundle(
             ic=ic,
@@ -375,6 +374,7 @@ class SignalQualityEvaluator:
             quantile_spread=qs,
             turnover=turnover,
             net_quantile_spread=net_qs,
+            sharpe=sharpe,
             n_periods=n_periods,
             n_assets=n_assets,
             eval_start=request.eval_start,

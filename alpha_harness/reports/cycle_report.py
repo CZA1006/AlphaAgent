@@ -61,6 +61,12 @@ class ExperimentThumbnail(BaseModel):
     quantile_spread: float | None = None
     net_quantile_spread: float | None = None
     turnover: float | None = None
+    # Risk-aware portfolio metrics (Round 4C).  Pulled from
+    # ``metadata.portfolio`` when the evaluator surfaced them; absent on
+    # bundles produced by older evaluators.
+    sharpe: float | None = None
+    max_drawdown: float | None = None
+    hit_rate: float | None = None
     failure_category: str | None = None
 
 
@@ -151,6 +157,14 @@ def build_cycle_report(
 
 def _thumbnail(record: ExperimentRecord) -> ExperimentThumbnail:
     ev = record.evaluation
+    portfolio = ev.metadata.get("portfolio") or {}
+    if not isinstance(portfolio, dict):
+        portfolio = {}
+
+    def _metric(name: str) -> float | None:
+        v = portfolio.get(name)
+        return float(v) if isinstance(v, int | float) else None
+
     return ExperimentThumbnail(
         experiment_id=record.id,
         factor_id=record.factor.id,
@@ -164,6 +178,9 @@ def _thumbnail(record: ExperimentRecord) -> ExperimentThumbnail:
         quantile_spread=ev.quantile_spread,
         net_quantile_spread=ev.net_quantile_spread,
         turnover=ev.turnover,
+        sharpe=ev.sharpe if ev.sharpe is not None else _metric("sharpe"),
+        max_drawdown=_metric("max_drawdown"),
+        hit_rate=_metric("hit_rate"),
         failure_category=(record.failure.category.value if record.failure is not None else None),
     )
 

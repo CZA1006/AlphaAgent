@@ -43,10 +43,12 @@ class PromotionJudge:
         novelty_evaluator: NoveltyEvaluator | None = None,
         refine_margin: float = 0.20,
         min_fraction_positive_folds: float = 0.6,
+        max_tail_concentration: float = 0.5,
     ) -> None:
         self._novelty = novelty_evaluator or NoveltyEvaluator()
         self._refine_margin = refine_margin
         self._min_frac_positive = min_fraction_positive_folds
+        self._max_tail_concentration = max_tail_concentration
 
     def judge(
         self,
@@ -99,6 +101,15 @@ class PromotionJudge:
                 decision=ExperimentDecision.REJECT,
                 failure=failure,
                 notes="Signal unstable across walk-forward folds.",
+            )
+
+        # ── 2d. Tail concentration (Round 4C) ──────────────────────────
+        failure = self._check_tail_concentration(evaluation)
+        if failure is not None:
+            return JudgmentDetail(
+                decision=ExperimentDecision.REJECT,
+                failure=failure,
+                notes="Long-short return concentrated in a handful of days.",
             )
 
         # ── 3. Novelty ────────────────────────────────────────────────
@@ -210,6 +221,32 @@ class PromotionJudge:
                 detail=(
                     f"fraction_positive_rank_ic={frac:.2f} across {n_folds} "
                     f"folds (need >= {self._min_frac_positive:.2f})."
+                ),
+            )
+        return None
+
+    def _check_tail_concentration(self, evaluation: EvaluationBundle) -> FailureRecord | None:
+        """Reject when the long-short return is concentrated in a few days.
+
+        Looks for ``metadata.portfolio.tail_concentration`` (the share of
+        gross return earned by the top three days).  When that share
+        exceeds ``max_tail_concentration``, the spread is fragile —
+        a single regime change wipes it out.  Bundles without portfolio
+        metadata bypass the gate so legacy callers stay unaffected.
+        """
+        portfolio = evaluation.metadata.get("portfolio")
+        if not isinstance(portfolio, dict):
+            return None
+        tail = portfolio.get("tail_concentration")
+        if not isinstance(tail, int | float):
+            return None
+        if tail > self._max_tail_concentration:
+            return FailureRecord(
+                category=FailureCategory.OTHER,
+                detail=(
+                    f"tail_concentration={tail:.2f} > "
+                    f"{self._max_tail_concentration:.2f}; top-3 days carry "
+                    f"the majority of the gross long-short return."
                 ),
             )
         return None
