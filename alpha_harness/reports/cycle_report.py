@@ -67,6 +67,10 @@ class ExperimentThumbnail(BaseModel):
     sharpe: float | None = None
     max_drawdown: float | None = None
     hit_rate: float | None = None
+    # Walk-forward audit (Round 4D).  When the evaluator wrapped folds,
+    # the per-experiment payload includes ``n_folds``, ``embargo_days``,
+    # ``purged_folds``, and stability fractions; otherwise None.
+    walk_forward: dict[str, Any] | None = None
     failure_category: str | None = None
 
 
@@ -181,6 +185,11 @@ def _thumbnail(record: ExperimentRecord) -> ExperimentThumbnail:
         sharpe=ev.sharpe if ev.sharpe is not None else _metric("sharpe"),
         max_drawdown=_metric("max_drawdown"),
         hit_rate=_metric("hit_rate"),
+        walk_forward=(
+            dict(ev.metadata["walk_forward"])
+            if isinstance(ev.metadata.get("walk_forward"), dict)
+            else None
+        ),
         failure_category=(record.failure.category.value if record.failure is not None else None),
     )
 

@@ -49,11 +49,25 @@ class WalkForwardConfig:
     produces disjoint folds, larger leaves gaps.  ``n_folds`` is the hard
     cap; the actual fold count may be lower when the requested span runs
     past ``request.eval_end``.
+
+    ``embargo_days`` strips that many days off the *end* of every fold
+    before evaluation.  This prevents the overlapping forward-return
+    label that closes fold N from leaking into fold N+1's signal.  The
+    default ``None`` lets :class:`WalkForwardEvaluator` derive the
+    embargo from the request's :class:`LabelDefinition`
+    (``lag_bars + forecast_horizon_bars``).  ``0`` disables the embargo
+    explicitly — pre-4D behaviour.
+
+    ``min_fold_days`` is the smallest *post-embargo* span that still
+    counts as a usable fold; smaller spans are *purged* (dropped) and
+    counted under ``metadata.walk_forward.purged_folds``.
     """
 
     n_folds: int = 4
     fold_size_days: int = 60
     step_days: int = 20
+    embargo_days: int | None = None
+    min_fold_days: int = 20
 
     def __post_init__(self) -> None:
         if self.n_folds < 1:
@@ -62,6 +76,10 @@ class WalkForwardConfig:
             raise ValueError("fold_size_days must be >= 1")
         if self.step_days < 1:
             raise ValueError("step_days must be >= 1")
+        if self.embargo_days is not None and self.embargo_days < 0:
+            raise ValueError("embargo_days must be >= 0 when set")
+        if self.min_fold_days < 1:
+            raise ValueError("min_fold_days must be >= 1")
 
 
 # ── Public API ──────────────────────────────────────────────────────────────
@@ -71,22 +89,69 @@ def fold_windows(
     eval_start: date,
     eval_end: date,
     config: WalkForwardConfig,
+    *,
+    embargo_days: int = 0,
 ) -> list[tuple[date, date]]:
-    """Return the per-fold ``[start, end]`` calendar ranges.
+    """Return the per-fold ``[start, end]`` calendar ranges, embargoed.
 
-    A fold is dropped when its end would exceed ``eval_end``; when the
-    overall span is too short for even one fold, an empty list is
-    returned and callers fall back to the inner evaluator's normal path.
+    A fold is constructed by advancing ``step_days`` from the previous
+    fold's start and taking ``fold_size_days`` calendar days.  After
+    construction, ``embargo_days`` is trimmed off the *end* so the
+    forward-return label that closes the fold cannot leak into a
+    subsequent fold's signal.  Folds that shrink below
+    ``config.min_fold_days`` are dropped.
+
+    Returns an empty list when the span is too short for even one
+    usable fold; callers fall back to the inner evaluator's normal
+    path.
+
+    The function never raises for unreasonable embargoes — over-aggressive
+    settings simply produce zero folds, which the evaluator surfaces via
+    ``metadata.walk_forward.purged_folds``.
     """
     spans: list[tuple[date, date]] = []
     cursor = eval_start
     for _ in range(config.n_folds):
-        end = cursor + timedelta(days=config.fold_size_days - 1)
-        if end > eval_end:
+        gross_end = cursor + timedelta(days=config.fold_size_days - 1)
+        if gross_end > eval_end:
             break
-        spans.append((cursor, end))
+        net_end = gross_end - timedelta(days=embargo_days)
+        if (net_end - cursor).days + 1 < config.min_fold_days:
+            cursor = cursor + timedelta(days=config.step_days)
+            continue
+        spans.append((cursor, net_end))
         cursor = cursor + timedelta(days=config.step_days)
     return spans
+
+
+def _count_attempted_folds(
+    eval_start: date,
+    eval_end: date,
+    config: WalkForwardConfig,
+) -> int:
+    """How many folds *would* have fit ignoring embargo / min-size purges.
+
+    Used to compute ``purged_folds`` — attempted minus retained.
+    """
+    cursor = eval_start
+    count = 0
+    for _ in range(config.n_folds):
+        gross_end = cursor + timedelta(days=config.fold_size_days - 1)
+        if gross_end > eval_end:
+            break
+        count += 1
+        cursor = cursor + timedelta(days=config.step_days)
+    return count
+
+
+def _derive_embargo_days(
+    config: WalkForwardConfig,
+    request: EvaluationRequest,
+) -> int:
+    """Resolve the effective embargo, falling back to the label spec."""
+    if config.embargo_days is not None:
+        return int(config.embargo_days)
+    return int(request.label.lag_bars) + int(request.label.forecast_horizon_bars)
 
 
 class WalkForwardEvaluator:
@@ -105,7 +170,20 @@ class WalkForwardEvaluator:
         factor: FactorSpec,
         request: EvaluationRequest,
     ) -> EvaluationBundle:
-        spans = fold_windows(request.eval_start, request.eval_end, self._config)
+        embargo_days = _derive_embargo_days(self._config, request)
+        spans = fold_windows(
+            request.eval_start,
+            request.eval_end,
+            self._config,
+            embargo_days=embargo_days,
+        )
+        attempted = _count_attempted_folds(
+            request.eval_start,
+            request.eval_end,
+            self._config,
+        )
+        purged = max(0, attempted - len(spans))
+
         if len(spans) < 2:
             # One fold (or zero) means walk-forward isn't meaningful;
             # delegate to the inner evaluator and tag the bundle so
@@ -114,7 +192,12 @@ class WalkForwardEvaluator:
             md = dict(bundle.metadata)
             md.setdefault(
                 "walk_forward",
-                {"n_folds": len(spans), "skipped_reason": "span_too_short"},
+                {
+                    "n_folds": len(spans),
+                    "embargo_days": embargo_days,
+                    "purged_folds": purged,
+                    "skipped_reason": "span_too_short",
+                },
             )
             return bundle.model_copy(update={"metadata": md})
 
@@ -123,7 +206,13 @@ class WalkForwardEvaluator:
             sub = request.model_copy(update={"eval_start": fstart, "eval_end": fend})
             per_fold.append(self._inner.evaluate(factor, sub))
 
-        return _aggregate(request, per_fold, self._config)
+        return _aggregate(
+            request,
+            per_fold,
+            self._config,
+            embargo_days=embargo_days,
+            purged_folds=purged,
+        )
 
 
 # ── Aggregation ─────────────────────────────────────────────────────────────
@@ -133,6 +222,9 @@ def _aggregate(
     request: EvaluationRequest,
     folds: list[EvaluationBundle],
     config: WalkForwardConfig,
+    *,
+    embargo_days: int = 0,
+    purged_folds: int = 0,
 ) -> EvaluationBundle:
     """Combine per-fold bundles into one aggregate.
 
@@ -174,6 +266,8 @@ def _aggregate(
         "n_folds": len(folds),
         "fold_size_days": config.fold_size_days,
         "step_days": config.step_days,
+        "embargo_days": embargo_days,
+        "purged_folds": purged_folds,
         "mean_ic": _mean("ic"),
         "mean_rank_ic": _mean("rank_ic"),
         "std_ic": _stdev("ic"),

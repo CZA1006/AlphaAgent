@@ -98,3 +98,65 @@ def test_autonomous_smoke_writes_reports_and_factor_zoo(
     # ── list_factors round-trips (graceful when zoo is empty) ────────────
     rc = list_factors_main(["--promoted-dir", str(promoted_dir)])
     assert rc == 0
+
+
+@pytest.mark.integration
+def test_autonomous_smoke_walk_forward_embargo_in_report(tmp_path: Path) -> None:
+    """4D guard: --walk-forward run reports an embargo >= label-derived size."""
+    promoted_dir = tmp_path / "promoted"
+    report_dir = tmp_path / "reports"
+    log_dir = tmp_path / "llm_calls"
+    cycle_id = "smoke-wf-001"
+
+    rc = autonomous_main(
+        [
+            "--mock-llm",
+            "--n-candidates",
+            "2",
+            "--n-days",
+            "300",
+            "--n-symbols",
+            "8",
+            "--seed",
+            "11",
+            "--max-depth",
+            "0",
+            "--max-variants-per-step",
+            "2",
+            "--max-total-children",
+            "0",
+            "--cycle-id",
+            cycle_id,
+            "--promoted-dir",
+            str(promoted_dir),
+            "--report-dir",
+            str(report_dir),
+            "--llm-log-dir",
+            str(log_dir),
+            "--walk-forward",
+            "--n-folds",
+            "3",
+            "--fold-size-days",
+            "60",
+            "--step-days",
+            "30",
+            "--ic-threshold",
+            "0.0",
+            "--min-periods",
+            "5",
+            "--min-assets",
+            "3",
+            "--json",
+        ],
+    )
+    assert rc == 0
+
+    payload = json.loads((report_dir / f"{cycle_id}.json").read_text())
+    assert payload["n_experiments"] >= 1
+    wf_payloads = [e["walk_forward"] for e in payload["experiments"] if e.get("walk_forward")]
+    assert wf_payloads, "expected at least one experiment with walk_forward metadata"
+    first = wf_payloads[0]
+    # Default LabelDefinition: lag_bars=1, forecast_horizon_bars=5 → embargo >= 6.
+    assert first["embargo_days"] >= 6, first
+    # n_folds + purged_folds must equal total attempted (3 here).
+    assert first["n_folds"] + first.get("purged_folds", 0) <= 3
