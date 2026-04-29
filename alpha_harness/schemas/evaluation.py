@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 from enum import StrEnum
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -71,9 +72,9 @@ class LabelDefinition(BaseModel):
     forecast horizon, lag, and return type part of the typed contract.
     """
 
-    forecast_horizon_bars: int = 5        # forward return window in bars
-    lag_bars: int = 1                     # gap between signal and label start
-    return_type: str = "simple"           # "simple" or "log"
+    forecast_horizon_bars: int = 5  # forward return window in bars
+    lag_bars: int = 1  # gap between signal and label start
+    return_type: str = "simple"  # "simple" or "log"
 
     # Optional auxiliary horizons for sign-consistency checks.  When set,
     # the evaluator additionally computes IC / rank-IC at each horizon and
@@ -101,10 +102,10 @@ class EvaluationRequest(BaseModel):
     label: LabelDefinition = Field(default_factory=LabelDefinition)
 
     # Data provenance
-    dataset_snapshot_id: str = ""         # identifies which data version was used
+    dataset_snapshot_id: str = ""  # identifies which data version was used
 
     # Rebalance
-    rebalance_frequency: str = "daily"    # "daily", "weekly", "monthly"
+    rebalance_frequency: str = "daily"  # "daily", "weekly", "monthly"
 
     # Evaluation strictness
     profile: EvaluationProfile = Field(default_factory=EvaluationProfile)
@@ -151,9 +152,10 @@ class EvaluationBundle(BaseModel):
     eval_end: date | None = None
     forecast_horizon_bars: int | None = None
 
-    metadata: dict[
-        str, str | float | int | bool | dict[str, float] | list[float]
-    ] = Field(default_factory=dict)
+    # Free-form auxiliary metrics (multi-horizon ICs, walk-forward
+    # per-fold breakdowns, evaluator name, etc.).  Kept as ``Any`` so
+    # later rounds can attach richer payloads without schema churn.
+    metadata: dict[str, Any] = Field(default_factory=dict)
     computed_at: datetime = Field(
         default_factory=lambda: datetime.now(UTC),
     )

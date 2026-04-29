@@ -81,7 +81,7 @@ from alpha_harness.schemas.evaluation import (
     LabelDefinition,
     NeutralizeMode,
 )
-from alpha_harness.service import AlphaHarnessService
+from alpha_harness.service import AlphaHarnessService, FactorEvaluator
 
 logging.basicConfig(
     level=logging.INFO,
@@ -243,6 +243,35 @@ def _build_parser() -> argparse.ArgumentParser:
             "alongside the primary 5-bar horizon, e.g. '1,20'.  When set, "
             "the judge also enforces IC-sign consistency across horizons."
         ),
+    )
+
+    # Walk-forward (Round 4B)
+    p.add_argument(
+        "--walk-forward",
+        action="store_true",
+        help=(
+            "Wrap the evaluator with WalkForwardEvaluator: split the eval "
+            "window into rolling folds and require fraction_positive_rank_ic "
+            ">= 0.6 for promotion.  Off by default — single-window eval."
+        ),
+    )
+    p.add_argument(
+        "--n-folds",
+        type=int,
+        default=4,
+        help="Walk-forward fold count (default: 4).",
+    )
+    p.add_argument(
+        "--fold-size-days",
+        type=int,
+        default=60,
+        help="Walk-forward per-fold window in calendar days (default: 60).",
+    )
+    p.add_argument(
+        "--step-days",
+        type=int,
+        default=20,
+        help="Walk-forward stride between fold starts (default: 20).",
     )
 
     # Promotion artifacts (Round 4A.5)
@@ -463,7 +492,27 @@ def main(argv: list[str] | None = None) -> int:
 
     # ── 2. Deterministic core (compiler + evaluator + judge) ──────────────
     compiler = FactorDslCompiler()
-    evaluator = SignalQualityEvaluator(price_data)
+    evaluator: FactorEvaluator = SignalQualityEvaluator(price_data)
+    if args.walk_forward:
+        from alpha_harness.evaluators.walk_forward import (
+            WalkForwardConfig,
+            WalkForwardEvaluator,
+        )
+
+        evaluator = WalkForwardEvaluator(
+            evaluator,
+            config=WalkForwardConfig(
+                n_folds=args.n_folds,
+                fold_size_days=args.fold_size_days,
+                step_days=args.step_days,
+            ),
+        )
+        logger.info(
+            "Walk-forward enabled: n_folds=%d fold_size_days=%d step_days=%d",
+            args.n_folds,
+            args.fold_size_days,
+            args.step_days,
+        )
     judge = PromotionJudge(refine_margin=0.20)
     service = AlphaHarnessService(
         compiler=compiler,

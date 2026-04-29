@@ -42,9 +42,11 @@ class PromotionJudge:
         self,
         novelty_evaluator: NoveltyEvaluator | None = None,
         refine_margin: float = 0.20,
+        min_fraction_positive_folds: float = 0.6,
     ) -> None:
         self._novelty = novelty_evaluator or NoveltyEvaluator()
         self._refine_margin = refine_margin
+        self._min_frac_positive = min_fraction_positive_folds
 
     def judge(
         self,
@@ -90,6 +92,15 @@ class PromotionJudge:
                 notes="IC sign flipped across forecast horizons.",
             )
 
+        # ── 2c. Walk-forward stability ─────────────────────────────────
+        failure = self._check_walk_forward_stability(evaluation)
+        if failure is not None:
+            return JudgmentDetail(
+                decision=ExperimentDecision.REJECT,
+                failure=failure,
+                notes="Signal unstable across walk-forward folds.",
+            )
+
         # ── 3. Novelty ────────────────────────────────────────────────
         verdict = self._novelty.check_novelty(factor)
         if not verdict.is_novel:
@@ -120,27 +131,15 @@ class PromotionJudge:
         self, evaluation: EvaluationBundle, profile: EvaluationProfile
     ) -> FailureRecord | None:
         """Reject if observed data coverage is below profile minimums."""
-        if (
-            evaluation.n_periods is not None
-            and evaluation.n_periods < profile.min_periods
-        ):
+        if evaluation.n_periods is not None and evaluation.n_periods < profile.min_periods:
             return FailureRecord(
                 category=FailureCategory.DATA_INSUFFICIENT,
-                detail=(
-                    f"n_periods={evaluation.n_periods} "
-                    f"< min_periods={profile.min_periods}"
-                ),
+                detail=(f"n_periods={evaluation.n_periods} < min_periods={profile.min_periods}"),
             )
-        if (
-            evaluation.n_assets is not None
-            and evaluation.n_assets < profile.min_assets
-        ):
+        if evaluation.n_assets is not None and evaluation.n_assets < profile.min_assets:
             return FailureRecord(
                 category=FailureCategory.DATA_INSUFFICIENT,
-                detail=(
-                    f"n_assets={evaluation.n_assets} "
-                    f"< min_assets={profile.min_assets}"
-                ),
+                detail=(f"n_assets={evaluation.n_assets} < min_assets={profile.min_assets}"),
             )
         return None
 
@@ -159,16 +158,11 @@ class PromotionJudge:
             if threshold is not None and value < threshold:
                 return FailureRecord(
                     category=FailureCategory.WEAK_SIGNAL,
-                    detail=(
-                        f"{metric.value}={value:.4f} "
-                        f"< threshold={threshold:.4f}"
-                    ),
+                    detail=(f"{metric.value}={value:.4f} < threshold={threshold:.4f}"),
                 )
         return None
 
-    def _check_sign_consistency(
-        self, evaluation: EvaluationBundle
-    ) -> FailureRecord | None:
+    def _check_sign_consistency(self, evaluation: EvaluationBundle) -> FailureRecord | None:
         """Reject multi-horizon evaluations whose IC sign isn't robust.
 
         When the evaluator computed IC across multiple horizons (indicated
@@ -192,9 +186,35 @@ class PromotionJudge:
             )
         return None
 
-    def _is_borderline(
-        self, evaluation: EvaluationBundle, profile: EvaluationProfile
-    ) -> bool:
+    def _check_walk_forward_stability(self, evaluation: EvaluationBundle) -> FailureRecord | None:
+        """Reject when fewer than ``min_fraction_positive_folds`` folds had positive rank-IC.
+
+        Only fires when the bundle was produced by
+        :class:`alpha_harness.evaluators.walk_forward.WalkForwardEvaluator`
+        (``metadata["walk_forward"]["n_folds"] >= 2``).  Single-fold and
+        legacy bundles bypass the check entirely so the judge is
+        backwards-compatible.
+        """
+        wf = evaluation.metadata.get("walk_forward")
+        if not isinstance(wf, dict):
+            return None
+        n_folds = wf.get("n_folds")
+        if not isinstance(n_folds, int) or n_folds < 2:
+            return None
+        frac = wf.get("fraction_positive_rank_ic")
+        if not isinstance(frac, int | float):
+            return None
+        if frac < self._min_frac_positive:
+            return FailureRecord(
+                category=FailureCategory.WEAK_SIGNAL,
+                detail=(
+                    f"fraction_positive_rank_ic={frac:.2f} across {n_folds} "
+                    f"folds (need >= {self._min_frac_positive:.2f})."
+                ),
+            )
+        return None
+
+    def _is_borderline(self, evaluation: EvaluationBundle, profile: EvaluationProfile) -> bool:
         """Check if any required metric is within the refine margin of its threshold."""
         for metric in profile.required_metrics:
             value = getattr(evaluation, metric.value, None)

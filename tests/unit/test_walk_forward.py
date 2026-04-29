@@ -1,0 +1,290 @@
+"""Round 4B — walk-forward evaluator + judge stability check."""
+
+from __future__ import annotations
+
+from datetime import date
+
+import pytest
+
+from alpha_harness.evaluators.promotion_judge import PromotionJudge
+from alpha_harness.evaluators.walk_forward import (
+    WalkForwardConfig,
+    WalkForwardEvaluator,
+    fold_windows,
+)
+from alpha_harness.schemas.evaluation import (
+    EvaluationBundle,
+    EvaluationProfile,
+    EvaluationRequest,
+)
+from alpha_harness.schemas.experiment import ExperimentDecision, FailureCategory
+from alpha_harness.schemas.factor import FactorSpec
+from alpha_harness.schemas.hypothesis import Hypothesis
+
+# ── fold_windows ────────────────────────────────────────────────────────────
+
+
+def test_fold_windows_disjoint() -> None:
+    cfg = WalkForwardConfig(n_folds=4, fold_size_days=10, step_days=10)
+    spans = fold_windows(date(2024, 1, 1), date(2024, 12, 31), cfg)
+    assert len(spans) == 4
+    # Disjoint: each fold start = previous start + 10 days
+    starts = [s for s, _ in spans]
+    diffs = [(starts[i + 1] - starts[i]).days for i in range(len(starts) - 1)]
+    assert diffs == [10, 10, 10]
+
+
+def test_fold_windows_overlapping() -> None:
+    cfg = WalkForwardConfig(n_folds=3, fold_size_days=20, step_days=5)
+    spans = fold_windows(date(2024, 1, 1), date(2024, 12, 31), cfg)
+    assert len(spans) == 3
+    # Overlapping: end of first > start of second
+    assert spans[0][1] > spans[1][0]
+
+
+def test_fold_windows_drops_when_short() -> None:
+    cfg = WalkForwardConfig(n_folds=4, fold_size_days=60, step_days=20)
+    spans = fold_windows(date(2024, 1, 1), date(2024, 1, 30), cfg)
+    assert spans == []  # 60-day fold can't fit in a 30-day span
+
+
+def test_walk_forward_config_validates() -> None:
+    with pytest.raises(ValueError):
+        WalkForwardConfig(n_folds=0)
+    with pytest.raises(ValueError):
+        WalkForwardConfig(fold_size_days=0)
+    with pytest.raises(ValueError):
+        WalkForwardConfig(step_days=0)
+
+
+# ── Aggregation ─────────────────────────────────────────────────────────────
+
+
+class _ScriptedEvaluator:
+    """Returns a pre-canned bundle keyed by (eval_start, eval_end)."""
+
+    def __init__(
+        self,
+        per_fold: dict[tuple[date, date], EvaluationBundle],
+        default: EvaluationBundle | None = None,
+    ) -> None:
+        self._per_fold = per_fold
+        self._default = default
+
+    def evaluate(
+        self,
+        factor: FactorSpec,
+        request: EvaluationRequest,
+    ) -> EvaluationBundle:
+        key = (request.eval_start, request.eval_end)
+        b = self._per_fold.get(key)
+        if b is not None:
+            return b
+        if self._default is not None:
+            return self._default
+        raise AssertionError(f"unexpected fold {key}")
+
+
+def _bundle(ic: float, rank_ic: float, **kw: float) -> EvaluationBundle:
+    return EvaluationBundle(
+        ic=ic,
+        rank_ic=rank_ic,
+        quantile_spread=kw.get("qs", 0.01),
+        net_quantile_spread=kw.get("net_qs", 0.009),
+        turnover=kw.get("turnover", 0.4),
+        n_periods=20,
+        n_assets=10,
+    )
+
+
+def _request(start: date, end: date) -> EvaluationRequest:
+    return EvaluationRequest(
+        factor_id="f",
+        universe_id="u",
+        eval_start=start,
+        eval_end=end,
+    )
+
+
+def test_aggregate_means_match_per_fold() -> None:
+    cfg = WalkForwardConfig(n_folds=3, fold_size_days=10, step_days=10)
+    s = date(2024, 1, 1)
+    spans = fold_windows(s, date(2024, 12, 31), cfg)
+    inner = _ScriptedEvaluator(
+        {
+            spans[0]: _bundle(0.05, 0.06),
+            spans[1]: _bundle(-0.01, 0.04),
+            spans[2]: _bundle(0.10, 0.08),
+        }
+    )
+    wf = WalkForwardEvaluator(inner, cfg)
+    out = wf.evaluate(
+        FactorSpec(name="f", expression="rank(close)"),
+        _request(s, date(2024, 12, 31)),
+    )
+    assert out.ic == pytest.approx((0.05 - 0.01 + 0.10) / 3)
+    assert out.rank_ic == pytest.approx((0.06 + 0.04 + 0.08) / 3)
+    wf_meta = out.metadata["walk_forward"]
+    assert wf_meta["n_folds"] == 3
+    assert wf_meta["fraction_positive_ic"] == pytest.approx(2 / 3)
+    assert wf_meta["fraction_positive_rank_ic"] == pytest.approx(1.0)
+    assert len(out.metadata["per_fold"]) == 3
+
+
+def test_aggregate_passes_through_when_one_fold() -> None:
+    """A single span shouldn't trigger the walk-forward path."""
+    cfg = WalkForwardConfig(n_folds=4, fold_size_days=400, step_days=20)
+    inner = _ScriptedEvaluator({}, default=_bundle(0.05, 0.06))
+    wf = WalkForwardEvaluator(inner, cfg)
+    out = wf.evaluate(
+        FactorSpec(name="f", expression="rank(close)"),
+        _request(date(2024, 1, 1), date(2024, 6, 30)),
+    )
+    assert out.ic == 0.05  # passthrough
+    assert out.metadata["walk_forward"]["skipped_reason"] == "span_too_short"
+
+
+# ── Judge integration ──────────────────────────────────────────────────────
+
+
+def _judge_bundle(
+    *,
+    ic: float = 0.05,
+    rank_ic: float = 0.06,
+    fraction_positive_rank_ic: float = 1.0,
+    n_folds: int = 4,
+) -> EvaluationBundle:
+    return EvaluationBundle(
+        ic=ic,
+        rank_ic=rank_ic,
+        quantile_spread=0.01,
+        net_quantile_spread=0.009,
+        turnover=0.4,
+        n_periods=400,
+        n_assets=10,
+        metadata={
+            "walk_forward": {
+                "n_folds": n_folds,
+                "fraction_positive_rank_ic": fraction_positive_rank_ic,
+                "mean_rank_ic": rank_ic,
+                "fold_size_days": 60,
+                "step_days": 20,
+            },
+        },
+    )
+
+
+def _judge() -> PromotionJudge:
+    return PromotionJudge()
+
+
+def _f() -> FactorSpec:
+    return FactorSpec(name="f", expression="rank(close)")
+
+
+def test_judge_promotes_when_fraction_positive_meets_threshold() -> None:
+    j = _judge()
+    detail = j.judge(
+        Hypothesis(text="x"),
+        _f(),
+        _judge_bundle(fraction_positive_rank_ic=0.75),
+        EvaluationRequest(
+            factor_id="f",
+            universe_id="u",
+            eval_start=date(2024, 1, 1),
+            eval_end=date(2024, 12, 31),
+            profile=EvaluationProfile(min_periods=10),
+        ),
+    )
+    assert detail.decision == ExperimentDecision.PROMOTE_CANDIDATE
+
+
+def test_judge_rejects_when_too_few_positive_folds() -> None:
+    j = _judge()
+    # 1/4 folds positive — high mean rank_ic but unstable.
+    detail = j.judge(
+        Hypothesis(text="x"),
+        _f(),
+        _judge_bundle(rank_ic=0.20, fraction_positive_rank_ic=0.25),
+        EvaluationRequest(
+            factor_id="f",
+            universe_id="u",
+            eval_start=date(2024, 1, 1),
+            eval_end=date(2024, 12, 31),
+            profile=EvaluationProfile(min_periods=10),
+        ),
+    )
+    assert detail.decision == ExperimentDecision.REJECT
+    assert detail.failure is not None
+    assert detail.failure.category == FailureCategory.WEAK_SIGNAL
+    assert "fraction_positive_rank_ic" in detail.failure.detail
+
+
+def test_judge_skips_walk_forward_check_when_legacy_bundle() -> None:
+    """Single-fold / legacy bundles must not trigger the new check."""
+    bundle = EvaluationBundle(
+        ic=0.05,
+        rank_ic=0.06,
+        quantile_spread=0.01,
+        net_quantile_spread=0.009,
+        turnover=0.4,
+        n_periods=400,
+        n_assets=10,
+    )
+    detail = _judge().judge(
+        Hypothesis(text="x"),
+        _f(),
+        bundle,
+        EvaluationRequest(
+            factor_id="f",
+            universe_id="u",
+            eval_start=date(2024, 1, 1),
+            eval_end=date(2024, 12, 31),
+            profile=EvaluationProfile(min_periods=10),
+        ),
+    )
+    # No walk-forward metadata → judge follows the legacy path; bundle
+    # is well above thresholds with no horizon data, so promote.
+    assert detail.decision == ExperimentDecision.PROMOTE_CANDIDATE
+
+
+def test_judge_skips_walk_forward_check_when_n_folds_lt_2() -> None:
+    bundle = _judge_bundle(n_folds=1)
+    detail = _judge().judge(
+        Hypothesis(text="x"),
+        _f(),
+        bundle,
+        EvaluationRequest(
+            factor_id="f",
+            universe_id="u",
+            eval_start=date(2024, 1, 1),
+            eval_end=date(2024, 12, 31),
+            profile=EvaluationProfile(min_periods=10),
+        ),
+    )
+    assert detail.decision == ExperimentDecision.PROMOTE_CANDIDATE
+
+
+# ── Round-trip ──────────────────────────────────────────────────────────────
+
+
+def test_walk_forward_bundle_serialises_through_pydantic() -> None:
+    """Aggregate bundle must survive model_dump_json round-trip."""
+    cfg = WalkForwardConfig(n_folds=2, fold_size_days=10, step_days=10)
+    s = date(2024, 1, 1)
+    spans = fold_windows(s, date(2024, 12, 31), cfg)
+    inner = _ScriptedEvaluator(
+        {
+            spans[0]: _bundle(0.05, 0.06),
+            spans[1]: _bundle(0.04, 0.05),
+        }
+    )
+    wf = WalkForwardEvaluator(inner, cfg)
+    bundle = wf.evaluate(
+        FactorSpec(name="f", expression="rank(close)"),
+        _request(s, date(2024, 12, 31)),
+    )
+    payload = bundle.model_dump_json()
+    restored = EvaluationBundle.model_validate_json(payload)
+    assert restored.metadata["walk_forward"]["n_folds"] == 2
+    assert restored.ic == pytest.approx(bundle.ic)
