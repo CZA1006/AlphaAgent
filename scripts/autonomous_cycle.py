@@ -569,6 +569,14 @@ def main(argv: list[str] | None = None) -> int:
             max_variants_per_step=args.max_variants_per_step,
             max_total_children=args.max_total_children,
         ),
+        # Round 4G — let the runner compute the current trail_id so any
+        # seeded refinement (refine_record) can detect regime drift.
+        judge_thresholds={
+            "refine_margin": 0.20,
+            "min_fraction_positive_folds": 0.6,
+            "max_tail_concentration": 0.5,
+            "min_holdout_decay_ratio": 0.5,
+        },
     )
 
     # ── 5. LLM + proposer ─────────────────────────────────────────────────

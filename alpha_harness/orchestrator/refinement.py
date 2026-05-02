@@ -45,7 +45,11 @@ from alpha_harness.orchestrator.mutations import propose_mutations
 from alpha_harness.orchestrator.research_loop import ResearchOrchestrator
 from alpha_harness.refiner import build_brief
 from alpha_harness.schemas.evaluation import EvaluationRequest
-from alpha_harness.schemas.experiment import ExperimentDecision, ExperimentRecord
+from alpha_harness.schemas.experiment import (
+    ExperimentDecision,
+    ExperimentRecord,
+    PromotionTrail,
+)
 from alpha_harness.schemas.factor import FactorSpec
 from alpha_harness.schemas.hypothesis import Hypothesis
 
@@ -87,10 +91,49 @@ class RefinementResult:
     # ``skipped`` is ``(expression, reason)`` for candidates that were not
     # submitted to the orchestrator (compile error, duplicate, or cap hit).
 
+    # Round 4G — trail-aware refinement guard.
+    # ``current_trail_id`` is the trail_id that the runner's judge config
+    # would produce for *this* run; ``None`` when no judge thresholds were
+    # supplied (legacy callers).
+    current_trail_id: str | None = None
+    # ``regime_skips`` is ``(factor_id, reason)`` for parent records that
+    # the runner refused to refine because their trail already matches the
+    # current regime — refining them would just churn.
+    regime_skips: list[tuple[str, str]] = field(default_factory=list)
+    # ``trail_mismatches`` is ``(expression, parent_trail_id, current_trail_id)``
+    # for refinement children whose parent was promoted under a different
+    # trail than the current one — those children are rejected upfront so
+    # the loop can't accidentally promote a descendant that never validated
+    # under the current regime.
+    trail_mismatches: list[tuple[str, str, str]] = field(default_factory=list)
+
     @property
     def all_records(self) -> list[ExperimentRecord]:
         """Root followed by every accepted child, in the order they ran."""
         return [self.root, *self.children]
+
+
+# ── Trail comparison ──────────────────────────────────────────────────────
+
+
+def trail_status(
+    record: ExperimentRecord,
+    current_trail_id: str | None,
+) -> str:
+    """Return ``'match'``, ``'mismatch'``, ``'legacy'``, or ``'unset'``.
+
+    * ``match``    — record carries a trail and it equals ``current_trail_id``.
+    * ``mismatch`` — record carries a trail but it differs.
+    * ``legacy``   — record has no ``promotion_trail`` (pre-4F).
+    * ``unset``    — caller didn't supply a current trail id (judge
+                     thresholds weren't passed to the runner).
+    """
+    trail = record.promotion_trail
+    if trail is None:
+        return "legacy"
+    if current_trail_id is None:
+        return "unset"
+    return "match" if trail.trail_id == current_trail_id else "mismatch"
 
 
 # ── Runner ───────────────────────────────────────────────────────────────────
@@ -106,11 +149,17 @@ class RefinementRunner:
         *,
         compiler: FactorDslCompiler | None = None,
         config: RefinementConfig | None = None,
+        judge_thresholds: dict[str, float] | None = None,
     ) -> None:
         self._orchestrator = orchestrator
         self._novelty = novelty_evaluator
         self._compiler = compiler or FactorDslCompiler()
         self._config = config or RefinementConfig()
+        # Optional snapshot of the judge's gating thresholds — when
+        # supplied, the runner can compute the current ``trail_id`` and
+        # use it for the Round 4G regime-drift checks.  ``None`` keeps
+        # legacy callers unaffected.
+        self._judge_thresholds = judge_thresholds
 
     # ── Public API ───────────────────────────────────────────────────────
 
@@ -125,7 +174,10 @@ class RefinementRunner:
         record back, even when no refinement is warranted.
         """
         root_record = self._orchestrator.run_cycle(root_hypothesis, eval_request)
-        result = RefinementResult(root=root_record)
+        result = RefinementResult(
+            root=root_record,
+            current_trail_id=self._current_trail_id(eval_request),
+        )
 
         if root_record.decision != ExperimentDecision.REFINE:
             return result
@@ -139,6 +191,95 @@ class RefinementRunner:
             result=result,
         )
         return result
+
+    def refine_record(
+        self,
+        seed_record: ExperimentRecord,
+        eval_request: EvaluationRequest,
+    ) -> RefinementResult:
+        """Refine an *existing* record loaded from a prior cycle.
+
+        Round 4G entry point.  Behaviour by parent decision:
+
+        * REFINE  — expands as normal (no trail check needed).
+        * PROMOTE_CANDIDATE — compares the parent's ``promotion_trail``
+          against the current judge config:
+
+          - **match**:     the parent is already a winner under the live
+                           regime; refining would just churn.  Recorded in
+                           ``regime_skips`` and the runner returns.
+          - **mismatch**:  regime drift between cycles.  Logged and the
+                           runner expands the record under the new regime
+                           so its mutations are evaluated against current
+                           rules.
+          - **legacy**/``unset`` — proceed defensively (no trail to
+                           compare against).
+        * Anything else — return without expanding.
+        """
+        result = RefinementResult(
+            root=seed_record,
+            current_trail_id=self._current_trail_id(eval_request),
+        )
+
+        if seed_record.decision == ExperimentDecision.REFINE:
+            self._expand(
+                parent_record=seed_record,
+                parent_hypothesis=seed_record.hypothesis,
+                root_expression=seed_record.factor.expression,
+                depth=0,
+                eval_request=eval_request,
+                result=result,
+            )
+            return result
+
+        if seed_record.decision != ExperimentDecision.PROMOTE_CANDIDATE:
+            return result
+
+        status = trail_status(seed_record, result.current_trail_id)
+        if status == "match":
+            result.regime_skips.append(
+                (
+                    seed_record.factor.id,
+                    f"trail_id {result.current_trail_id} matches current regime",
+                ),
+            )
+            logger.info(
+                "Refinement skipped for %s: trail matches current regime",
+                seed_record.factor.id,
+            )
+            return result
+        if status == "mismatch":
+            parent_trail = seed_record.promotion_trail.trail_id  # type: ignore[union-attr]
+            logger.info(
+                "Refinement: regime drift on %s (parent trail=%s, current=%s)",
+                seed_record.factor.id,
+                parent_trail,
+                result.current_trail_id,
+            )
+        # mismatch / legacy / unset → proceed.
+        self._expand(
+            parent_record=seed_record,
+            parent_hypothesis=seed_record.hypothesis,
+            root_expression=seed_record.factor.expression,
+            depth=0,
+            eval_request=eval_request,
+            result=result,
+        )
+        return result
+
+    # ── Internals: trail helpers ─────────────────────────────────────────
+
+    def _current_trail_id(
+        self,
+        eval_request: EvaluationRequest,
+    ) -> str | None:
+        """Compute the trail_id this runner's judge config would produce."""
+        if self._judge_thresholds is None:
+            return None
+        return PromotionTrail.from_inputs(
+            evaluation_request=eval_request,
+            judge_thresholds=self._judge_thresholds,
+        ).trail_id
 
     # ── Internals ────────────────────────────────────────────────────────
 
