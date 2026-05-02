@@ -31,13 +31,13 @@ class FailureCategory(StrEnum):
     can be analyzed across runs (data issues vs. factor invalidity vs. ...).
     """
 
-    WEAK_SIGNAL = "weak_signal"               # IC/RankIC below threshold
-    NO_MONOTONICITY = "no_monotonicity"       # quantile spread not monotonic
-    HIGH_TURNOVER = "high_turnover"           # impractical rebalance cost
-    DATA_INSUFFICIENT = "data_insufficient"   # not enough periods or assets
-    COMPILATION_ERROR = "compilation_error"   # factor DSL failed to compile
-    EVALUATION_ERROR = "evaluation_error"     # evaluator raised an exception
-    DUPLICATE = "duplicate"                   # too similar to existing factor
+    WEAK_SIGNAL = "weak_signal"  # IC/RankIC below threshold
+    NO_MONOTONICITY = "no_monotonicity"  # quantile spread not monotonic
+    HIGH_TURNOVER = "high_turnover"  # impractical rebalance cost
+    DATA_INSUFFICIENT = "data_insufficient"  # not enough periods or assets
+    COMPILATION_ERROR = "compilation_error"  # factor DSL failed to compile
+    EVALUATION_ERROR = "evaluation_error"  # evaluator raised an exception
+    DUPLICATE = "duplicate"  # too similar to existing factor
     OTHER = "other"
 
 
@@ -99,9 +99,7 @@ class PromotionTrail(BaseModel):
         import json as _json
 
         sector_map = getattr(evaluation_request, "sector_map", {}) or {}
-        sector_pairs = sorted(
-            (str(k), str(v)) for k, v in sector_map.items()
-        )
+        sector_pairs = sorted((str(k), str(v)) for k, v in sector_map.items())
         sector_hash = hashlib.sha256(
             _json.dumps(sector_pairs, sort_keys=True).encode("utf-8"),
         ).hexdigest()[:16]
@@ -114,22 +112,12 @@ class PromotionTrail(BaseModel):
             "neutralize": str(getattr(evaluation_request, "neutralize", "none")),
             "sector_map_hash": sector_hash,
             "cost_bps": float(getattr(evaluation_request, "cost_bps", 0.0)),
-            "extra_horizons": (
-                list(label.extra_horizons) if label is not None else []
-            ),
-            "forecast_horizon_bars": (
-                int(label.forecast_horizon_bars) if label is not None else 5
-            ),
+            "extra_horizons": (list(label.extra_horizons) if label is not None else []),
+            "forecast_horizon_bars": (int(label.forecast_horizon_bars) if label is not None else 5),
             "lag_bars": int(label.lag_bars) if label is not None else 1,
-            "return_type": (
-                str(label.return_type) if label is not None else "simple"
-            ),
-            "holdout_strategy": (
-                str(holdout.strategy) if holdout is not None else "none"
-            ),
-            "holdout_fraction": (
-                float(holdout.holdout_fraction) if holdout is not None else 0.0
-            ),
+            "return_type": (str(label.return_type) if label is not None else "simple"),
+            "holdout_strategy": (str(holdout.strategy) if holdout is not None else "none"),
+            "holdout_fraction": (float(holdout.holdout_fraction) if holdout is not None else 0.0),
             "walk_forward": wf,
             "refine_margin": float(judge_thresholds.get("refine_margin", 0.20)),
             "min_fraction_positive_folds": float(
@@ -145,6 +133,26 @@ class PromotionTrail(BaseModel):
         canonical = _json.dumps(body, sort_keys=True, default=str)
         trail_id = hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
         return cls.model_validate({"trail_id": trail_id, **body})
+
+    def diff(self, other: PromotionTrail) -> dict[str, tuple[Any, Any]]:
+        """Return ``{field: (self_value, other_value)}`` for fields that differ.
+
+        ``trail_id`` is excluded — it's a function of the other fields,
+        so listing it adds noise without information.  The result is
+        symmetric in the sense that ``a.diff(b)`` is the
+        tuple-swap of ``b.diff(a)``.
+        """
+        self_dump = self.model_dump()
+        other_dump = other.model_dump()
+        out: dict[str, tuple[Any, Any]] = {}
+        for key in self_dump:
+            if key == "trail_id":
+                continue
+            mine = self_dump[key]
+            theirs = other_dump.get(key)
+            if mine != theirs:
+                out[key] = (mine, theirs)
+        return out
 
 
 class JudgmentDetail(BaseModel):
@@ -171,10 +179,10 @@ class JudgmentDetail(BaseModel):
 class ReproducibilityInfo(BaseModel):
     """Fields needed to reproduce or audit an experiment result."""
 
-    code_version: str = ""            # git commit hash or tag
+    code_version: str = ""  # git commit hash or tag
     config_snapshot: dict[str, str] = Field(default_factory=dict)
-    dataset_snapshot_id: str = ""     # identifies data version used
-    universe_snapshot_id: str = ""    # identifies universe membership used
+    dataset_snapshot_id: str = ""  # identifies data version used
+    universe_snapshot_id: str = ""  # identifies universe membership used
     artifact_paths: list[str] = Field(default_factory=list)
 
 

@@ -26,7 +26,8 @@ import sys
 from datetime import date, datetime
 from typing import Any
 
-from alpha_harness.artifacts import DEFAULT_PROMOTED_DIR, read_index
+from alpha_harness.artifacts import DEFAULT_PROMOTED_DIR, read_artifact, read_index
+from alpha_harness.schemas.experiment import PromotionTrail
 
 _SORT_KEYS = {"ic", "rank_ic", "net_quantile_spread", "turnover", "promoted_at"}
 
@@ -149,6 +150,72 @@ def _render_lineage_trees(entries: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def _load_trail(
+    factor_id: str,
+    promoted_dir: str,
+) -> PromotionTrail | None:
+    """Read the per-factor JSON and return its promotion_trail, if any."""
+    payload = read_artifact(factor_id, promoted_dir)
+    if payload is None:
+        return None
+    raw = payload.get("promotion_trail")
+    if not isinstance(raw, dict) or not raw.get("trail_id"):
+        return None
+    return PromotionTrail.model_validate(raw)
+
+
+def _diff_trails_command(
+    factor_id_a: str,
+    factor_id_b: str,
+    promoted_dir: str,
+    *,
+    json_out: bool,
+) -> int:
+    """Implements ``list_factors --diff-trails A B``."""
+    trail_a = _load_trail(factor_id_a, promoted_dir)
+    trail_b = _load_trail(factor_id_b, promoted_dir)
+    if trail_a is None:
+        print(
+            f"error: no promotion_trail for factor_id={factor_id_a!r} in {promoted_dir}",
+            file=sys.stderr,
+        )
+        return 2
+    if trail_b is None:
+        print(
+            f"error: no promotion_trail for factor_id={factor_id_b!r} in {promoted_dir}",
+            file=sys.stderr,
+        )
+        return 2
+
+    diff = trail_a.diff(trail_b)
+    if json_out:
+        print(
+            json.dumps(
+                {
+                    "a": factor_id_a,
+                    "b": factor_id_b,
+                    "trail_id_a": trail_a.trail_id,
+                    "trail_id_b": trail_b.trail_id,
+                    "diff": {k: list(v) for k, v in diff.items()},
+                },
+                indent=2,
+                sort_keys=True,
+                default=str,
+            ),
+        )
+        return 0
+
+    print(f"trail_id_a ({factor_id_a}) = {trail_a.trail_id}")
+    print(f"trail_id_b ({factor_id_b}) = {trail_b.trail_id}")
+    if not diff:
+        print("trails are identical (apart from trail_id, which is a hash).")
+        return 0
+    print(f"differences ({len(diff)} field(s)):")
+    for field, (av, bv) in diff.items():
+        print(f"  {field}: {av!r} -> {bv!r}")
+    return 0
+
+
 def _dump_trails(entries: list[dict[str, Any]], promoted_dir: str) -> None:
     """For each shown row, read its per-factor JSON and print the trail block.
 
@@ -238,11 +305,30 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     p.add_argument(
+        "--diff-trails",
+        nargs=2,
+        metavar=("FACTOR_ID_A", "FACTOR_ID_B"),
+        default=None,
+        help=(
+            "Print a field-level diff between two factors' promotion "
+            "trails (Round 4I).  Bypasses the table; exits 2 when either "
+            "factor is missing or has no trail."
+        ),
+    )
+    p.add_argument(
         "--json",
         action="store_true",
         help="Emit the filtered index as JSON instead of a formatted table.",
     )
     args = p.parse_args(argv)
+
+    if args.diff_trails is not None:
+        return _diff_trails_command(
+            args.diff_trails[0],
+            args.diff_trails[1],
+            args.promoted_dir,
+            json_out=args.json,
+        )
 
     entries = read_index(args.promoted_dir)
     if args.since is not None:

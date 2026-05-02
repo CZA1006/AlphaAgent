@@ -59,6 +59,7 @@ from alpha_harness.schemas.evaluation import (
     LabelDefinition,
     NeutralizeMode,
 )
+from alpha_harness.schemas.experiment import PromotionTrail
 from alpha_harness.service import AlphaHarnessService
 
 logging.basicConfig(
@@ -203,6 +204,20 @@ def main(argv: list[str] | None = None) -> int:
     result = runner.refine_record(seed, eval_request)
     status = trail_status(seed, result.current_trail_id)
 
+    # Round 4I — when trails differ, surface a field-level diff so the
+    # operator can act on the mismatch instead of staring at two opaque
+    # 16-char hashes.
+    trail_diff: dict[str, list[object]] = {}
+    if status == "mismatch" and seed.promotion_trail is not None:
+        current_trail = PromotionTrail.from_inputs(
+            evaluation_request=eval_request,
+            judge_thresholds=judge_thresholds,
+        )
+        trail_diff = {
+            field: [old, new]
+            for field, (old, new) in seed.promotion_trail.diff(current_trail).items()
+        }
+
     summary = {
         "factor_id": seed.factor.id,
         "seed_trail_id": (
@@ -210,6 +225,7 @@ def main(argv: list[str] | None = None) -> int:
         ),
         "current_trail_id": result.current_trail_id,
         "trail_status": status,
+        "trail_diff": trail_diff,
         "regime_skips": result.regime_skips,
         "trail_mismatches": result.trail_mismatches,
         "n_children": len(result.children),
@@ -232,6 +248,11 @@ def _print_summary(summary: dict[str, object]) -> None:
     print(f"  seed trail_id    : {summary['seed_trail_id']}")
     print(f"  current trail_id : {summary['current_trail_id']}")
     print(f"  trail status     : {summary['trail_status']}")
+    diff = summary.get("trail_diff") or {}
+    if diff:
+        print("  Trail diff (seed -> current):")
+        for field, pair in diff.items():  # type: ignore[union-attr]
+            print(f"    {field}: {pair[0]!r} -> {pair[1]!r}")
     if summary["regime_skips"]:
         for fid, reason in summary["regime_skips"]:  # type: ignore[misc]
             print(f"  regime-skip      : {fid}  ({reason})")
