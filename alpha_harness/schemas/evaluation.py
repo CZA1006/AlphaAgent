@@ -23,6 +23,38 @@ class MetricName(StrEnum):
     NET_QUANTILE_SPREAD = "net_quantile_spread"
 
 
+class HoldoutStrategy(StrEnum):
+    """How to reserve an out-of-sample slice from the eval window.
+
+    ``NONE``  — no reservation; the full ``[eval_start, eval_end]`` window
+                contributes to the primary metrics (pre-4E behaviour).
+    ``TAIL``  — reserve the trailing ``holdout_fraction`` of the window
+                as a held-out slice.  Primary metrics are computed on the
+                in-sample portion only; holdout metrics land under
+                ``metadata.holdout`` and the judge enforces sign-match
+                and a decay floor before promotion.
+    """
+
+    NONE = "none"
+    TAIL = "tail"
+
+
+class HoldoutPolicy(BaseModel):
+    """How an out-of-sample holdout is carved off the eval window."""
+
+    strategy: HoldoutStrategy = HoldoutStrategy.NONE
+    holdout_fraction: float = 0.20
+
+    def __init__(self, **data: Any) -> None:
+        super().__init__(**data)
+        # Pydantic field validators would force a separate import; the
+        # constructor check is simpler and runs once per request.
+        if not (0.0 <= self.holdout_fraction < 1.0):
+            raise ValueError(
+                f"holdout_fraction must be in [0, 1); got {self.holdout_fraction}",
+            )
+
+
 class NeutralizeMode(StrEnum):
     """Cross-sectional neutralization applied to forward returns.
 
@@ -123,6 +155,12 @@ class EvaluationRequest(BaseModel):
     # portfolio via turnover.  ``0.0`` (default) disables the cost adjustment,
     # so ``net_quantile_spread`` equals ``quantile_spread``.
     cost_bps: float = 0.0
+
+    # Round 4E — out-of-sample reservation.  Default ``NONE`` preserves
+    # legacy single-window evaluation; ``TAIL`` carves the trailing
+    # ``holdout_fraction`` of the window into a held-out slice that
+    # the judge cross-checks against the in-sample metrics.
+    holdout: HoldoutPolicy = Field(default_factory=HoldoutPolicy)
 
 
 # ── Evaluation output ────────────────────────────────────────────────────────

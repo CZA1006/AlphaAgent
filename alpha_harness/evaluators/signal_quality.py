@@ -42,6 +42,8 @@ from alpha_harness.factors.dsl_parser import parse_expression
 from alpha_harness.schemas.evaluation import (
     EvaluationBundle,
     EvaluationRequest,
+    HoldoutPolicy,
+    HoldoutStrategy,
     LabelDefinition,
 )
 from alpha_harness.schemas.factor import FactorSpec
@@ -254,6 +256,19 @@ class SignalQualityEvaluator:
             4. Compute IC, RankIC, quantile-spread cross-sectionally.
             5. Return an EvaluationBundle with metrics and coverage stats.
         """
+        # ── 0. Holdout split (Round 4E) ───────────────────────────────
+        # When the request reserves an out-of-sample tail, evaluate the
+        # in-sample portion through the normal flow, then run a *second*
+        # pass on the holdout slice with the policy disabled so the
+        # recursion terminates.  Holdout metrics land under
+        # ``metadata["holdout"]`` and only the in-sample bundle is the
+        # primary return value.
+        if (
+            request.holdout.strategy is HoldoutStrategy.TAIL
+            and request.holdout.holdout_fraction > 0
+        ):
+            return self._evaluate_with_holdout(factor, request)
+
         # ── 1. Filter to evaluation window ────────────────────────────
         df = self._filter_to_window(request)
 
@@ -381,6 +396,78 @@ class SignalQualityEvaluator:
             eval_end=request.eval_end,
             forecast_horizon_bars=request.label.forecast_horizon_bars,
             metadata=metadata,
+        )
+
+    def _evaluate_with_holdout(
+        self,
+        factor: FactorSpec,
+        request: EvaluationRequest,
+    ) -> EvaluationBundle:
+        """Run the in-sample + held-out passes and merge their bundles.
+
+        The trailing ``holdout_fraction`` of ``[eval_start, eval_end]`` is
+        carved off, evaluated separately, and stored under
+        ``metadata.holdout``.  Both sub-evaluations run with the holdout
+        policy disabled so the recursion terminates after one level.
+        """
+        total_days = (request.eval_end - request.eval_start).days + 1
+        # Round to at least 1 day so a tiny eval window doesn't silently
+        # collapse to "no holdout"; over-aggressive fractions on very
+        # short spans produce a degenerate but well-formed bundle.
+        from datetime import timedelta as _td
+
+        holdout_days = max(1, round(total_days * request.holdout.holdout_fraction))
+        holdout_days = min(holdout_days, total_days - 1)
+        if holdout_days < 1:
+            # Span too short to split — fall back to a normal evaluation.
+            return self.evaluate(
+                factor,
+                request.model_copy(update={"holdout": HoldoutPolicy()}),
+            )
+
+        split_start = request.eval_end - _td(days=holdout_days - 1)
+        is_end = split_start - _td(days=1)
+
+        disabled = HoldoutPolicy(strategy=HoldoutStrategy.NONE)
+        in_sample_req = request.model_copy(
+            update={"eval_end": is_end, "holdout": disabled},
+        )
+        holdout_req = request.model_copy(
+            update={
+                "eval_start": split_start,
+                "eval_end": request.eval_end,
+                "holdout": disabled,
+            },
+        )
+
+        in_sample = self.evaluate(factor, in_sample_req)
+        held_out = self.evaluate(factor, holdout_req)
+
+        is_rank = in_sample.rank_ic
+        ho_rank = held_out.rank_ic
+        decay_ratio: float | None = None
+        if is_rank is not None and ho_rank is not None and is_rank != 0:
+            decay_ratio = ho_rank / is_rank
+
+        merged_metadata = dict(in_sample.metadata)
+        merged_metadata["holdout"] = {
+            "holdout_start": str(split_start),
+            "holdout_end": str(request.eval_end),
+            "holdout_days": holdout_days,
+            "ic": held_out.ic,
+            "rank_ic": ho_rank,
+            "quantile_spread": held_out.quantile_spread,
+            "net_quantile_spread": held_out.net_quantile_spread,
+            "turnover": held_out.turnover,
+            "n_periods": held_out.n_periods,
+            "decay_ratio": decay_ratio,
+        }
+        return in_sample.model_copy(
+            update={
+                "eval_start": request.eval_start,
+                "eval_end": request.eval_end,
+                "metadata": merged_metadata,
+            },
         )
 
     def _filter_to_window(self, request: EvaluationRequest) -> pd.DataFrame:

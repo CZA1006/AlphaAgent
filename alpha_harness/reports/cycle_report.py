@@ -71,6 +71,11 @@ class ExperimentThumbnail(BaseModel):
     # the per-experiment payload includes ``n_folds``, ``embargo_days``,
     # ``purged_folds``, and stability fractions; otherwise None.
     walk_forward: dict[str, Any] | None = None
+    # Holdout audit (Round 4E).  Carries ``rank_ic`` and ``decay_ratio``
+    # when the evaluator reserved a tail slice; otherwise None.  We keep
+    # this slim — the full block bloats reports — and the registry holds
+    # the unabridged ``metadata.holdout`` for deeper audits.
+    holdout: dict[str, Any] | None = None
     failure_category: str | None = None
 
 
@@ -159,6 +164,17 @@ def build_cycle_report(
     )
 
 
+def _holdout_summary(holdout: Any) -> dict[str, Any] | None:
+    """Slim ``metadata.holdout`` to ``rank_ic`` + ``decay_ratio`` for the report."""
+    if not isinstance(holdout, dict):
+        return None
+    summary: dict[str, Any] = {}
+    for key in ("rank_ic", "decay_ratio", "holdout_start", "holdout_end"):
+        if key in holdout:
+            summary[key] = holdout[key]
+    return summary or None
+
+
 def _thumbnail(record: ExperimentRecord) -> ExperimentThumbnail:
     ev = record.evaluation
     portfolio = ev.metadata.get("portfolio") or {}
@@ -190,6 +206,7 @@ def _thumbnail(record: ExperimentRecord) -> ExperimentThumbnail:
             if isinstance(ev.metadata.get("walk_forward"), dict)
             else None
         ),
+        holdout=_holdout_summary(ev.metadata.get("holdout")),
         failure_category=(record.failure.category.value if record.failure is not None else None),
     )
 

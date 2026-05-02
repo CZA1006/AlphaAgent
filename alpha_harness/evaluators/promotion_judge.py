@@ -44,11 +44,13 @@ class PromotionJudge:
         refine_margin: float = 0.20,
         min_fraction_positive_folds: float = 0.6,
         max_tail_concentration: float = 0.5,
+        min_holdout_decay_ratio: float = 0.5,
     ) -> None:
         self._novelty = novelty_evaluator or NoveltyEvaluator()
         self._refine_margin = refine_margin
         self._min_frac_positive = min_fraction_positive_folds
         self._max_tail_concentration = max_tail_concentration
+        self._min_holdout_decay = min_holdout_decay_ratio
 
     def judge(
         self,
@@ -110,6 +112,15 @@ class PromotionJudge:
                 decision=ExperimentDecision.REJECT,
                 failure=failure,
                 notes="Long-short return concentrated in a handful of days.",
+            )
+
+        # ── 2e. Holdout decay (Round 4E) ───────────────────────────────
+        failure = self._check_holdout_decay(evaluation)
+        if failure is not None:
+            return JudgmentDetail(
+                decision=ExperimentDecision.REJECT,
+                failure=failure,
+                notes="In-sample / holdout disagree on rank-IC.",
             )
 
         # ── 3. Novelty ────────────────────────────────────────────────
@@ -247,6 +258,50 @@ class PromotionJudge:
                     f"tail_concentration={tail:.2f} > "
                     f"{self._max_tail_concentration:.2f}; top-3 days carry "
                     f"the majority of the gross long-short return."
+                ),
+            )
+        return None
+
+    def _check_holdout_decay(self, evaluation: EvaluationBundle) -> FailureRecord | None:
+        """Reject when out-of-sample rank-IC flips sign or decays sharply.
+
+        Triggered only when the evaluator carved out a holdout slice
+        (``metadata.holdout`` present with a numeric ``rank_ic``).
+        Fails when:
+
+        * the holdout rank-IC sign disagrees with the in-sample sign, or
+        * ``holdout.rank_ic / in_sample.rank_ic < min_holdout_decay``.
+
+        Bundles without holdout metadata bypass the gate so legacy
+        callers stay unaffected.
+        """
+        holdout = evaluation.metadata.get("holdout")
+        if not isinstance(holdout, dict):
+            return None
+        ho_rank = holdout.get("rank_ic")
+        is_rank = evaluation.rank_ic
+        if not isinstance(ho_rank, int | float) or not isinstance(is_rank, int | float):
+            return None
+        if is_rank == 0:
+            # In-sample is dead — let the threshold gate (already run) catch it.
+            return None
+        # Sign-flip: opposite signs (treat 0 holdout as "decayed to nothing").
+        if (is_rank > 0) != (ho_rank > 0):
+            return FailureRecord(
+                category=FailureCategory.WEAK_SIGNAL,
+                detail=(
+                    f"holdout rank_ic={ho_rank:.4f} disagrees in sign with "
+                    f"in-sample rank_ic={is_rank:.4f}."
+                ),
+            )
+        ratio = ho_rank / is_rank
+        if ratio < self._min_holdout_decay:
+            return FailureRecord(
+                category=FailureCategory.WEAK_SIGNAL,
+                detail=(
+                    f"holdout/in-sample rank_ic ratio={ratio:.2f} < "
+                    f"{self._min_holdout_decay:.2f} (in_sample={is_rank:.4f}, "
+                    f"holdout={ho_rank:.4f})."
                 ),
             )
         return None

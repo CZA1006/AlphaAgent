@@ -78,6 +78,8 @@ from alpha_harness.reports.cycle_report import snapshot_budget
 from alpha_harness.schemas.evaluation import (
     EvaluationProfile,
     EvaluationRequest,
+    HoldoutPolicy,
+    HoldoutStrategy,
     LabelDefinition,
     NeutralizeMode,
 )
@@ -272,6 +274,27 @@ def _build_parser() -> argparse.ArgumentParser:
         type=int,
         default=20,
         help="Walk-forward stride between fold starts (default: 20).",
+    )
+
+    # Holdout reservation (Round 4E)
+    p.add_argument(
+        "--holdout-fraction",
+        type=float,
+        default=0.0,
+        help=(
+            "Reserve the trailing fraction of [eval_start, eval_end] as a "
+            "holdout slice; primary metrics use the in-sample remainder, "
+            "and the judge cross-checks rank-IC sign + decay.  0 disables."
+        ),
+    )
+    p.add_argument(
+        "--holdout-strategy",
+        choices=["none", "tail"],
+        default="tail",
+        help=(
+            "How the holdout is carved (default: tail).  Only meaningful "
+            "when --holdout-fraction > 0."
+        ),
     )
 
     # Promotion artifacts (Round 4A.5)
@@ -642,6 +665,10 @@ def main(argv: list[str] | None = None) -> int:
         neutralize=NeutralizeMode(args.neutralize),
         sector_map=sector_map,
         cost_bps=args.cost_bps,
+        holdout=HoldoutPolicy(
+            strategy=HoldoutStrategy(args.holdout_strategy),
+            holdout_fraction=args.holdout_fraction,
+        ),
     )
 
     # ── 7. Adapter.run_theme ──────────────────────────────────────────────
