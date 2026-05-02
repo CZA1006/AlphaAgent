@@ -106,4 +106,5 @@ class AlphaHarnessService:
             decision=detail.decision,
             failure=detail.failure,
             notes=detail.notes,
+            promotion_trail=detail.promotion_trail,
         )

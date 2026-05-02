@@ -181,8 +181,9 @@ class PromotedArtifactWriter:
 
     def _build_payload(self, record: ExperimentRecord) -> dict[str, Any]:
         ev = record.evaluation
+        trail = record.promotion_trail
         return {
-            "schema_version": 2,
+            "schema_version": 3,
             "experiment_id": record.id,
             "factor_id": record.factor.id,
             "factor_name": record.factor.name,
@@ -190,6 +191,9 @@ class PromotedArtifactWriter:
             "operator_tree": record.factor.operator_tree,
             "parent_factor_id": record.factor.parent_factor_id,
             "refinement_round": record.factor.refinement_round,
+            "promotion_trail": (
+                trail.model_dump(mode="json") if trail is not None else None
+            ),
             "hypothesis_id": record.hypothesis.id,
             "hypothesis_text": record.hypothesis.text,
             "hypothesis_rationale": record.hypothesis.rationale,
@@ -225,12 +229,14 @@ class PromotedArtifactWriter:
         payload: dict[str, Any],
     ) -> dict[str, Any]:
         ev = record.evaluation
+        trail = record.promotion_trail
         return {
             "factor_id": record.factor.id,
             "factor_name": record.factor.name,
             "expression": record.factor.expression,
             "parent_factor_id": record.factor.parent_factor_id,
             "refinement_round": record.factor.refinement_round,
+            "trail_id": trail.trail_id if trail is not None else None,
             "ic": ev.ic,
             "rank_ic": ev.rank_ic,
             "net_quantile_spread": ev.net_quantile_spread,

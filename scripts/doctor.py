@@ -232,6 +232,14 @@ def _check_promoted_artifacts_dir() -> CheckResult:
                 "refinement_round" in e
                 and not (isinstance(e["refinement_round"], int) and e["refinement_round"] >= 0)
             )
+            or (
+                # Round 4F: when trail_id is present at all, it must be
+                # a non-empty string.  Legacy v1/v2 rows omit it entirely
+                # and stay valid.
+                "trail_id" in e
+                and e["trail_id"] is not None
+                and not (isinstance(e["trail_id"], str) and e["trail_id"])
+            )
         ]
         if bad:
             return CheckResult(
@@ -244,11 +252,15 @@ def _check_promoted_artifacts_dir() -> CheckResult:
                 ),
             )
         with_lineage = sum(1 for e in entries if e.get("parent_factor_id"))
+        with_trail = sum(1 for e in entries if e.get("trail_id"))
         return CheckResult(
             name=f"Promoted-artifacts dir writable at {path}",
             passed=True,
             required=False,
-            detail=(f"{len(entries)} promoted factor(s) indexed ({with_lineage} from refinement)"),
+            detail=(
+                f"{len(entries)} promoted factor(s) indexed "
+                f"({with_lineage} from refinement, {with_trail} with trail)"
+            ),
         )
 
     return CheckResult(

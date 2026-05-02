@@ -5,6 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 from enum import StrEnum
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -47,17 +48,121 @@ class FailureRecord(BaseModel):
     detail: str = ""  # free-form elaboration
 
 
+class PromotionTrail(BaseModel):
+    """Immutable snapshot of the evaluator + judge knobs that flowed into
+    a ``PROMOTE_CANDIDATE`` decision.
+
+    Each unique (evaluator config, judge config, label config) tuple
+    collapses to the same ``trail_id`` so the on-disk factor zoo can
+    answer "was this factor promoted under the same regime as that
+    other one?" without comparing dicts field-by-field.
+
+    Build via :meth:`PromotionTrail.from_inputs`; the constructor is
+    public mainly for round-trip deserialisation.
+    """
+
+    trail_id: str
+    # Evaluator-side
+    neutralize: str = "none"
+    sector_map_hash: str = ""  # sha256 of sorted (symbol,sector) pairs
+    cost_bps: float = 0.0
+    extra_horizons: list[int] = Field(default_factory=list)
+    forecast_horizon_bars: int = 5
+    lag_bars: int = 1
+    return_type: str = "simple"
+    # Holdout (Round 4E)
+    holdout_strategy: str = "none"
+    holdout_fraction: float = 0.0
+    # Walk-forward (Round 4B/4D) — optional; populated when wrapped
+    walk_forward: dict[str, int | float | str] = Field(default_factory=dict)
+    # Judge thresholds (Rounds 4A.3, 4B, 4C, 4E)
+    refine_margin: float = 0.20
+    min_fraction_positive_folds: float = 0.6
+    max_tail_concentration: float = 0.5
+    min_holdout_decay_ratio: float = 0.5
+
+    @classmethod
+    def from_inputs(
+        cls,
+        *,
+        evaluation_request: Any,
+        judge_thresholds: dict[str, float],
+        walk_forward: dict[str, int | float | str] | None = None,
+    ) -> PromotionTrail:
+        """Construct a trail and compute its ``trail_id`` hash.
+
+        ``evaluation_request`` is duck-typed so tests can pass anything
+        with the right attributes; production callers pass an
+        :class:`EvaluationRequest`.
+        """
+        import hashlib
+        import json as _json
+
+        sector_map = getattr(evaluation_request, "sector_map", {}) or {}
+        sector_pairs = sorted(
+            (str(k), str(v)) for k, v in sector_map.items()
+        )
+        sector_hash = hashlib.sha256(
+            _json.dumps(sector_pairs, sort_keys=True).encode("utf-8"),
+        ).hexdigest()[:16]
+
+        label = getattr(evaluation_request, "label", None)
+        holdout = getattr(evaluation_request, "holdout", None)
+        wf = dict(walk_forward or {})
+
+        body = {
+            "neutralize": str(getattr(evaluation_request, "neutralize", "none")),
+            "sector_map_hash": sector_hash,
+            "cost_bps": float(getattr(evaluation_request, "cost_bps", 0.0)),
+            "extra_horizons": (
+                list(label.extra_horizons) if label is not None else []
+            ),
+            "forecast_horizon_bars": (
+                int(label.forecast_horizon_bars) if label is not None else 5
+            ),
+            "lag_bars": int(label.lag_bars) if label is not None else 1,
+            "return_type": (
+                str(label.return_type) if label is not None else "simple"
+            ),
+            "holdout_strategy": (
+                str(holdout.strategy) if holdout is not None else "none"
+            ),
+            "holdout_fraction": (
+                float(holdout.holdout_fraction) if holdout is not None else 0.0
+            ),
+            "walk_forward": wf,
+            "refine_margin": float(judge_thresholds.get("refine_margin", 0.20)),
+            "min_fraction_positive_folds": float(
+                judge_thresholds.get("min_fraction_positive_folds", 0.6),
+            ),
+            "max_tail_concentration": float(
+                judge_thresholds.get("max_tail_concentration", 0.5),
+            ),
+            "min_holdout_decay_ratio": float(
+                judge_thresholds.get("min_holdout_decay_ratio", 0.5),
+            ),
+        }
+        canonical = _json.dumps(body, sort_keys=True, default=str)
+        trail_id = hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
+        return cls.model_validate({"trail_id": trail_id, **body})
+
+
 class JudgmentDetail(BaseModel):
     """Rich output of one ``ExperimentJudge.judge()`` call.
 
     Replaces the previous ``PromotionJudge.last_detail`` side channel —
     the judge now returns this object directly so callers do not need
     to share an instance to recover failure context.
+
+    ``promotion_trail`` is populated only when ``decision`` is
+    ``PROMOTE_CANDIDATE``; it captures the evaluator + judge knobs that
+    drove the decision so the on-disk factor zoo stays reproducible.
     """
 
     decision: ExperimentDecision
     failure: FailureRecord | None = None
     notes: str = ""
+    promotion_trail: PromotionTrail | None = None
 
 
 # ── Reproducibility snapshot ─────────────────────────────────────────────────
@@ -87,6 +192,9 @@ class ExperimentRecord(BaseModel):
     decision: ExperimentDecision = ExperimentDecision.ARCHIVE_ONLY
     failure: FailureRecord | None = None  # populated when decision is REJECT
     notes: str = ""
+    # Round 4F — frozen evaluator + judge config that produced a
+    # PROMOTE_CANDIDATE decision.  ``None`` for non-promote outcomes.
+    promotion_trail: PromotionTrail | None = None
     tags: list[str] = Field(default_factory=list)
     reproducibility: ReproducibilityInfo = Field(default_factory=ReproducibilityInfo)
     created_at: datetime = Field(

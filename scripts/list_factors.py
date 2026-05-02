@@ -149,6 +149,36 @@ def _render_lineage_trees(entries: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def _dump_trails(entries: list[dict[str, Any]], promoted_dir: str) -> None:
+    """For each shown row, read its per-factor JSON and print the trail block.
+
+    Best-effort: missing or v2 artifacts (no trail) print a one-line note
+    so the operator can tell the difference between "no trail" and
+    "JSON file vanished".
+    """
+    base = __import__("pathlib").Path(promoted_dir)
+    print()
+    print("Promotion trails")
+    print("----------------")
+    for entry in entries:
+        fid = entry.get("factor_id", "")
+        path = base / f"{fid}.json"
+        if not path.is_file():
+            print(f"{fid}: artifact missing at {path}")
+            continue
+        try:
+            payload = json.loads(path.read_text())
+        except (OSError, json.JSONDecodeError) as exc:
+            print(f"{fid}: cannot read trail ({type(exc).__name__})")
+            continue
+        trail = payload.get("promotion_trail")
+        if trail is None:
+            print(f"{fid}: legacy artifact, no trail recorded")
+            continue
+        print(f"{fid}:")
+        print(json.dumps(trail, indent=2, sort_keys=True, default=str))
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument(
@@ -195,6 +225,19 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     p.add_argument(
+        "--trail-id",
+        default=None,
+        help="Only show factors promoted under this trail_id (Round 4F).",
+    )
+    p.add_argument(
+        "--show-trail",
+        action="store_true",
+        help=(
+            "After the table, dump the full promotion_trail block for "
+            "each shown factor by reading its per-factor JSON."
+        ),
+    )
+    p.add_argument(
         "--json",
         action="store_true",
         help="Emit the filtered index as JSON instead of a formatted table.",
@@ -210,6 +253,8 @@ def main(argv: list[str] | None = None) -> int:
         entries = [e for e in entries if _refinement_round(e) >= args.min_refinement_round]
     if args.max_refinement_round is not None:
         entries = [e for e in entries if _refinement_round(e) <= args.max_refinement_round]
+    if args.trail_id is not None:
+        entries = [e for e in entries if e.get("trail_id") == args.trail_id]
     entries.sort(key=lambda e: _sort_value(e, args.sort_by))
     if args.limit is not None:
         entries = entries[: args.limit]
@@ -217,6 +262,9 @@ def main(argv: list[str] | None = None) -> int:
     if not entries:
         print("(no promoted factors match the filter)", file=sys.stderr)
         return 0
+
+    if args.show_trail:
+        _dump_trails(entries, args.promoted_dir)
 
     if args.json:
         print(json.dumps(entries, indent=2, sort_keys=True, default=str))

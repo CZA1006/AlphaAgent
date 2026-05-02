@@ -18,6 +18,7 @@ from alpha_harness.schemas.experiment import (
     FailureCategory,
     FailureRecord,
     JudgmentDetail,
+    PromotionTrail,
 )
 from alpha_harness.schemas.factor import FactorSpec
 from alpha_harness.schemas.hypothesis import Hypothesis
@@ -145,6 +146,7 @@ class PromotionJudge:
         return JudgmentDetail(
             decision=ExperimentDecision.PROMOTE_CANDIDATE,
             notes="All checks passed — promoting.",
+            promotion_trail=self._build_trail(evaluation, request),
         )
 
     # ── Internal helpers ──────────────────────────────────────────────────
@@ -261,6 +263,31 @@ class PromotionJudge:
                 ),
             )
         return None
+
+    def _build_trail(
+        self,
+        evaluation: EvaluationBundle,
+        request: EvaluationRequest,
+    ) -> PromotionTrail:
+        """Snapshot evaluator + judge config that produced the promotion."""
+        wf = evaluation.metadata.get("walk_forward")
+        wf_dict: dict[str, int | float | str] = {}
+        if isinstance(wf, dict):
+            # Keep only the immutable knobs — runtime stats (mean_ic, etc.)
+            # don't belong in the reproducibility trail.
+            for key in ("n_folds", "fold_size_days", "step_days", "embargo_days"):
+                if key in wf and isinstance(wf[key], int | float | str):
+                    wf_dict[key] = wf[key]
+        return PromotionTrail.from_inputs(
+            evaluation_request=request,
+            judge_thresholds={
+                "refine_margin": self._refine_margin,
+                "min_fraction_positive_folds": self._min_frac_positive,
+                "max_tail_concentration": self._max_tail_concentration,
+                "min_holdout_decay_ratio": self._min_holdout_decay,
+            },
+            walk_forward=wf_dict,
+        )
 
     def _check_holdout_decay(self, evaluation: EvaluationBundle) -> FailureRecord | None:
         """Reject when out-of-sample rank-IC flips sign or decays sharply.

@@ -59,7 +59,8 @@ def test_payload_includes_lineage_fields(tmp_path: Path) -> None:
     payload = json.loads(path.read_text())
     assert payload["parent_factor_id"] is None
     assert payload["refinement_round"] == 0
-    assert payload["schema_version"] == 2
+    # schema bumped to 3 in Round 4F when promotion_trail was added.
+    assert payload["schema_version"] == 3
 
 
 def test_payload_records_refined_lineage(tmp_path: Path) -> None:
