@@ -4,7 +4,7 @@
        run-mock run-real run-real-data run-real-sql \
        autonomous-mock autonomous-real \
        backfill-sp50 backfill \
-       list-factors list-cycles
+       list-factors list-cycles refine-factor
 
 # ── Local env auto-load ──────────────────────────────────────────────────────
 # When `.env` exists, export every variable it declares so the targets below
@@ -173,6 +173,11 @@ list-factors:
 
 list-cycles:
 	uv run python -m scripts.list_cycles $(ARGS)
+
+# Round 4H — re-run refinement on a previously promoted factor under a
+# new evaluation regime.  Requires --factor-id.
+refine-factor:
+	uv run python -m scripts.refine_factor $(ARGS)
 
 # ── Cleanup ──────────────────────────────────────────────────────────────────
 

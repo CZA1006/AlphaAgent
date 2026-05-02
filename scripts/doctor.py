@@ -332,6 +332,31 @@ def _check_smoke_can_run() -> CheckResult:
     )
 
 
+def _check_refine_factor_cli_imports() -> CheckResult:
+    """Cheap guard: scripts.refine_factor must import without raising.
+
+    Catches a botched edit (renamed symbol, missing module) before an
+    operator hits it during a real run.
+    """
+    try:
+        import importlib
+
+        importlib.import_module("scripts.refine_factor")
+    except Exception as exc:  # pragma: no cover — defensive
+        return CheckResult(
+            name="scripts.refine_factor imports cleanly",
+            passed=False,
+            required=False,
+            detail=f"{type(exc).__name__}: {exc}",
+        )
+    return CheckResult(
+        name="scripts.refine_factor imports cleanly",
+        passed=True,
+        required=False,
+        detail="CLI ready for `make refine-factor`",
+    )
+
+
 def _check_boundary_audit() -> CheckResult:
     """Run static auditors so boundary-rule failures surface early."""
     from alpha_harness.audit import (
@@ -486,6 +511,7 @@ def run(mode: Mode) -> int:
                     _check_cycle_reports_dir(),
                     _check_boundary_audit(),
                     _check_smoke_can_run(),
+                    _check_refine_factor_cli_imports(),
                 ],
             ),
         )

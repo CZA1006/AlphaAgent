@@ -5,7 +5,9 @@ from alpha_harness.artifacts.promoted import (
     PROMOTED_INDEX_NAME,
     PromotedArtifactWriter,
     index_path,
+    read_artifact,
     read_index,
+    record_from_payload,
 )
 
 __all__ = [
@@ -13,5 +15,7 @@ __all__ = [
     "PROMOTED_INDEX_NAME",
     "PromotedArtifactWriter",
     "index_path",
+    "read_artifact",
     "read_index",
+    "record_from_payload",
 ]

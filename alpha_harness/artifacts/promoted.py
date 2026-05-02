@@ -28,7 +28,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from alpha_harness.schemas.experiment import ExperimentDecision, ExperimentRecord
+from alpha_harness.schemas.evaluation import EvaluationBundle
+from alpha_harness.schemas.experiment import (
+    ExperimentDecision,
+    ExperimentRecord,
+    PromotionTrail,
+)
+from alpha_harness.schemas.factor import FactorSpec
+from alpha_harness.schemas.hypothesis import Hypothesis
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +69,78 @@ def read_index(base_dir: Path | str = DEFAULT_PROMOTED_DIR) -> list[dict[str, An
                     exc,
                 )
     return entries
+
+
+def read_artifact(
+    factor_id: str,
+    base_dir: Path | str = DEFAULT_PROMOTED_DIR,
+) -> dict[str, Any] | None:
+    """Load the per-factor JSON for ``factor_id``.
+
+    Returns the parsed dict, or ``None`` when the file is missing or
+    unreadable.  The caller decides how to react (CLIs typically exit
+    non-zero with a clear message).
+    """
+    path = Path(base_dir) / f"{factor_id}.json"
+    if not path.is_file():
+        return None
+    try:
+        return dict(json.loads(path.read_text(encoding="utf-8")))
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning("Failed to read promoted artifact %s: %s", path, exc)
+        return None
+
+
+def record_from_payload(payload: dict[str, Any]) -> ExperimentRecord:
+    """Rehydrate an :class:`ExperimentRecord` from a v3 artifact payload.
+
+    Reconstructs just the fields the writer captured — this is enough
+    for downstream tools (notably the Round 4G refinement guard) to
+    reason about the promotion.  The original full registry record may
+    carry more (notes, tags, lineage memory hooks); those aren't part
+    of the artifact contract.
+
+    Older payloads (v1/v2) work too; they simply yield records without
+    a ``promotion_trail``.
+    """
+    ev_block = payload.get("evaluation") or {}
+    bundle = EvaluationBundle(
+        ic=ev_block.get("ic"),
+        rank_ic=ev_block.get("rank_ic"),
+        quantile_spread=ev_block.get("quantile_spread"),
+        net_quantile_spread=ev_block.get("net_quantile_spread"),
+        turnover=ev_block.get("turnover"),
+        n_periods=ev_block.get("n_periods"),
+        n_assets=ev_block.get("n_assets"),
+        forecast_horizon_bars=ev_block.get("forecast_horizon_bars"),
+        metadata=ev_block.get("metadata") or {},
+    )
+    factor = FactorSpec(
+        id=str(payload.get("factor_id", "")),
+        name=str(payload.get("factor_name", "")),
+        expression=str(payload.get("expression", "")),
+        operator_tree=payload.get("operator_tree"),
+        parent_factor_id=payload.get("parent_factor_id"),
+        refinement_round=int(payload.get("refinement_round", 0) or 0),
+    )
+    hypothesis = Hypothesis(
+        id=str(payload.get("hypothesis_id") or "rehydrated"),
+        text=str(payload.get("hypothesis_text") or factor.expression),
+        rationale=str(payload.get("hypothesis_rationale") or ""),
+    )
+    trail_block = payload.get("promotion_trail")
+    promotion_trail: PromotionTrail | None = None
+    if isinstance(trail_block, dict) and trail_block.get("trail_id"):
+        promotion_trail = PromotionTrail.model_validate(trail_block)
+    return ExperimentRecord(
+        id=str(payload.get("experiment_id") or "rehydrated"),
+        hypothesis=hypothesis,
+        factor=factor,
+        evaluation=bundle,
+        decision=ExperimentDecision.PROMOTE_CANDIDATE,
+        notes=str(payload.get("notes") or ""),
+        promotion_trail=promotion_trail,
+    )
 
 
 def _git_head() -> str:
@@ -191,9 +270,7 @@ class PromotedArtifactWriter:
             "operator_tree": record.factor.operator_tree,
             "parent_factor_id": record.factor.parent_factor_id,
             "refinement_round": record.factor.refinement_round,
-            "promotion_trail": (
-                trail.model_dump(mode="json") if trail is not None else None
-            ),
+            "promotion_trail": (trail.model_dump(mode="json") if trail is not None else None),
             "hypothesis_id": record.hypothesis.id,
             "hypothesis_text": record.hypothesis.text,
             "hypothesis_rationale": record.hypothesis.rationale,
