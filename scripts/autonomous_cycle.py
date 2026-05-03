@@ -38,7 +38,12 @@ from datetime import UTC, date, datetime
 
 import pandas as pd
 
-from alpha_harness.artifacts import DEFAULT_PROMOTED_DIR, PromotedArtifactWriter
+from alpha_harness.artifacts import (
+    DEFAULT_PROMOTED_DIR,
+    DEFAULT_TRAIL_DIR,
+    PromotedArtifactWriter,
+    TrailRegistryWriter,
+)
 from alpha_harness.config import BackendConfig
 from alpha_harness.data.synthetic import generate_price_panel
 from alpha_harness.evaluators.promotion_judge import PromotionJudge
@@ -311,6 +316,18 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Skip writing promotion artifacts even when a factor is promoted.",
     )
 
+    # Trail registry (Round 4J)
+    p.add_argument(
+        "--trail-dir",
+        default=None,
+        help="Directory for the standalone trail registry (default: artifacts/trails).",
+    )
+    p.add_argument(
+        "--no-trail-registry",
+        action="store_true",
+        help="Skip writing trail-registry rows alongside promotion artifacts.",
+    )
+
     # Cycle reports (Round 4A.8)
     p.add_argument(
         "--report-dir",
@@ -549,11 +566,17 @@ def main(argv: list[str] | None = None) -> int:
     registries = build_registries(backend_config)
 
     # ── 4. Orchestrator + refinement runner ───────────────────────────────
+    trail_registry: TrailRegistryWriter | None = None
+    if not args.no_trail_registry:
+        trail_registry = TrailRegistryWriter(
+            base_dir=args.trail_dir or str(DEFAULT_TRAIL_DIR),
+        )
     artifact_writer: PromotedArtifactWriter | None = None
     if not args.no_promoted_artifacts:
         artifact_writer = PromotedArtifactWriter(
             base_dir=args.promoted_dir,
             cycle_id=cycle_id,
+            trail_registry=trail_registry,
         )
     orchestrator = ResearchOrchestrator(
         service=service,

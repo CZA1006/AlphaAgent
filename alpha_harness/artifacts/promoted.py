@@ -217,9 +217,15 @@ class PromotedArtifactWriter:
         base_dir: Path | str = DEFAULT_PROMOTED_DIR,
         *,
         cycle_id: str | None = None,
+        trail_registry: Any | None = None,
     ) -> None:
         self._base_dir = Path(base_dir)
         self._cycle_id = cycle_id
+        # Optional :class:`TrailRegistryWriter` — when supplied, every
+        # promote also lands in the trail-registry mirror.  Typed as
+        # ``Any`` to avoid a circular import; the writer is duck-typed
+        # against ``record(trail, factor_id) -> bool``.
+        self._trail_registry = trail_registry
 
     # ── Public API ───────────────────────────────────────────────────────
 
@@ -251,6 +257,19 @@ class PromotedArtifactWriter:
         payload = self._build_payload(record)
         _atomic_write_json(artifact_path, payload)
         self._upsert_index(factor_id, self._build_index_entry(record, payload))
+
+        # Round 4J — also record the trail in the standalone registry
+        # when one was supplied.  Best-effort; legacy promotions without
+        # a trail (record.promotion_trail is None) are silently ignored.
+        if self._trail_registry is not None:
+            try:
+                self._trail_registry.record(record.promotion_trail, factor_id)
+            except Exception as exc:  # pragma: no cover — defensive
+                logger.warning(
+                    "Trail registry write failed for %s: %s",
+                    factor_id,
+                    exc,
+                )
         logger.info(
             "promotion artifact written: %s (factor_id=%s)",
             artifact_path,

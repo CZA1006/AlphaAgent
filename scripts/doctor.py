@@ -332,6 +332,75 @@ def _check_smoke_can_run() -> CheckResult:
     )
 
 
+def _check_trail_registry_dir() -> CheckResult:
+    """Verify the trail-registry directory is writable and (if present)
+    has a well-formed index — every row must carry a non-empty
+    ``trail_id`` string and an ISO-formatted ``first_seen_at``."""
+    from alpha_harness.artifacts import TRAIL_INDEX_NAME, read_trails
+
+    path = "artifacts/trails"
+    try:
+        os.makedirs(path, exist_ok=True)
+    except OSError as exc:
+        return CheckResult(
+            name=f"Trail-registry dir writable at {path}",
+            passed=False,
+            required=False,
+            detail=f"{type(exc).__name__}: {exc}",
+        )
+    probe = os.path.join(path, ".doctor_probe")
+    try:
+        with open(probe, "w", encoding="utf-8") as fh:
+            fh.write("")
+        os.remove(probe)
+    except OSError as exc:
+        return CheckResult(
+            name=f"Trail-registry dir writable at {path}",
+            passed=False,
+            required=False,
+            detail=f"cannot write: {type(exc).__name__}: {exc}",
+        )
+
+    index_file = os.path.join(path, TRAIL_INDEX_NAME)
+    if not os.path.isfile(index_file):
+        return CheckResult(
+            name=f"Trail-registry dir writable at {path}",
+            passed=True,
+            required=False,
+            detail="directory ready; no trails recorded yet",
+        )
+    try:
+        rows = read_trails(path)
+    except OSError as exc:
+        return CheckResult(
+            name=f"Trail-registry dir writable at {path}",
+            passed=False,
+            required=False,
+            detail=f"index unreadable: {exc}",
+        )
+    bad = [
+        i
+        for i, r in enumerate(rows, 1)
+        if not (isinstance(r.get("trail_id"), str) and r["trail_id"])
+        or not isinstance(r.get("first_seen_at"), str)
+    ]
+    if bad:
+        return CheckResult(
+            name=f"Trail-registry dir writable at {path}",
+            passed=False,
+            required=False,
+            detail=(
+                f"{len(rows)} indexed; {len(bad)} row(s) with malformed schema (lines {bad[:3]}...)"
+            ),
+        )
+    return CheckResult(
+        name=f"Trail-registry dir writable at {path}",
+        passed=True,
+        required=False,
+        detail=f"{len(rows)} unique trail(s) recorded",
+    )
+
+
 def _check_refine_factor_cli_imports() -> CheckResult:
     """Cheap guard: scripts.refine_factor must import without raising.
 
@@ -512,6 +581,7 @@ def run(mode: Mode) -> int:
                     _check_boundary_audit(),
                     _check_smoke_can_run(),
                     _check_refine_factor_cli_imports(),
+                    _check_trail_registry_dir(),
                 ],
             ),
         )

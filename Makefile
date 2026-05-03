@@ -4,7 +4,7 @@
        run-mock run-real run-real-data run-real-sql \
        autonomous-mock autonomous-real \
        backfill-sp50 backfill \
-       list-factors list-cycles refine-factor
+       list-factors list-cycles refine-factor list-trails
 
 # ── Local env auto-load ──────────────────────────────────────────────────────
 # When `.env` exists, export every variable it declares so the targets below
@@ -178,6 +178,10 @@ list-cycles:
 # new evaluation regime.  Requires --factor-id.
 refine-factor:
 	uv run python -m scripts.refine_factor $(ARGS)
+
+# Round 4J — list / diff entries in the standalone trail registry.
+list-trails:
+	uv run python -m scripts.list_trails $(ARGS)
 
 # ── Cleanup ──────────────────────────────────────────────────────────────────
 
