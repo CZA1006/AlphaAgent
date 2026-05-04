@@ -52,7 +52,16 @@ from alpha_harness.evaluators.walk_forward import WalkForwardEvaluator
 from alpha_harness.factors.compiler import FactorDslCompiler
 from alpha_harness.hermes_boundary.contracts import ThemeCycleRequest
 from alpha_harness.hermes_boundary.harness_adapter import HarnessAgentAdapter
-from alpha_harness.llm import LLMClient, MockLLMClient
+from alpha_harness.llm import (
+    BudgetedLLMClient,
+    BudgetExceededError,
+    LLMCallLogger,
+    LLMClient,
+    LoggingLLMClient,
+    MockLLMClient,
+    TokenBudget,
+    default_log_path,
+)
 from alpha_harness.orchestrator.refinement import RefinementConfig, RefinementRunner
 from alpha_harness.orchestrator.research_loop import ResearchOrchestrator
 from alpha_harness.proposer import HypothesisProposer
@@ -113,6 +122,78 @@ def _make_mock_llm(n: int) -> LLMClient:
     return MockLLMClient(handler=lambda _req: payload)
 
 
+def _resolve_token_budget(args: argparse.Namespace) -> TokenBudget | None:
+    """Build a :class:`TokenBudget` from CLI + env, or ``None`` when uncapped.
+
+    Mirrors the helper in ``scripts.autonomous_cycle`` so both real-LLM
+    paths share the same budget contract (Round 4A.1).
+    """
+    import os as _os
+
+    token_cap = args.token_budget
+    if token_cap is None:
+        raw = _os.environ.get("ALPHA_AGENT_TOKEN_BUDGET", "").strip()
+        token_cap = int(raw) if raw else None
+
+    cost_cap = args.cost_budget_usd
+    if cost_cap is None:
+        raw = _os.environ.get("ALPHA_AGENT_COST_BUDGET_USD", "").strip()
+        cost_cap = float(raw) if raw else None
+
+    if token_cap is None and cost_cap is None:
+        return None
+
+    prompt_rate = float(_os.environ.get("ALPHA_AGENT_PROMPT_COST_PER_1K", "0") or "0")
+    completion_rate = float(_os.environ.get("ALPHA_AGENT_COMPLETION_COST_PER_1K", "0") or "0")
+    return TokenBudget(
+        max_total_tokens=token_cap,
+        max_cost_usd=cost_cap,
+        prompt_cost_per_1k=prompt_rate,
+        completion_cost_per_1k=completion_rate,
+    )
+
+
+def _build_llm_client(args: argparse.Namespace, *, cycle_id: str) -> LLMClient:
+    """Construct the proposer's LLM stack: backend → log → budget.
+
+    The mock path needs no keys; the openrouter path requires
+    ``OPENROUTER_API_KEY`` and produces a budget-guarded, call-logged
+    real client identical to the one ``autonomous_cycle`` uses.
+    """
+    import os as _os
+
+    if args.llm == "mock":
+        base: LLMClient = _make_mock_llm(args.n_candidates)
+    else:
+        if not _os.environ.get("OPENROUTER_API_KEY"):
+            raise RuntimeError(
+                "live LLM requested but OPENROUTER_API_KEY is not set. "
+                "Re-run with --llm mock for an offline pass, or export "
+                "OPENROUTER_API_KEY=... before invoking this script.",
+            )
+        from alpha_harness.llm import OpenRouterClient, OpenRouterConfig
+
+        base = OpenRouterClient(OpenRouterConfig.from_env())
+
+    log_path = default_log_path(cycle_id, args.llm_log_dir)
+    logger.info("LLM call log: %s", log_path)
+    call_logger = LLMCallLogger(path=log_path, cycle_id=cycle_id)
+    wrapped: LLMClient = LoggingLLMClient(
+        base,
+        call_logger,
+        purpose="validate_strict",
+    )
+    budget = _resolve_token_budget(args)
+    if budget is not None:
+        logger.info(
+            "Token budget: max_tokens=%s max_cost_usd=%s",
+            budget.max_total_tokens,
+            budget.max_cost_usd,
+        )
+        wrapped = BudgetedLLMClient(wrapped, budget)
+    return wrapped
+
+
 # ── Data loading ────────────────────────────────────────────────────────────
 
 
@@ -145,7 +226,7 @@ def _load_data(args: argparse.Namespace) -> pd.DataFrame:
     end = date.fromisoformat(args.end_date)
 
     from alpha_harness.data.loader_factory import create_equities_loader
-    from alpha_harness.data.models import DataRequest, Frequency
+    from alpha_harness.data.models import BarFrequency, DataRequest
 
     loader = create_equities_loader(
         source=args.data_source,
@@ -155,7 +236,7 @@ def _load_data(args: argparse.Namespace) -> pd.DataFrame:
         symbols=symbols,
         start=start,
         end=end,
-        frequency=Frequency.DAY,
+        frequency=BarFrequency.DAILY,
     )
     df, _meta = loader.load_bars(request)
     if df.empty:
@@ -193,10 +274,48 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--seed", type=int, default=42, help="Synthetic path only.")
 
     p.add_argument(
+        "--llm",
+        choices=["mock", "openrouter"],
+        default="mock",
+        help=(
+            "Which LLM client backs the proposer.  'mock' replays the "
+            "hardcoded _MOCK_CANDIDATES and needs no keys.  'openrouter' "
+            "calls the real OpenRouter API (requires OPENROUTER_API_KEY) — "
+            "this is what tests the *agent*, not just the harness."
+        ),
+    )
+    p.add_argument(
         "--n-candidates",
         type=int,
         default=5,
         help="How many hypotheses to draw from the proposer.",
+    )
+
+    # Budget guardrails (Round 4A.1) — apply to the real-LLM path.
+    p.add_argument(
+        "--token-budget",
+        type=int,
+        default=None,
+        help="Hard cap on total tokens this cycle (also reads ALPHA_AGENT_TOKEN_BUDGET).",
+    )
+    p.add_argument(
+        "--cost-budget-usd",
+        type=float,
+        default=None,
+        help="Hard cap on $ cost this cycle (also reads ALPHA_AGENT_COST_BUDGET_USD).",
+    )
+    p.add_argument(
+        "--llm-log-dir",
+        default=None,
+        help=(
+            "Per-cycle LLM call-log directory "
+            "(default: ALPHA_AGENT_LLM_LOG_DIR or artifacts/llm_calls)."
+        ),
+    )
+    p.add_argument(
+        "--extra-guidance",
+        default="",
+        help="Optional extra guidance text injected into the proposer prompt.",
     )
     p.add_argument(
         "--theme",
@@ -296,9 +415,14 @@ def main(argv: list[str] | None = None) -> int:
         judge_thresholds=judge_thresholds,
     )
 
-    # ── Mock proposer (no LLM keys needed) ──────────────────────────────
+    # ── Proposer (mock by default; --llm openrouter calls the real API) ──
+    try:
+        llm_client = _build_llm_client(args, cycle_id=cycle_id)
+    except RuntimeError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
     proposer = HypothesisProposer(
-        llm_client=_make_mock_llm(args.n_candidates),
+        llm_client=llm_client,
         compiler=FactorDslCompiler(),
     )
 
@@ -315,13 +439,30 @@ def main(argv: list[str] | None = None) -> int:
         proposer=proposer,
         refinement_runner=runner,
     )
-    adapter.run_theme(
-        ThemeCycleRequest(
-            theme=args.theme,
-            n_candidates=args.n_candidates,
-            tags=["validate_strict"],
-        ),
-    )
+    try:
+        adapter.run_theme(
+            ThemeCycleRequest(
+                theme=args.theme,
+                n_candidates=args.n_candidates,
+                extra_guidance=args.extra_guidance,
+                tags=["validate_strict"],
+            ),
+        )
+    except BudgetExceededError as exc:
+        logger.error("Cycle halted by budget guard: %s", exc)
+        print(f"error: cycle halted — {exc}", file=sys.stderr)
+        return 3
+    except Exception as exc:
+        # Avoid dumping a stack trace for routine upstream errors
+        # (insufficient OpenRouter credits, network blip, malformed
+        # JSON from the model).  The full traceback is still in the
+        # log file via Python's default uncaught handler if needed.
+        from alpha_harness.llm.openrouter import OpenRouterError
+
+        if isinstance(exc, OpenRouterError):
+            print(f"error: LLM call failed — {exc}", file=sys.stderr)
+            return 4
+        raise
 
     # ── Build + persist the validation report ───────────────────────────
     regime_trail = PromotionTrail.from_inputs(
