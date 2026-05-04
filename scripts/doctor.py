@@ -332,6 +332,51 @@ def _check_smoke_can_run() -> CheckResult:
     )
 
 
+def _check_strict_regime_resolves() -> CheckResult:
+    """Round 5 — STRICT_REGIME must hash to a stable trail_id.
+
+    Constructs a request from the regime's helpers and asks
+    PromotionTrail.from_inputs to compute a trail_id.  Catches a
+    config-drift bug (renamed enum, missing field) before a long
+    real-data validation run.
+    """
+    try:
+        from datetime import date
+
+        from alpha_harness.regimes import STRICT_REGIME
+        from alpha_harness.schemas.evaluation import EvaluationRequest
+        from alpha_harness.schemas.experiment import PromotionTrail
+
+        req = EvaluationRequest(
+            factor_id="probe",
+            universe_id="probe",
+            eval_start=date(2024, 1, 1),
+            eval_end=date(2024, 12, 31),
+            label=STRICT_REGIME.label_definition(),
+            profile=STRICT_REGIME.evaluation_profile(),
+            neutralize=STRICT_REGIME.neutralize,
+            cost_bps=STRICT_REGIME.cost_bps,
+            holdout=STRICT_REGIME.holdout_policy(),
+        )
+        trail = PromotionTrail.from_inputs(
+            evaluation_request=req,
+            judge_thresholds=STRICT_REGIME.judge_thresholds(),
+        )
+    except Exception as exc:  # pragma: no cover — defensive
+        return CheckResult(
+            name="StrictRegime resolves to a trail_id",
+            passed=False,
+            required=False,
+            detail=f"{type(exc).__name__}: {exc}",
+        )
+    return CheckResult(
+        name="StrictRegime resolves to a trail_id",
+        passed=True,
+        required=False,
+        detail=f"trail_id={trail.trail_id}",
+    )
+
+
 def _check_trail_registry_dir() -> CheckResult:
     """Verify the trail-registry directory is writable and (if present)
     has a well-formed index — every row must carry a non-empty
@@ -582,6 +627,7 @@ def run(mode: Mode) -> int:
                     _check_smoke_can_run(),
                     _check_refine_factor_cli_imports(),
                     _check_trail_registry_dir(),
+                    _check_strict_regime_resolves(),
                 ],
             ),
         )

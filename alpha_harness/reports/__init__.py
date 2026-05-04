@@ -19,15 +19,33 @@ from alpha_harness.reports.cycle_report import (
     index_path,
     read_index,
 )
+from alpha_harness.reports.validation import (
+    DEFAULT_VALIDATION_DIR,
+    VALIDATION_INDEX_NAME,
+    StrictValidationReport,
+    StrictValidationReportWriter,
+    build_validation_report,
+    classify_failure,
+)
+from alpha_harness.reports.validation import (
+    read_index as read_validation_index,
+)
 
 __all__ = [
     "DEFAULT_REPORT_DIR",
+    "DEFAULT_VALIDATION_DIR",
     "REPORT_INDEX_NAME",
+    "VALIDATION_INDEX_NAME",
     "BudgetSnapshot",
     "CycleReport",
     "CycleReportWriter",
     "ExperimentThumbnail",
+    "StrictValidationReport",
+    "StrictValidationReportWriter",
     "build_cycle_report",
+    "build_validation_report",
+    "classify_failure",
     "index_path",
     "read_index",
+    "read_validation_index",
 ]

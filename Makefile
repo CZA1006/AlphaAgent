@@ -4,7 +4,7 @@
        run-mock run-real run-real-data run-real-sql \
        autonomous-mock autonomous-real \
        backfill-sp50 backfill \
-       list-factors list-cycles refine-factor list-trails
+       list-factors list-cycles refine-factor list-trails validate-strict
 
 # ── Local env auto-load ──────────────────────────────────────────────────────
 # When `.env` exists, export every variable it declares so the targets below
@@ -182,6 +182,12 @@ refine-factor:
 # Round 4J — list / diff entries in the standalone trail registry.
 list-trails:
 	uv run python -m scripts.list_trails $(ARGS)
+
+# Round 5 — run the autonomous loop under StrictRegime and report which
+# of the 6 robustness gates rejected each candidate.  Default is
+# synthetic data; pass --data-source parquet --universe ... for real.
+validate-strict:
+	uv run python -m scripts.validate_strict $(ARGS)
 
 # ── Cleanup ──────────────────────────────────────────────────────────────────
 
