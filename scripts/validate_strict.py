@@ -65,6 +65,7 @@ from alpha_harness.llm import (
 from alpha_harness.orchestrator.refinement import RefinementConfig, RefinementRunner
 from alpha_harness.orchestrator.research_loop import ResearchOrchestrator
 from alpha_harness.proposer import HypothesisProposer
+from alpha_harness.proposer.memory import DEFAULT_MEMORY_DEPTH, build_memory_digest
 from alpha_harness.proposer.schemas import RawProposal, RawProposalBatch
 from alpha_harness.regimes import STRICT_REGIME, StrictRegime
 from alpha_harness.registries.experiment import ExperimentRegistry
@@ -322,6 +323,32 @@ def _build_parser() -> argparse.ArgumentParser:
         default="cross-sectional equity signals derived from price and volume",
     )
     p.add_argument("--cycle-id", default=None)
+
+    # Round 4A.4 — proposer memory digest across multi-cycle runs.
+    p.add_argument(
+        "--n-cycles",
+        type=int,
+        default=1,
+        help=(
+            "Run N back-to-back cycles, sharing the experiment registry "
+            "so the proposer's memory digest grows over time.  When N>1, "
+            "--cycle-id becomes a prefix and each cycle gets a -<i> suffix."
+        ),
+    )
+    p.add_argument(
+        "--memory-depth",
+        type=int,
+        default=DEFAULT_MEMORY_DEPTH,
+        help=(
+            f"Most-recent experiments summarized into the proposer memory "
+            f"digest before each cycle (default: {DEFAULT_MEMORY_DEPTH})."
+        ),
+    )
+    p.add_argument(
+        "--no-memory",
+        action="store_true",
+        help="Disable the memory digest even on multi-cycle runs.",
+    )
     p.add_argument(
         "--validation-dir",
         default=str(DEFAULT_VALIDATION_DIR),
@@ -366,7 +393,6 @@ def _build_eval_request(
 
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
-    started_at = datetime.now(UTC)
     cycle_id = args.cycle_id or f"strict-{uuid.uuid4().hex[:12]}"
 
     # ── Data ────────────────────────────────────────────────────────────
@@ -439,57 +465,125 @@ def main(argv: list[str] | None = None) -> int:
         proposer=proposer,
         refinement_runner=runner,
     )
-    try:
-        adapter.run_theme(
-            ThemeCycleRequest(
-                theme=args.theme,
-                n_candidates=args.n_candidates,
-                extra_guidance=args.extra_guidance,
-                tags=["validate_strict"],
-            ),
+    # ── Multi-cycle loop with proposer memory (Round 4A.4) ──────────────
+    n_cycles = max(1, args.n_cycles)
+    reports: list = []
+    for i in range(n_cycles):
+        sub_cycle_id = cycle_id if n_cycles == 1 else f"{cycle_id}-c{i + 1:02d}"
+        sub_started = datetime.now(UTC)
+
+        # Build memory digest from accumulated experiments BEFORE this cycle.
+        if args.no_memory:
+            prior_memory = ""
+        else:
+            recent = experiments.list_recent(limit=args.memory_depth)
+            prior_memory = build_memory_digest(recent, depth=args.memory_depth)
+            if prior_memory:
+                logger.info(
+                    "Cycle %d/%d memory digest: %d chars from %d prior experiments",
+                    i + 1,
+                    n_cycles,
+                    len(prior_memory),
+                    len(recent),
+                )
+
+        try:
+            adapter.run_theme(
+                ThemeCycleRequest(
+                    theme=args.theme,
+                    n_candidates=args.n_candidates,
+                    extra_guidance=args.extra_guidance,
+                    tags=["validate_strict"],
+                    prior_memory=prior_memory,
+                ),
+            )
+        except BudgetExceededError as exc:
+            logger.error("Cycle %d halted by budget guard: %s", i + 1, exc)
+            print(f"error: cycle halted — {exc}", file=sys.stderr)
+            return 3
+        except Exception as exc:
+            from alpha_harness.llm.openrouter import OpenRouterError
+
+            if isinstance(exc, OpenRouterError):
+                print(f"error: LLM call failed — {exc}", file=sys.stderr)
+                return 4
+            raise
+
+        regime_trail = PromotionTrail.from_inputs(
+            evaluation_request=eval_request,
+            judge_thresholds=judge_thresholds,
+            walk_forward={
+                "n_folds": regime.n_folds,
+                "fold_size_days": regime.fold_size_days,
+                "step_days": regime.step_days,
+                "embargo_days": regime.embargo_days,
+            },
         )
-    except BudgetExceededError as exc:
-        logger.error("Cycle halted by budget guard: %s", exc)
-        print(f"error: cycle halted — {exc}", file=sys.stderr)
-        return 3
-    except Exception as exc:
-        # Avoid dumping a stack trace for routine upstream errors
-        # (insufficient OpenRouter credits, network blip, malformed
-        # JSON from the model).  The full traceback is still in the
-        # log file via Python's default uncaught handler if needed.
-        from alpha_harness.llm.openrouter import OpenRouterError
+        # Report only the records produced *in this sub-cycle* — the
+        # registry accumulates, so we slice off everything that existed
+        # before we entered the cycle.
+        all_records = experiments.list_all()
+        records_this_cycle = [r for r in all_records if r.created_at >= sub_started]
+        report = build_validation_report(
+            cycle_id=sub_cycle_id,
+            regime_trail_id=regime_trail.trail_id,
+            universe_id=eval_request.universe_id,
+            started_at=sub_started,
+            records=records_this_cycle,
+        )
+        if not args.no_write:
+            StrictValidationReportWriter(args.validation_dir).write(report)
+        reports.append(report)
 
-        if isinstance(exc, OpenRouterError):
-            print(f"error: LLM call failed — {exc}", file=sys.stderr)
-            return 4
-        raise
-
-    # ── Build + persist the validation report ───────────────────────────
-    regime_trail = PromotionTrail.from_inputs(
-        evaluation_request=eval_request,
-        judge_thresholds=judge_thresholds,
-        walk_forward={
-            "n_folds": regime.n_folds,
-            "fold_size_days": regime.fold_size_days,
-            "step_days": regime.step_days,
-            "embargo_days": regime.embargo_days,
-        },
-    )
-    report = build_validation_report(
-        cycle_id=cycle_id,
-        regime_trail_id=regime_trail.trail_id,
-        universe_id=eval_request.universe_id,
-        started_at=started_at,
-        records=experiments.list_all(),
-    )
-    if not args.no_write:
-        StrictValidationReportWriter(args.validation_dir).write(report)
-
+    # ── Output ──────────────────────────────────────────────────────────
     if args.json:
-        print(report.model_dump_json(indent=2))
+        print(json.dumps([json.loads(r.model_dump_json()) for r in reports], indent=2))
+    elif n_cycles == 1:
+        _print_summary(reports[0])
     else:
-        _print_summary(report)
+        _print_multi_summary(reports)
     return 0
+
+
+def _print_multi_summary(reports: list) -> None:
+    """Compact one-line-per-cycle summary for ``--n-cycles N``."""
+    border = "=" * 72
+    print(f"\n{border}")
+    print(f"  STRICT MULTI-CYCLE VALIDATION  ({len(reports)} cycles)")
+    print(border)
+    print(
+        f"  {'cycle_id':<28}  {'prop':>4}  {'prom':>4}  "
+        f"{'refi':>4}  {'rej':>4}  rejection breakdown"
+    )
+    print(f"  {'-' * 28}  {'-' * 4}  {'-' * 4}  {'-' * 4}  {'-' * 4}  {'-' * 18}")
+    totals = {"proposals": 0, "promoted": 0, "refined": 0, "rejected": 0}
+    cum_gates: dict[str, int] = {}
+    for r in reports:
+        breakdown = ", ".join(f"{k}={v}" for k, v in (r.n_rejected_by_gate or {}).items()) or "—"
+        print(
+            f"  {r.cycle_id[:28]:<28}  {r.n_proposals:>4}  "
+            f"{r.n_promoted:>4}  {r.n_refined:>4}  {r.n_rejected:>4}  {breakdown}",
+        )
+        totals["proposals"] += r.n_proposals
+        totals["promoted"] += r.n_promoted
+        totals["refined"] += r.n_refined
+        totals["rejected"] += r.n_rejected
+        for k, v in (r.n_rejected_by_gate or {}).items():
+            cum_gates[k] = cum_gates.get(k, 0) + v
+    print(f"  {'-' * 28}  {'-' * 4}  {'-' * 4}  {'-' * 4}  {'-' * 4}  {'-' * 18}")
+    print(
+        f"  {'TOTAL':<28}  {totals['proposals']:>4}  {totals['promoted']:>4}  "
+        f"{totals['refined']:>4}  {totals['rejected']:>4}",
+    )
+    print("\n  Cumulative rejection breakdown:")
+    for gate, n in sorted(cum_gates.items(), key=lambda kv: -kv[1]):
+        print(f"    {gate:<32} {n}")
+    promoted_ids = [fid for r in reports for fid in r.promoted_factor_ids]
+    if promoted_ids:
+        print("\n  All promoted factor_ids:")
+        for fid in promoted_ids:
+            print(f"    - {fid}")
+    print(f"{border}\n")
 
 
 def _print_summary(report: object) -> None:
