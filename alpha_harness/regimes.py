@@ -122,9 +122,34 @@ class StrictRegime:
 STRICT_REGIME = StrictRegime()
 
 
+# ── Lenient regime (Round 5.1 calibration) ─────────────────────────────────
+#
+# The strict regime rejected 30/30 LLM-proposed factors on SP-50 with the
+# default thresholds — every rejection was at the IC / rank_IC gate, so the
+# downstream gates (sign-consistency, walk-forward stability, tail
+# concentration, holdout decay) never fired on real data.  Until something
+# survives the first gate, we have no evidence those deeper gates are
+# correctly calibrated for production-grade factors.
+#
+# LENIENT_REGIME halves the IC / rank_IC thresholds and softens the data
+# requirements just enough to let near-miss factors through to the deeper
+# gates.  The walk-forward + holdout + tail-concentration checks stay at
+# their strict values, so a lenient promotion still requires structural
+# robustness — only the cross-sectional bar is lower.
+LENIENT_REGIME = StrictRegime(
+    ic_threshold=0.01,
+    rank_ic_threshold=0.015,
+    quantile_spread_threshold=0.0025,
+    min_periods=40,
+)
+
+
 # ── Naming registry (cheap; we'll grow it later) ─────────────────────────
 
-_REGIMES: dict[str, StrictRegime] = {"strict": STRICT_REGIME}
+_REGIMES: dict[str, StrictRegime] = {
+    "strict": STRICT_REGIME,
+    "lenient": LENIENT_REGIME,
+}
 
 
 def get_regime(name: str) -> StrictRegime:

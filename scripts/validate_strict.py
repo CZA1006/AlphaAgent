@@ -67,7 +67,7 @@ from alpha_harness.orchestrator.research_loop import ResearchOrchestrator
 from alpha_harness.proposer import HypothesisProposer
 from alpha_harness.proposer.memory import DEFAULT_MEMORY_DEPTH, build_memory_digest
 from alpha_harness.proposer.schemas import RawProposal, RawProposalBatch
-from alpha_harness.regimes import STRICT_REGIME, StrictRegime
+from alpha_harness.regimes import StrictRegime, get_regime
 from alpha_harness.registries.experiment import ExperimentRegistry
 from alpha_harness.registries.hypothesis import HypothesisRegistry
 from alpha_harness.reports.validation import (
@@ -323,6 +323,17 @@ def _build_parser() -> argparse.ArgumentParser:
         default="cross-sectional equity signals derived from price and volume",
     )
     p.add_argument("--cycle-id", default=None)
+    p.add_argument(
+        "--regime",
+        choices=["strict", "lenient"],
+        default="strict",
+        help=(
+            "Named regime preset.  'strict' (default) uses production-grade "
+            "thresholds; 'lenient' halves the IC / rank-IC bar to expose "
+            "the deeper gates (walk-forward, tail concentration, holdout) "
+            "to near-miss candidates."
+        ),
+    )
 
     # Round 4A.4 — proposer memory digest across multi-cycle runs.
     p.add_argument(
@@ -403,7 +414,11 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     # ── Build the orchestrator under StrictRegime ───────────────────────
-    regime = STRICT_REGIME
+    regime = get_regime(args.regime)
+    logger.info(
+        "Regime=%s ic>=%.4f rank_ic>=%.4f cost_bps=%.2f",
+        args.regime, regime.ic_threshold, regime.rank_ic_threshold, regime.cost_bps,
+    )
     judge_thresholds = regime.judge_thresholds()
     inner_evaluator = SignalQualityEvaluator(price_data)
     evaluator = WalkForwardEvaluator(inner_evaluator, regime.walk_forward_config())
