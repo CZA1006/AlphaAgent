@@ -1,9 +1,19 @@
 # Acceptance Criteria
 
-> **Status note.** Milestone 1 (Round 2 MVP) and the Round 3 autonomy
-> extension are both complete. For the current post-Round-3 status and
-> Round 4 scope, read [docs/ROUND3_SUMMARY.md](docs/ROUND3_SUMMARY.md)
-> first — this file is retained as historical reference.
+> **Status note.** Milestone 1 (Round 2 MVP), Round 3 autonomy,
+> Round 4 (4A.1 → 4J), Round 5 (strict-regime validation), and
+> Round 6 (multi-factor combination) are all complete. The full agent
+> loop runs end-to-end against real OpenRouter + Polygon data with all
+> 6 judge gates active.
+>
+> For the current status:
+> - [README.md](README.md) — front-door capability table
+> - [ROADMAP.md](ROADMAP.md) — milestone tracker
+> - [docs/ROUND4_TO_6_SUMMARY.md](docs/ROUND4_TO_6_SUMMARY.md) —
+>   per-sub-round design notes (4A.1 through Round 6)
+> - [docs/ROUND3_SUMMARY.md](docs/ROUND3_SUMMARY.md) — Round 3 closeout
+>
+> This file is retained as historical reference.
 
 ## Round 3 Exit Criteria — ✅ met
 

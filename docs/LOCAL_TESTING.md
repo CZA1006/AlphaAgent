@@ -390,38 +390,277 @@ Flags on `autonomous_cycle.py`:
 `make doctor` now also probes the promoted-artifacts dir for writability
 and reports the current index size.
 
-### 5.7 What's deliberately deferred to later Round 4 phases
+### 5.7 Rounds 4A.6 → 4A.10 — refinement, lineage, reports, audit, smoke
 
-- **Cloud / remote deployment.** Everything here assumes local dev.
-- **Cross-cycle budget accumulation / dashboards.** Budgets are
-  per-cycle; aggregation over runs is not automated.
-- **Live-data ingestion pipelines beyond ad-hoc Polygon calls.** No
-  scheduled refresh, no Parquet backfill automation.
-- **Hermes-side prompt assembly.** The adapter boundary is in place but
-  the runtime that actually calls `HarnessAgentAdapter.run_theme` from a
-  live agent loop ships in Round 4.
-- **Secrets management.** For local dev `.env` + `make doctor` is enough;
-  production secret rotation is out of scope.
+These rounds harden the loop and add operator surfaces. Most are
+transparent to ordinary `make autonomous-mock` / `autonomous-real`
+runs; you exercise them via the `list-*` and `audit` Make targets.
+
+- **4A.6 RefinementBrief.** When the judge returns REFINE, the runner
+  builds a structured brief (which gate failed, by how much, with which
+  flags) and uses it to *prioritise* mutation order. No new flags;
+  visible in the LLM call log + the orchestrator's INFO-level mutation
+  log.
+- **4A.7 Lineage.** `FactorSpec` now carries `parent_factor_id` and
+  `refinement_round`; the promoted-zoo CLI grew lineage-aware filters.
+  ```bash
+  make list-factors ARGS="--lineage"            # tree view
+  make list-factors ARGS="--min-refinement-round 1"
+  ```
+- **4A.8 Cycle reports.** Every autonomous cycle writes a JSON audit
+  to `artifacts/reports/{cycle_id}.json` plus an append-only
+  `_index.jsonl` row. Browse with:
+  ```bash
+  make list-cycles
+  make list-cycles ARGS="--since 2026-01-01 --json"
+  ```
+- **4A.9 Static auditors.** `make audit` walks every `.py` under
+  `alpha_harness/` with `ast.parse` and rejects any import of
+  `hermes.*` / `runtime.*`, plus any network / subprocess / LLM-SDK
+  import inside `evaluators/`. Wired into `make check`. Pure source
+  inspection — no module side-effects, milliseconds.
+- **4A.10 End-to-end smoke.** `make smoke` (and `make check-full`)
+  drives `validate_strict` under `--mock-llm` against tmp-scoped
+  artifact directories, asserting that promoted artifacts, cycle
+  reports, and trail registry land where the script claims they will.
+
+### 5.8 Round 4B + 4D — walk-forward stability + embargo
+
+Active by default in `validate_strict` (and in any caller that
+constructs `WalkForwardEvaluator(inner, regime.walk_forward_config())`).
+The strict regime sets `n_folds=4`, `fold_size_days=60`,
+`step_days=30`, `embargo_days=6` (= `lag_bars + forecast_horizon_bars`,
+auto-derived from the request label when not specified). Folds whose
+post-embargo span falls below `min_fold_days=20` are *purged* and
+counted under `metadata.walk_forward.purged_folds`. The judge's
+`fraction_positive_rank_ic >= 0.6` gate fires when at least two folds
+report.
+
+### 5.9 Round 4C — risk-aware portfolio metrics + tail concentration
+
+`SignalQualityEvaluator` now computes a per-date long-short return
+series and stashes Sharpe / max-drawdown / hit-rate / **tail
+concentration** under `metadata["portfolio"]`. The judge's
+`max_tail_concentration <= 0.5` gate rejects factors whose top-3 days
+carry > 50% of the gross long-short return. `ExperimentThumbnail` (in
+cycle reports) surfaces sharpe / max_drawdown / hit_rate so reports
+answer "was this factor's return well-distributed?" without re-reading
+the bundle metadata.
+
+### 5.10 Round 4E — out-of-sample holdout decay
+
+Set `--holdout-fraction 0.20` (and optionally `--holdout-strategy tail`)
+on `autonomous_cycle.py`. The strict / lenient regime do this by
+default. The evaluator carves the trailing slice off the eval window,
+runs a second pass on it, and records `decay_ratio = holdout_rank_ic /
+in_sample_rank_ic` in `metadata["holdout"]`. Judge rejects on
+sign-flip or `decay_ratio < 0.5`.
+
+### 5.11 Round 4F → 4J — promotion-trail reproducibility chain
+
+Every PROMOTE_CANDIDATE writes a SHA-256 hash of every evaluator + judge
+knob into a `PromotionTrail` and stamps it onto the per-factor JSON
+(schema_version=3). The standalone trail registry
+(`artifacts/trails/`) records each unique trail once.
+
+```bash
+# Browse promoted factors
+make list-factors ARGS="--show-trail --limit 5"
+
+# Diff two factors' trails — spot exactly what changed
+make list-factors ARGS="--diff-trails fct_aaa fct_bbb"
+
+# Standalone trail browser (no factor lookup needed)
+make list-trails
+make list-trails ARGS="--diff <id_a> <id_b>"
+
+# Replay refinement on a promoted factor under a new regime
+make refine-factor ARGS="--factor-id fct_aaa --cost-bps 5"
+```
+
+When the new trail differs from the seed's, `refine-factor` prints a
+field-level "Trail diff" block (e.g. `cost_bps: 2.0 → 5.0`). When they
+match, the runner refuses to refine and reports the regime match in
+`regime_skips`.
 
 ---
 
-## 6. Quick reference
+## 6. Round 5 — the strict-regime validation harness
+
+`scripts/validate_strict.py` is the production research entry point.
+It bundles a 6-gate judge with the real-LLM proposer and writes a
+per-cycle `StrictValidationReport` with per-gate rejection counts.
+
+### 6.1 First synthetic run (no keys)
+
+```bash
+make validate-strict ARGS="--data-source synthetic --n-days 240"
+```
+
+Should reject everything (synthetic noise + strict gates is the worst
+case). Verifies the plumbing.
+
+### 6.2 Real Polygon data via the local Parquet store
+
+After `make backfill-sp50`:
+
+```bash
+make validate-strict ARGS="\
+  --data-source parquet \
+  --universe configs/universes/sp50.txt \
+  --start-date 2024-04-19 --end-date 2026-04-17 \
+  --n-candidates 5"
+```
+
+By default uses the mock LLM (5 hand-picked factors).
+
+### 6.3 Real LLM agent loop
+
+```bash
+make validate-strict ARGS="\
+  --data-source parquet \
+  --universe configs/universes/sp50.txt \
+  --start-date 2024-04-19 --end-date 2026-04-17 \
+  --llm openrouter --n-candidates 8 \
+  --theme 'cross-sectional equity alphas: novel combinations of price and volume signals'"
+```
+
+Requires `OPENROUTER_API_KEY` in `.env`. Uses the same budget +
+call-log + structured-JSON guards as `autonomous_cycle`. Cost is
+typically **$0.005 – $0.02** per cycle depending on the model.
+
+**Provider note:** OpenRouter blocks Anthropic / Google / OpenAI models
+in some regions. If you see `403 Forbidden: violation of provider
+Terms Of Service` with `provider_name: null`, switch to a non-blocked
+provider — DeepSeek, Qwen, and Mistral work everywhere we've tested.
+Override per-run without touching `.env`:
+
+```bash
+set -a; source .env; set +a
+OPENROUTER_MODEL="deepseek/deepseek-chat-v3.1" \
+  uv run python -m scripts.validate_strict --llm openrouter ...
+```
+
+### 6.4 Multi-cycle with proposer memory
+
+`--n-cycles N` runs N back-to-back cycles, sharing the experiment
+registry so the Round 4A.4 memory digest grows. After cycle k the
+proposer sees the rolling summary of all `k * n_candidates` prior
+experiments.
+
+```bash
+make validate-strict ARGS="\
+  --data-source parquet \
+  --universe configs/universes/sp50.txt \
+  --start-date 2024-04-19 --end-date 2026-04-17 \
+  --llm openrouter --n-candidates 6 --n-cycles 5 --memory-depth 30"
+```
+
+Output ends with a per-cycle table + cumulative rejection-by-gate
+breakdown. Each sub-cycle writes its own `StrictValidationReport`
+under `artifacts/validations/{cycle_id}-cNN.json`.
+
+### 6.5 Lenient regime — exposing the deeper gates
+
+The strict regime's IC / rank-IC bar is so tight that on SP-50 most
+LLM-proposed factors never reach the deeper gates. `--regime lenient`
+halves the cross-sectional thresholds while keeping every other gate
+strict, so near-miss factors survive to the walk-forward / tail /
+holdout checks.
+
+```bash
+make validate-strict ARGS="--regime lenient --llm openrouter ..."
+```
+
+The lenient regime has a *different* `trail_id` than strict — promotions
+under it will not collide with strict-regime trails in the registry,
+and `refine_factor` against a lenient seed under the strict regime
+correctly reports `trail_status: mismatch` plus a field-level diff.
+
+---
+
+## 7. Round 6 — multi-factor combination
+
+`scripts/combine_factors.py` takes N DSL expressions, scores each
+individually, builds a basket via rank-aggregation / z-score-average /
+equal-weight, and reports per-factor + basket metrics plus the average
+pairwise rank-correlation.
+
+```bash
+uv run python -m scripts.combine_factors \
+  --data-source parquet \
+  --universe configs/universes/sp50.txt \
+  --start-date 2024-04-19 --end-date 2026-04-17 \
+  --regime strict \
+  --method rank_aggregate \
+  --expr 'rank(ts_mean(close, 20))' \
+  --expr 'rank(ts_std(close, 20))' \
+  --expr 'zscore(ts_mean(volume, 10))'
+```
+
+Or read expressions from a file (one per line):
+
+```bash
+uv run python -m scripts.combine_factors \
+  --data-source parquet --universe configs/universes/sp50.txt \
+  --expressions-file my_factor_set.txt
+```
+
+The pairwise-correlation diagnostic tells you *why* a basket helped or
+didn't: high correlation means combining adds little, near-zero means
+the basket should improve on individuals (provided the individuals
+have signal in the first place).
+
+---
+
+## 8. What's deliberately deferred
+
+- **Cloud / remote deployment.** Everything here assumes local dev.
+- **Cross-cycle budget accumulation / dashboards.** Budgets are
+  per-cycle; aggregation over runs is jq-from-the-call-logs.
+- **Persistent multi-cycle factor registry across script invocations.**
+  Cycles within one `validate_strict --n-cycles N` invocation share
+  the registry; separate invocations don't.
+- **Live-data ingestion pipelines beyond ad-hoc Polygon calls.** No
+  scheduled refresh.
+- **Hermes-side prompt assembly.** The adapter boundary is in place but
+  the runtime that actually calls `HarnessAgentAdapter.run_theme` from
+  a live agent loop is still to come.
+- **Secrets management.** For local dev `.env` + `make doctor` is enough.
+- **Live trading execution.** Not built; out of scope until at least
+  one real-data PROMOTE_CANDIDATE survives the strict regime.
+
+---
+
+## 9. Quick reference
 
 ```bash
 # first time
 cp .env.example .env && $EDITOR .env
 make install
-make doctor-mock && make run-mock         # confirms baseline
+make doctor-mock && make run-mock              # confirms baseline
 
 # add real LLM
 make doctor-real && make run-real
 
 # add real data
-make doctor && make run-real-data
+make doctor && make backfill-sp50              # ~10 min on free Polygon
+make autonomous-real ARGS="--data-source parquet --n-candidates 3"
 
 # add SQL
 make db-up && make db-bootstrap
 make doctor-sql && make run-real-sql
+
+# strict regime + real LLM agent loop (the headline workflow)
+make validate-strict ARGS="\
+  --data-source parquet --universe configs/universes/sp50.txt \
+  --start-date 2024-04-19 --end-date 2026-04-17 \
+  --llm openrouter --n-candidates 6 --n-cycles 5"
+
+# browse what landed on disk
+make list-factors      # promoted-factor zoo
+make list-cycles       # autonomous-cycle audit reports
+make list-trails       # standalone trail registry
 ```
 
 Every step above is idempotent; re-running it is safe.

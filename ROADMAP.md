@@ -102,30 +102,86 @@ are captured in [docs/ROUND3_SUMMARY.md](docs/ROUND3_SUMMARY.md).
 
 ## Milestone 3.5: Round 4 — closing the learning loop
 
-**Status: next active phase.** Do not restart Round 3 work here.
+### Status — ✅ complete
 
-### Goal
-Turn a loop that *proposes and scores* into one that *learns from what it
-proposed*, without breaking the deterministic-truth boundary.
+Shipped across 10 sub-rounds (4A.1 → 4A.10) plus 4B → 4J:
 
-### Scope
-- LLM-guided refinement: when a root returns `REFINE`, feed the evaluation
-  bundle + failure taxonomy back to the LLM so it can propose structural
-  variants (still DSL-validated, still novelty-checked, still budget-bound).
-- Skill distillation prototype: cluster promoted / narrowly-refined
-  experiments into reusable `Skill` entries the proposer can condition on.
-- Richer evaluator: sector / beta neutralization, multi-horizon labels,
-  turnover and cost sensitivity.
-- A real research universe: Parquet backfill for ≥50 US-equity names so
-  cycles run on statistically meaningful data without Polygon rate-limit
-  gymnastics.
-- Hermes actually driving the adapter from a live agent loop.
-- Cost / rate-limit guards: token budget per cycle, 429 backoff,
-  structured LLM call logging.
+- **4A.1** cost / rate-limit / call-hygiene guardrails (token budget, 429
+  backoff, structured LLM call log)
+- **4A.2** real research universe via Parquet backfill (50 SP large-caps,
+  2 years of daily bars)
+- **4A.3** richer evaluator: sector / beta neutralization, multi-horizon
+  labels, cost-adjusted spread, multi-horizon sign-consistency gate
+- **4A.4** memory-aware proposer: rolling digest of recent experiments
+  fed into the proposer prompt
+- **4A.5** promoted-factor zoo with diff-friendly JSON + append-only
+  index
+- **4A.6** targeted refinement via `RefinementBrief` (mutation
+  prioritization based on which gate failed)
+- **4A.7** lineage-aware factor zoo (`parent_factor_id`,
+  `refinement_round`, lineage-tree CLI)
+- **4A.8** cycle audit reports (`StrictValidationReport` precursor)
+- **4A.9** runtime scope auditors (`make audit` blocks `hermes.*` imports,
+  evaluator IO)
+- **4A.10** end-to-end smoke marker + `make check-full`
+- **4B** walk-forward stability gate (`fraction_positive_rank_ic`)
+- **4C** risk-aware portfolio metrics + tail-concentration gate
+- **4D** calendar-aware embargo + purged folds (closes the lookahead bug
+  in 4B)
+- **4E** out-of-sample holdout decay gate
+- **4F** `PromotionTrail` — immutable SHA-256 of every evaluator + judge
+  knob, captured on every promote
+- **4G** trail-aware refinement guard
+  (`RefinementRunner.refine_record()` refuses to mine factors whose
+  lineage didn't validate under the current trail)
+- **4H** seeded refinement CLI (`scripts/refine_factor.py`,
+  `make refine-factor`)
+- **4I** `PromotionTrail.diff()` + `make list-factors --diff-trails`
+- **4J** standalone trail registry (`artifacts/trails/`,
+  `make list-trails`)
 
-### Explicitly out of scope for Round 4
-Live trading, cloud deployment, multi-agent debate, expanding the DSL
-surface, adding new LLM providers.
+The judge stack is now a 6-gate filter (data sufficiency → profile
+thresholds → sign-consistency → walk-forward stability →
+tail-concentration → holdout decay), every promotion is regime-stamped,
+and the operator surface (5 CLIs) lets researchers query / replay /
+diff anything in the on-disk record.
+
+## Milestone 3.6: Round 5 — strict-regime real-data validation
+
+### Status — ✅ complete
+
+- **`StrictRegime`** + **`LenientRegime`** in `alpha_harness/regimes.py`:
+  frozen dataclasses bundling every evaluator + judge knob into one
+  hashable config.
+- **`scripts/validate_strict.py`**: drives the autonomous-cycle stack
+  against a named regime, persists a per-cycle `StrictValidationReport`
+  with per-gate rejection counts.
+- **`--llm openrouter`** wires the real LLM proposer through the same
+  budget + call-log + structured-JSON guards that `autonomous_cycle`
+  uses. Verified end-to-end against DeepSeek-Chat-v3.1 on SP-50.
+- **`--n-cycles N`** + memory digest: 5-cycle real-LLM run on SP-50
+  produced 30 LLM-proposed factors, fired 4 of 6 judge gates in
+  production for the first time.
+
+Outcome: 0 promotions across 60 LLM-proposed factors on SP-50 (strict +
+lenient combined). Result is real research signal — the strict regime is
+correctly correlated with downstream failure, not over-aggressive.
+
+## Milestone 3.7: Round 6 — multi-factor combination
+
+### Status — ✅ first cut shipped
+
+- **`alpha_harness/combination/`** module: `compute_signal()`,
+  `combine_signals()` (rank-aggregate / z-score-average / equal-weight),
+  `pairwise_rank_corr()` diagnostic.
+- **`scripts/combine_factors.py`**: takes N DSL expressions, scores each
+  individually plus the basket, returns a per-factor + basket table with
+  the average pairwise rank-correlation.
+
+First real-data test (5 mixed factors, SP-50): basket IC = -0.019 with
+avg pairwise rank-corr = +0.05. The plumbing works; manufacturing a
+combination that promotes is now an experiment, not an engineering
+task.
 
 ## Milestone 4: Broader data and more asset support
 
@@ -135,6 +191,8 @@ surface, adding new LLM providers.
 - ETF / macro context layers
 - richer novelty comparison
 - broader robustness checks
+- universe diversification (mid-caps, longer horizons, international)
+  to find a regime where the harness's gates promote real factors
 
 ## Milestone 5: Optional cloud migration
 

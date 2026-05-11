@@ -1,10 +1,21 @@
 # Initial Build Tasks for Claude Code
 
-> **Historical document.** Every task group below shipped in Rounds 1–2
-> and was extended in Round 3. For the current status and the Round 4
-> task queue, read [docs/ROUND3_SUMMARY.md](docs/ROUND3_SUMMARY.md) and
-> the Round 4 section of [ROADMAP.md](ROADMAP.md). This file is kept for
-> traceability only; do not use it as a live to-do list.
+> **Historical document.** Every task group below shipped in Rounds 1–2,
+> was extended in Round 3, and has been completely superseded by the
+> Round 4–6 work. The judge stack now has six gates, the agent loop
+> runs end-to-end against real OpenRouter + Polygon data, and the
+> on-disk reproducibility chain (4F → 4G → 4H → 4I → 4J) is fully
+> wired with operator CLIs.
+>
+> For the current status, read:
+> - [README.md](README.md) — front-door status + capability table
+> - [ROADMAP.md](ROADMAP.md) — milestone tracker (M1 → M3.7 complete)
+> - [docs/ROUND3_SUMMARY.md](docs/ROUND3_SUMMARY.md) — Round 3 closeout
+> - [docs/ROUND4_TO_6_SUMMARY.md](docs/ROUND4_TO_6_SUMMARY.md) — every
+>   sub-round from 4A.1 through Round 6 with design notes
+>
+> This file is kept for traceability only; do not use it as a live
+> to-do list.
 
 This file defines the first implementation wave.
 
