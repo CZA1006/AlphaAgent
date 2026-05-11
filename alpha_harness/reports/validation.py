@@ -43,6 +43,29 @@ SCHEMA_VERSION = 1
 # ── Schema ──────────────────────────────────────────────────────────────────
 
 
+class FactorThumbnail(BaseModel):
+    """Per-factor record persisted into the validation report.
+
+    Captures the full DSL expression plus headline metrics so downstream
+    tooling (notably :mod:`scripts.combine_factors`) can re-load the
+    full factor set without re-running the whole cycle.  When the
+    factor was rejected, ``gate`` is the canonical gate name from
+    :func:`classify_failure`.
+    """
+
+    factor_id: str
+    expression: str
+    decision: str
+    ic: float | None = None
+    rank_ic: float | None = None
+    quantile_spread: float | None = None
+    net_quantile_spread: float | None = None
+    sharpe: float | None = None
+    turnover: float | None = None
+    gate: str | None = None  # set when decision == reject
+    failure_detail: str = ""
+
+
 class StrictValidationReport(BaseModel):
     """Single-file summary of one strict-regime validation cycle."""
 
@@ -59,6 +82,10 @@ class StrictValidationReport(BaseModel):
     n_rejected_by_gate: dict[str, int] = Field(default_factory=dict)
     promoted_factor_ids: list[str] = Field(default_factory=list)
     promoted_trail_ids: list[str] = Field(default_factory=list)
+    # Round 7 — per-factor thumbnails so reports are self-contained:
+    # every factor (promoted + rejected) survives with its expression +
+    # headline metrics, no need to keep the in-memory registry around.
+    factors: list[FactorThumbnail] = Field(default_factory=list)
     notes: str = ""
 
 
@@ -117,7 +144,10 @@ def build_validation_report(
     by_gate: dict[str, int] = {}
     promoted_ids: list[str] = []
     promoted_trail_ids: list[str] = []
+    thumbnails: list[FactorThumbnail] = []
     for r in records:
+        gate: str | None = None
+        detail = ""
         if r.decision == ExperimentDecision.PROMOTE_CANDIDATE:
             counts["promoted"] += 1
             promoted_ids.append(r.factor.id)
@@ -133,6 +163,23 @@ def build_validation_report(
         else:
             counts["archived"] += 1
 
+        ev = r.evaluation
+        thumbnails.append(
+            FactorThumbnail(
+                factor_id=r.factor.id,
+                expression=r.factor.expression,
+                decision=r.decision.value,
+                ic=ev.ic,
+                rank_ic=ev.rank_ic,
+                quantile_spread=ev.quantile_spread,
+                net_quantile_spread=ev.net_quantile_spread,
+                sharpe=ev.sharpe,
+                turnover=ev.turnover,
+                gate=gate,
+                failure_detail=detail,
+            ),
+        )
+
     return StrictValidationReport(
         cycle_id=cycle_id,
         regime_trail_id=regime_trail_id,
@@ -146,6 +193,7 @@ def build_validation_report(
         n_rejected_by_gate=dict(sorted(by_gate.items())),
         promoted_factor_ids=promoted_ids,
         promoted_trail_ids=promoted_trail_ids,
+        factors=thumbnails,
         notes=notes,
     )
 

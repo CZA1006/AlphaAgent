@@ -22,6 +22,7 @@ from alpha_harness.reports.cycle_report import (
 from alpha_harness.reports.validation import (
     DEFAULT_VALIDATION_DIR,
     VALIDATION_INDEX_NAME,
+    FactorThumbnail,
     StrictValidationReport,
     StrictValidationReportWriter,
     build_validation_report,
@@ -40,6 +41,7 @@ __all__ = [
     "CycleReport",
     "CycleReportWriter",
     "ExperimentThumbnail",
+    "FactorThumbnail",
     "StrictValidationReport",
     "StrictValidationReportWriter",
     "build_cycle_report",

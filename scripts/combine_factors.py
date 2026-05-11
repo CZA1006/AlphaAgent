@@ -110,9 +110,64 @@ def _resolve_expressions(args: argparse.Namespace) -> list[str]:
             line = line.strip()
             if line and not line.startswith("#"):
                 exprs.append(line)
+    if args.from_validation_report:
+        exprs.extend(_load_from_validation_report(args))
     if len(exprs) < 2:
         raise ValueError("need at least 2 expressions to combine; got " + str(len(exprs)))
-    return exprs
+    # Deduplicate while preserving order so the same factor isn't loaded
+    # twice when the same expression appears in multiple sources.
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for e in exprs:
+        if e not in seen:
+            seen.add(e)
+            deduped.append(e)
+    return deduped
+
+
+def _load_from_validation_report(args: argparse.Namespace) -> list[str]:
+    """Pull factor expressions from one or more StrictValidationReport JSONs.
+
+    ``--from-validation-report`` accepts a path to a single
+    ``{cycle_id}.json`` file, or a directory containing them — typically
+    ``artifacts/validations/`` or a sub-tree.  Filters via
+    ``--filter-passes-ic`` / ``--filter-min-ic`` keep only the factors
+    most likely to combine productively.
+    """
+    src = Path(args.from_validation_report)
+    if not src.exists():
+        raise FileNotFoundError(f"validation-report path not found: {src}")
+    files: list[Path] = sorted(src.glob("*.json")) if src.is_dir() else [src]
+
+    threshold_ic = args.filter_min_ic if args.filter_min_ic is not None else 0.0
+    out: list[str] = []
+    for path in files:
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            logger.warning("Skipping %s: %s", path, exc)
+            continue
+        for thumb in payload.get("factors", []):
+            ic = thumb.get("ic")
+            ric = thumb.get("rank_ic")
+            if args.filter_passes_ic and not (isinstance(ic, int | float) and ic >= threshold_ic):
+                continue
+            if args.filter_passes_rank_ic and not (
+                isinstance(ric, int | float) and ric >= threshold_ic
+            ):
+                continue
+            expr = thumb.get("expression")
+            if expr:
+                out.append(str(expr))
+    if not out:
+        logger.warning(
+            "No factors loaded from %s after filters (passes_ic=%s, passes_rank_ic=%s, min_ic=%s).",
+            src,
+            args.filter_passes_ic,
+            args.filter_passes_rank_ic,
+            args.filter_min_ic,
+        )
+    return out
 
 
 # ── CLI ─────────────────────────────────────────────────────────────────────
@@ -141,6 +196,31 @@ def _build_parser() -> argparse.ArgumentParser:
         "--expressions-file",
         default=None,
         help="Path to a newline-separated file of DSL expressions.",
+    )
+    p.add_argument(
+        "--from-validation-report",
+        default=None,
+        help=(
+            "Path to a StrictValidationReport JSON, or a directory of "
+            "them (e.g. artifacts/validations/).  Loads every "
+            "factor.expression from the report's 'factors' block."
+        ),
+    )
+    p.add_argument(
+        "--filter-passes-ic",
+        action="store_true",
+        help="When loading from a validation report, drop factors whose IC < --filter-min-ic.",
+    )
+    p.add_argument(
+        "--filter-passes-rank-ic",
+        action="store_true",
+        help="When loading from a validation report, drop factors whose rank_IC < --filter-min-ic.",
+    )
+    p.add_argument(
+        "--filter-min-ic",
+        type=float,
+        default=None,
+        help="Threshold for the --filter-passes-{ic,rank-ic} filters (default 0.0).",
     )
     p.add_argument(
         "--method",
