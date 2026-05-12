@@ -216,6 +216,134 @@ def compute_quantile_spread(
     return float(np.mean(spreads))
 
 
+# ── Precomputed-signal evaluator (Round 7) ──────────────────────────────────
+
+
+def evaluate_precomputed_signal(
+    *,
+    signal: pd.Series,
+    df: pd.DataFrame,
+    request: EvaluationRequest,
+) -> EvaluationBundle:
+    """Run the post-DSL evaluator pipeline on a precomputed signal.
+
+    Mirrors steps 3-5 of :class:`SignalQualityEvaluator.evaluate` —
+    build forward returns + neutralize + IC/rank-IC/spread/turnover +
+    portfolio metrics + multi-horizon — but starts from a signal that
+    the caller produced by some other means (e.g. combining N factors
+    into a basket).  ``signal`` must align row-for-row with ``df``.
+
+    The function does **not** filter ``df`` to ``request.eval_start /
+    eval_end``.  Callers that need windowing should slice ``df`` (and
+    the matching ``signal``) before calling, or wrap this helper in
+    :class:`alpha_harness.evaluators.walk_forward.WalkForwardEvaluator`
+    to get the full strict-regime semantics for free.
+    """
+    if len(signal) != len(df):
+        raise ValueError(
+            f"signal length {len(signal)} != df length {len(df)}; "
+            "they must be aligned row-for-row.",
+        )
+
+    groups = df["symbol"] if "symbol" in df.columns else None
+    fwd_returns = build_forward_returns(df["close"].astype(float), groups, request.label)
+    timestamps = df["timestamp"]
+    fwd_returns = neutralize_forward_returns(
+        fwd_returns,
+        timestamps=timestamps,
+        symbols=groups,
+        mode=request.neutralize,
+        sector_map=request.sector_map,
+    )
+
+    ic = compute_mean_ic(signal, fwd_returns, timestamps)
+    rank_ic = compute_mean_rank_ic(signal, fwd_returns, timestamps)
+    qs = compute_quantile_spread(signal, fwd_returns, timestamps, request.profile.n_quantiles)
+
+    turnover = compute_factor_turnover(signal, timestamps, groups)
+    net_qs = apply_cost(qs, turnover, request.cost_bps)
+
+    from alpha_harness.evaluators.portfolio import (
+        compute_long_short_returns,
+        compute_portfolio_metrics,
+    )
+
+    ls_returns = compute_long_short_returns(
+        signal,
+        fwd_returns,
+        timestamps,
+        request.profile.n_quantiles,
+    )
+    portfolio_metrics = compute_portfolio_metrics(ls_returns)
+
+    ic_by_horizon: dict[str, float] = {}
+    rank_ic_by_horizon: dict[str, float] = {}
+    primary_h = request.label.forecast_horizon_bars
+    if ic is not None:
+        ic_by_horizon[str(primary_h)] = ic
+    if rank_ic is not None:
+        rank_ic_by_horizon[str(primary_h)] = rank_ic
+
+    for h in request.label.extra_horizons:
+        if h == primary_h:
+            continue
+        aux_label = LabelDefinition(
+            forecast_horizon_bars=h,
+            lag_bars=request.label.lag_bars,
+            return_type=request.label.return_type,
+        )
+        aux_fwd = build_forward_returns(df["close"].astype(float), groups, aux_label)
+        aux_fwd = neutralize_forward_returns(
+            aux_fwd,
+            timestamps=timestamps,
+            symbols=groups,
+            mode=request.neutralize,
+            sector_map=request.sector_map,
+        )
+        aux_ic = compute_mean_ic(signal, aux_fwd, timestamps)
+        aux_rank = compute_mean_rank_ic(signal, aux_fwd, timestamps)
+        if aux_ic is not None:
+            ic_by_horizon[str(h)] = aux_ic
+        if aux_rank is not None:
+            rank_ic_by_horizon[str(h)] = aux_rank
+
+    n_periods = int(timestamps.nunique())
+    n_assets = int(df["symbol"].nunique()) if "symbol" in df.columns else 1
+
+    metadata: dict[str, Any] = {
+        "evaluator": "signal_quality",
+        "mode": "real",
+        "neutralize": request.neutralize.value,
+        "cost_bps": float(request.cost_bps),
+        "portfolio": portfolio_metrics,
+    }
+    if len(ic_by_horizon) > 1:
+        metadata["ic_by_horizon"] = ic_by_horizon
+        metadata["rank_ic_by_horizon"] = rank_ic_by_horizon
+        primary_ic = ic_by_horizon.get(str(primary_h))
+        if primary_ic is not None:
+            same_sign = sum(1 for v in ic_by_horizon.values() if (v > 0) == (primary_ic > 0))
+            metadata["ic_sign_consistent_horizons"] = int(same_sign)
+
+    sharpe_val = portfolio_metrics.get("sharpe")
+    sharpe = float(sharpe_val) if isinstance(sharpe_val, int | float) else None
+
+    return EvaluationBundle(
+        ic=ic,
+        rank_ic=rank_ic,
+        quantile_spread=qs,
+        turnover=turnover,
+        net_quantile_spread=net_qs,
+        sharpe=sharpe,
+        n_periods=n_periods,
+        n_assets=n_assets,
+        eval_start=request.eval_start,
+        eval_end=request.eval_end,
+        forecast_horizon_bars=request.label.forecast_horizon_bars,
+        metadata=metadata,
+    )
+
+
 # ── Evaluator class ──────────────────────────────────────────────────────────
 
 
@@ -287,116 +415,7 @@ class SignalQualityEvaluator:
         executor = DslExecutor(df)
         signal = executor.execute(ast)
 
-        # ── 3. Build forward returns ──────────────────────────────────
-        groups = df["symbol"] if "symbol" in df.columns else None
-        fwd_returns = build_forward_returns(df["close"].astype(float), groups, request.label)
-
-        # ── 3b. Cross-sectional neutralization ────────────────────────
-        timestamps = df["timestamp"]
-        fwd_returns = neutralize_forward_returns(
-            fwd_returns,
-            timestamps=timestamps,
-            symbols=groups,
-            mode=request.neutralize,
-            sector_map=request.sector_map,
-        )
-
-        # ── 4. Compute primary metrics ────────────────────────────────
-        ic = compute_mean_ic(signal, fwd_returns, timestamps)
-        rank_ic = compute_mean_rank_ic(signal, fwd_returns, timestamps)
-        qs = compute_quantile_spread(signal, fwd_returns, timestamps, request.profile.n_quantiles)
-
-        # ── 4b. Turnover + cost-adjusted quantile spread ──────────────
-        turnover = compute_factor_turnover(signal, timestamps, groups)
-        net_qs = apply_cost(qs, turnover, request.cost_bps)
-
-        # ── 4b'. Risk-aware portfolio metrics (Round 4C) ──────────────
-        # The same per-date long-short series that powers the spread mean
-        # also feeds Sharpe / drawdown / hit-rate / tail-concentration.
-        from alpha_harness.evaluators.portfolio import (
-            compute_long_short_returns,
-            compute_portfolio_metrics,
-        )
-
-        ls_returns = compute_long_short_returns(
-            signal,
-            fwd_returns,
-            timestamps,
-            request.profile.n_quantiles,
-        )
-        portfolio_metrics = compute_portfolio_metrics(ls_returns)
-
-        # ── 4c. Auxiliary horizons (optional, for sign-consistency) ──
-        ic_by_horizon: dict[str, float] = {}
-        rank_ic_by_horizon: dict[str, float] = {}
-        primary_h = request.label.forecast_horizon_bars
-        if ic is not None:
-            ic_by_horizon[str(primary_h)] = ic
-        if rank_ic is not None:
-            rank_ic_by_horizon[str(primary_h)] = rank_ic
-
-        for h in request.label.extra_horizons:
-            if h == primary_h:
-                continue
-            aux_label = LabelDefinition(
-                forecast_horizon_bars=h,
-                lag_bars=request.label.lag_bars,
-                return_type=request.label.return_type,
-            )
-            aux_fwd = build_forward_returns(df["close"].astype(float), groups, aux_label)
-            aux_fwd = neutralize_forward_returns(
-                aux_fwd,
-                timestamps=timestamps,
-                symbols=groups,
-                mode=request.neutralize,
-                sector_map=request.sector_map,
-            )
-            aux_ic = compute_mean_ic(signal, aux_fwd, timestamps)
-            aux_rank = compute_mean_rank_ic(signal, aux_fwd, timestamps)
-            if aux_ic is not None:
-                ic_by_horizon[str(h)] = aux_ic
-            if aux_rank is not None:
-                rank_ic_by_horizon[str(h)] = aux_rank
-
-        # ── 5. Coverage stats ─────────────────────────────────────────
-        n_periods = int(timestamps.nunique())
-        n_assets = int(df["symbol"].nunique()) if "symbol" in df.columns else 1
-
-        metadata: dict[str, Any] = {
-            "evaluator": "signal_quality",
-            "mode": "real",
-            "neutralize": request.neutralize.value,
-            "cost_bps": float(request.cost_bps),
-            "portfolio": portfolio_metrics,
-        }
-        if len(ic_by_horizon) > 1:
-            metadata["ic_by_horizon"] = ic_by_horizon
-            metadata["rank_ic_by_horizon"] = rank_ic_by_horizon
-            # Sign-consistency: count horizons where IC sign matches the
-            # primary horizon.  Judges can consume this without re-reading
-            # the raw dict.
-            primary_ic = ic_by_horizon.get(str(primary_h))
-            if primary_ic is not None:
-                same_sign = sum(1 for v in ic_by_horizon.values() if (v > 0) == (primary_ic > 0))
-                metadata["ic_sign_consistent_horizons"] = int(same_sign)
-
-        sharpe_val = portfolio_metrics.get("sharpe")
-        sharpe = float(sharpe_val) if isinstance(sharpe_val, int | float) else None
-
-        return EvaluationBundle(
-            ic=ic,
-            rank_ic=rank_ic,
-            quantile_spread=qs,
-            turnover=turnover,
-            net_quantile_spread=net_qs,
-            sharpe=sharpe,
-            n_periods=n_periods,
-            n_assets=n_assets,
-            eval_start=request.eval_start,
-            eval_end=request.eval_end,
-            forecast_horizon_bars=request.label.forecast_horizon_bars,
-            metadata=metadata,
-        )
+        return evaluate_precomputed_signal(signal=signal, df=df, request=request)
 
     def _evaluate_with_holdout(
         self,

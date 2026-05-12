@@ -43,13 +43,11 @@ from alpha_harness.combination import (
     pairwise_rank_corr,
 )
 from alpha_harness.data.synthetic import generate_price_panel
-from alpha_harness.evaluators.signal_quality import (
-    build_forward_returns,
-    compute_mean_ic,
-    compute_mean_rank_ic,
-    compute_quantile_spread,
-)
+from alpha_harness.evaluators.signal_quality import evaluate_precomputed_signal
+from alpha_harness.evaluators.walk_forward import WalkForwardEvaluator
 from alpha_harness.regimes import get_regime
+from alpha_harness.schemas.evaluation import EvaluationBundle, EvaluationRequest
+from alpha_harness.schemas.factor import FactorSpec
 
 logging.basicConfig(
     level=logging.INFO,
@@ -95,6 +93,54 @@ def _load_data(args: argparse.Namespace) -> pd.DataFrame:
             f"loader returned empty frame for {len(symbols)} symbols",
         )
     return df
+
+
+# ── Precomputed-signal adapter (Round 7.1) ──────────────────────────────────
+
+
+class _PrecomputedSignalEvaluator:
+    """``FactorEvaluator`` that scores a precomputed signal series.
+
+    Lets us run a basket signal through ``WalkForwardEvaluator`` (and
+    therefore through every strict-regime gate that the validator uses).
+    The adapter ignores the ``factor`` argument — the signal is captured
+    at construction.  The signal must align row-for-row with the full
+    ``df``; the adapter slices both to ``request.eval_start /
+    eval_end`` for each fold the wrapper hands it.
+    """
+
+    def __init__(self, *, signal: pd.Series, df: pd.DataFrame) -> None:
+        if len(signal) != len(df):
+            raise ValueError(
+                f"signal length {len(signal)} != df length {len(df)}",
+            )
+        self._signal = signal.reset_index(drop=True)
+        self._df = df.reset_index(drop=True)
+        # Pre-compute date index once so per-fold slicing is cheap.
+        self._dates = pd.to_datetime(self._df["timestamp"]).dt.date
+
+    def evaluate(
+        self,
+        factor: FactorSpec,
+        request: EvaluationRequest,
+    ) -> EvaluationBundle:
+        mask = (self._dates >= request.eval_start) & (
+            self._dates <= request.eval_end
+        )
+        sub_df = self._df.loc[mask].reset_index(drop=True)
+        sub_sig = self._signal.loc[mask].reset_index(drop=True)
+        if len(sub_df) == 0:
+            return EvaluationBundle(
+                n_periods=0,
+                n_assets=0,
+                eval_start=request.eval_start,
+                eval_end=request.eval_end,
+                forecast_horizon_bars=request.label.forecast_horizon_bars,
+                metadata={"evaluator": "precomputed_signal", "mode": "real"},
+            )
+        return evaluate_precomputed_signal(
+            signal=sub_sig, df=sub_df, request=request,
+        )
 
 
 # ── Expression source ───────────────────────────────────────────────────────
@@ -240,6 +286,44 @@ def _build_parser() -> argparse.ArgumentParser:
     return p
 
 
+def _score_signal(
+    *,
+    signal: pd.Series,
+    df: pd.DataFrame,
+    regime,
+    factor_id: str,
+) -> EvaluationBundle:
+    """Run a precomputed signal through the strict-regime walk-forward stack.
+
+    Same evaluator wiring as :mod:`scripts.validate_strict` —
+    ``WalkForwardEvaluator(SignalQualityEvaluator)`` with embargo, sector
+    neutralization, real cost, and a TAIL holdout — so the metrics this
+    CLI prints are directly comparable to a validation report's
+    thumbnails.  The only swap is the inner evaluator: instead of the
+    DSL-executing ``SignalQualityEvaluator`` we hand the wrapper a
+    ``_PrecomputedSignalEvaluator`` so the basket signal (which has no
+    DSL form) can ride the same pipeline.
+    """
+    ts_dates = pd.to_datetime(df["timestamp"]).dt.date
+    request = EvaluationRequest(
+        factor_id=factor_id,
+        universe_id="combine_factors",
+        eval_start=ts_dates.min(),
+        eval_end=ts_dates.max(),
+        label=regime.label_definition(),
+        profile=regime.evaluation_profile(),
+        neutralize=regime.neutralize,
+        cost_bps=regime.cost_bps,
+        holdout=regime.holdout_policy(),
+    )
+    inner = _PrecomputedSignalEvaluator(signal=signal, df=df)
+    wf = WalkForwardEvaluator(inner, regime.walk_forward_config())
+    return wf.evaluate(
+        FactorSpec(name=factor_id, expression="<precomputed>"),
+        request,
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
 
@@ -261,55 +345,57 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     # Per-factor signals + per-factor metrics so the operator can compare
-    # individuals against the basket.
+    # individuals against the basket.  Same evaluator as validate_strict
+    # (Round 7.1): every IC printed here is the walk-forward, embargoed,
+    # sector-neutralized, cost-adjusted IC the validator would report.
     timestamps = df["timestamp"]
-    groups = df["symbol"] if "symbol" in df.columns else None
-    fwd_returns = build_forward_returns(
-        df["close"].astype(float),
-        groups,
-        regime.label_definition(),
-    )
 
-    individuals = []
+    individuals: list[dict[str, object]] = []
     signals: list[pd.Series] = []
-    for expr in expressions:
+    for i, expr in enumerate(expressions):
         try:
             sig = compute_signal(expr, df)
         except Exception as exc:
             print(f"error: failed to compile {expr!r}: {exc}", file=sys.stderr)
             return 3
         signals.append(sig)
-        ic = compute_mean_ic(sig, fwd_returns, timestamps)
-        ric = compute_mean_rank_ic(sig, fwd_returns, timestamps)
-        qs = compute_quantile_spread(sig, fwd_returns, timestamps, regime.n_quantiles)
+        bundle = _score_signal(
+            signal=sig, df=df, regime=regime, factor_id=f"individual_{i}",
+        )
         individuals.append(
             {
                 "expression": expr,
-                "ic": ic,
-                "rank_ic": ric,
-                "quantile_spread": qs,
-                "passes_ic": ic is not None and ic >= regime.ic_threshold,
-                "passes_rank_ic": ric is not None and ric >= regime.rank_ic_threshold,
-            }
+                "ic": bundle.ic,
+                "rank_ic": bundle.rank_ic,
+                "quantile_spread": bundle.quantile_spread,
+                "net_quantile_spread": bundle.net_quantile_spread,
+                "passes_ic": bundle.ic is not None and bundle.ic >= regime.ic_threshold,
+                "passes_rank_ic": (
+                    bundle.rank_ic is not None
+                    and bundle.rank_ic >= regime.rank_ic_threshold
+                ),
+            },
         )
 
     # Combination
     method = CombinationMethod(args.method)
     basket_sig = combine_signals(signals, timestamps, method)
-    basket = {
+    basket_bundle = _score_signal(
+        signal=basket_sig, df=df, regime=regime, factor_id="basket",
+    )
+    basket: dict[str, object] = {
         "method": method.value,
-        "ic": compute_mean_ic(basket_sig, fwd_returns, timestamps),
-        "rank_ic": compute_mean_rank_ic(basket_sig, fwd_returns, timestamps),
-        "quantile_spread": compute_quantile_spread(
-            basket_sig,
-            fwd_returns,
-            timestamps,
-            regime.n_quantiles,
-        ),
+        "ic": basket_bundle.ic,
+        "rank_ic": basket_bundle.rank_ic,
+        "quantile_spread": basket_bundle.quantile_spread,
+        "net_quantile_spread": basket_bundle.net_quantile_spread,
     }
-    basket["passes_ic"] = basket["ic"] is not None and basket["ic"] >= regime.ic_threshold
+    basket["passes_ic"] = (
+        basket_bundle.ic is not None and basket_bundle.ic >= regime.ic_threshold
+    )
     basket["passes_rank_ic"] = (
-        basket["rank_ic"] is not None and basket["rank_ic"] >= regime.rank_ic_threshold
+        basket_bundle.rank_ic is not None
+        and basket_bundle.rank_ic >= regime.rank_ic_threshold
     )
 
     # Pairwise correlation matrix — tells us *why* combination did/didn't help.
