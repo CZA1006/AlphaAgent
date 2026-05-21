@@ -161,3 +161,163 @@ def test_theme_cycle_request_accepts_prior_memory() -> None:
 def test_theme_cycle_request_prior_memory_default_empty() -> None:
     req = ThemeCycleRequest(theme="t")
     assert req.prior_memory == ""
+
+
+# ── Round 9 A.1: promoted composites from artifact index ───────────────────
+
+
+def _write_promoted_index(
+    tmp_path,
+    *,
+    factor_id: str,
+    method: str = "equal_weight",
+    components: list[str] | None = None,
+    ic: float = 0.03,
+    rank_ic: float = 0.04,
+    promoted_at: str = "2026-05-21T00:00:00+00:00",
+    include_recipe: bool = True,
+) -> None:
+    """Write a {factor_id}.json + append an _index.jsonl row.
+
+    Mirrors the on-disk shape PromotedArtifactWriter produces so the
+    digest helper has something realistic to read.
+    """
+    import hashlib as _hashlib
+    import json as _json
+    components = components or ["rank(close)", "rank(volume)"]
+    # Derive a stable per-(method, components) recipe_id so dedupe
+    # tests can distinguish "same recipe" from "different recipe".
+    recipe_id = _hashlib.sha256(
+        (method + "|" + "|".join(components)).encode("utf-8"),
+    ).hexdigest()[:16]
+    artifact = {
+        "schema_version": 3,
+        "factor_id": factor_id,
+        "factor_name": factor_id,
+        "expression": f"combine.{method}([{', '.join(components)}])",
+        "composite_recipe": (
+            {
+                "method": method,
+                "components": components,
+                "component_factor_ids": [],
+                "recipe_id": recipe_id,
+            }
+            if include_recipe
+            else None
+        ),
+    }
+    (tmp_path / f"{factor_id}.json").write_text(_json.dumps(artifact))
+    idx = tmp_path / "_index.jsonl"
+    row = {
+        "factor_id": factor_id,
+        "expression": artifact["expression"],
+        "ic": ic,
+        "rank_ic": rank_ic,
+        "promoted_at": promoted_at,
+    }
+    with idx.open("a", encoding="utf-8") as fh:
+        fh.write(_json.dumps(row) + "\n")
+
+
+def test_composites_section_emitted_when_index_present(tmp_path) -> None:
+    _write_promoted_index(
+        tmp_path,
+        factor_id="composite_aaa_111111",
+        ic=0.030,
+        rank_ic=0.040,
+    )
+    records = [
+        _record(expression="rank(close)", decision=ExperimentDecision.PROMOTE_CANDIDATE),
+    ]
+    digest = build_memory_digest(
+        records,
+        promoted_index_path=tmp_path / "_index.jsonl",
+    )
+    assert "Recently promoted composites" in digest
+    assert "combine.equal_weight" in digest
+    assert "recipe_id=" in digest
+    assert "ic=+0.030" in digest
+    assert "rank_ic=+0.040" in digest
+
+
+def test_composites_section_skipped_when_path_unset() -> None:
+    records = [
+        _record(expression="rank(close)", decision=ExperimentDecision.PROMOTE_CANDIDATE),
+    ]
+    digest = build_memory_digest(records)  # no promoted_index_path
+    assert "Recently promoted composites" not in digest
+
+
+def test_composites_section_skipped_when_index_missing() -> None:
+    """Missing index file is silent — not an error."""
+    records = [
+        _record(expression="rank(close)", decision=ExperimentDecision.PROMOTE_CANDIDATE),
+    ]
+    digest = build_memory_digest(
+        records,
+        promoted_index_path="/nonexistent/path/_index.jsonl",
+    )
+    assert "Recently promoted composites" not in digest
+
+
+def test_composites_section_ignores_non_composite_artifacts(tmp_path) -> None:
+    """Scalar promotions (no composite_recipe field) must not appear."""
+    _write_promoted_index(
+        tmp_path,
+        factor_id="scalar_factor_xyz",
+        include_recipe=False,
+    )
+    digest = build_memory_digest(
+        [_record(expression="rank(close)", decision=ExperimentDecision.PROMOTE_CANDIDATE)],
+        promoted_index_path=tmp_path / "_index.jsonl",
+    )
+    assert "Recently promoted composites" not in digest
+
+
+def test_composites_section_dedupes_by_recipe_id(tmp_path) -> None:
+    """Same recipe_id promoted twice should appear once in the digest."""
+    _write_promoted_index(
+        tmp_path,
+        factor_id="composite_aaa_111111",
+        promoted_at="2026-05-20T00:00:00+00:00",
+    )
+    _write_promoted_index(
+        tmp_path,
+        factor_id="composite_aaa_222222",
+        promoted_at="2026-05-21T00:00:00+00:00",
+    )
+    digest = build_memory_digest(
+        [_record(expression="rank(close)", decision=ExperimentDecision.PROMOTE_CANDIDATE)],
+        promoted_index_path=tmp_path / "_index.jsonl",
+        top_composites=5,
+    )
+    # Same recipe_id appears in both rows → dedupe → exactly 1 bullet.
+    assert digest.count("combine.equal_weight") == 1
+
+
+def test_composites_section_caps_at_top_composites(tmp_path) -> None:
+    for i in range(5):
+        _write_promoted_index(
+            tmp_path,
+            factor_id=f"composite_aaa_{i:06d}",
+            components=[f"rank(close + {i})"],  # distinct recipes
+            promoted_at=f"2026-05-{20 + i:02d}T00:00:00+00:00",
+        )
+    digest = build_memory_digest(
+        [_record(expression="x", decision=ExperimentDecision.PROMOTE_CANDIDATE)],
+        promoted_index_path=tmp_path / "_index.jsonl",
+        top_composites=2,
+    )
+    # Each entry starts with "  - combine."
+    assert digest.count("  - combine.") == 2
+
+
+def test_composites_only_when_no_records(tmp_path) -> None:
+    """Records empty but composite index non-empty → digest is just composites."""
+    _write_promoted_index(tmp_path, factor_id="composite_aaa_111111")
+    digest = build_memory_digest(
+        [],
+        promoted_index_path=tmp_path / "_index.jsonl",
+    )
+    assert "Recently promoted composites" in digest
+    assert "Recent experiments" not in digest  # scalar header skipped

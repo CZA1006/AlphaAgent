@@ -35,6 +35,7 @@ import os
 import sys
 import uuid
 from datetime import UTC, date, datetime
+from pathlib import Path
 
 import pandas as pd
 
@@ -658,8 +659,6 @@ def main(argv: list[str] | None = None) -> int:
     # Sector map (only meaningful when --neutralize uses sector info).
     sector_map: dict[str, str] = {}
     if args.sector_map:
-        from pathlib import Path
-
         sm_path = Path(args.sector_map)
         if not sm_path.is_file():
             logger.error("--sector-map file not found: %s", sm_path)
@@ -716,7 +715,13 @@ def main(argv: list[str] | None = None) -> int:
         prior_memory = ""
     else:
         recent = registries.experiments.list_recent(limit=args.memory_depth)
-        prior_memory = build_memory_digest(recent, depth=args.memory_depth)
+        prior_memory = build_memory_digest(
+            recent,
+            depth=args.memory_depth,
+            # Round 9 A.1: surface promoted composites from the durable
+            # PromotedArtifact index — see validate_strict for rationale.
+            promoted_index_path=Path(args.promoted_dir) / "_index.jsonl",
+        )
         if prior_memory:
             logger.info(
                 "Memory digest: %d chars from %d prior experiments.",

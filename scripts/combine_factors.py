@@ -427,7 +427,14 @@ def _promote_basket(
     """
     components_str = ", ".join(recipe.components)
     nice_expression = f"combine.{recipe.method.value}([{components_str}])"
+    # Deterministic id (Round 9 A.2): re-promoting the same recipe under
+    # the same regime must overwrite the existing artifact, not create a
+    # parallel one.  Keying on recipe_id alone would collapse two
+    # legitimate promotions under different regimes; keying on
+    # recipe_id + first 6 of the trail_id is the safer default.
+    composite_id = f"composite_{recipe.recipe_id}_{regime_trail.trail_id[:6]}"
     factor = FactorSpec(
+        id=composite_id,
         name=f"composite_{recipe.recipe_id}",
         expression=nice_expression,
         composite_recipe=recipe,

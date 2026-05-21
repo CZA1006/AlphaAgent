@@ -492,7 +492,15 @@ def main(argv: list[str] | None = None) -> int:
             prior_memory = ""
         else:
             recent = experiments.list_recent(limit=args.memory_depth)
-            prior_memory = build_memory_digest(recent, depth=args.memory_depth)
+            prior_memory = build_memory_digest(
+                recent,
+                depth=args.memory_depth,
+                # Round 9 A.1: surface promoted composites from the
+                # durable artifact index so the proposer sees baskets
+                # promoted by previous `combine_factors --promote` runs
+                # even when this cycle starts with a fresh registry.
+                promoted_index_path=Path(args.promoted_dir) / "_index.jsonl",
+            )
             if prior_memory:
                 logger.info(
                     "Cycle %d/%d memory digest: %d chars from %d prior experiments",
