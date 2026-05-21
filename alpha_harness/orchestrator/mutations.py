@@ -31,6 +31,7 @@ from __future__ import annotations
 import copy
 from typing import Any
 
+from alpha_harness.combination import CombinationRecipe
 from alpha_harness.factors.dsl_parser import DslParseError, parse_expression
 from alpha_harness.refiner import RefinementBrief
 
@@ -90,6 +91,54 @@ def propose_mutations(
         candidates = _prioritize(candidates, brief)
 
     return candidates
+
+
+# ── Composite recipes (Round 9 Phase B) ────────────────────────────────────
+
+
+def propose_composite_mutations(
+    recipe: CombinationRecipe,
+    brief: RefinementBrief | None = None,
+) -> list[tuple[CombinationRecipe, str]]:
+    """Return mutated child recipes derived from ``recipe``.
+
+    Strategy: hold N-1 components fixed and mutate the i-th component
+    via the existing scalar :func:`propose_mutations`.  Each successful
+    inner mutation produces one child recipe; ``CombinationRecipe.build``
+    recomputes the recipe id, and no-op mutations (children whose
+    recipe id equals the parent's) are filtered out.
+
+    Labels of the form ``"component_{i}:{inner_label}"`` keep the audit
+    trail readable.  The total candidate count is bounded by ``N *
+    (mutations-per-component)`` so the caller's normal
+    ``max_variants_per_step`` cap still applies.
+
+    The function returns ``[]`` when no component admits a useful
+    mutation — the runner treats that as a termination signal, exactly
+    as it does for scalar factors.
+    """
+    if not recipe.components:
+        return []
+    out: list[tuple[CombinationRecipe, str]] = []
+    seen_ids: set[str] = {recipe.recipe_id}
+    for i, comp in enumerate(recipe.components):
+        for mutated_expr, inner_label in propose_mutations(comp, brief):
+            new_components = list(recipe.components)
+            new_components[i] = mutated_expr
+            try:
+                new_recipe = CombinationRecipe.build(
+                    method=recipe.method,
+                    components=new_components,
+                )
+            except ValueError:
+                # mutated expression doesn't re-parse — skip silently;
+                # the scalar refiner has the same "compile_error" path.
+                continue
+            if new_recipe.recipe_id in seen_ids:
+                continue
+            seen_ids.add(new_recipe.recipe_id)
+            out.append((new_recipe, f"component_{i}:{inner_label}"))
+    return out
 
 
 def _prioritize(

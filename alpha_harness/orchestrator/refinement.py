@@ -39,9 +39,13 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 
+from alpha_harness.combination import CombinationRecipe
 from alpha_harness.evaluators.novelty import NoveltyEvaluator
 from alpha_harness.factors.compiler import DslCompilationError, FactorDslCompiler
-from alpha_harness.orchestrator.mutations import propose_mutations
+from alpha_harness.orchestrator.mutations import (
+    propose_composite_mutations,
+    propose_mutations,
+)
 from alpha_harness.orchestrator.research_loop import ResearchOrchestrator
 from alpha_harness.refiner import build_brief
 from alpha_harness.schemas.evaluation import EvaluationRequest
@@ -299,10 +303,24 @@ class RefinementRunner:
         if len(result.children) >= cfg.max_total_children:
             return
 
-        # Build a diagnostic brief from the parent record so mutation
-        # ordering targets the specific weakness that earned REFINE.  The
-        # brief is advisory only — it reorders, never filters.
+        # Round 9 Phase B — composite factors get a parallel mutation path:
+        # mutate one component at a time via the scalar mutator, rebuild
+        # the recipe, evaluate via the precompiled-factor service hook.
+        # The diagnostic brief is shared so component-level mutations
+        # still get the right ordering bias.
         brief = build_brief(parent_record, eval_request.profile)
+        if parent_record.factor.composite_recipe is not None:
+            self._expand_composite(
+                parent_record=parent_record,
+                parent_hypothesis=parent_hypothesis,
+                root_expression=root_expression,
+                depth=depth,
+                eval_request=eval_request,
+                result=result,
+                brief=brief,
+            )
+            return
+
         mutations = propose_mutations(
             parent_record.factor.expression,
             brief=brief,
@@ -402,6 +420,138 @@ class RefinementRunner:
             eval_request,
             parent_factor_id=parent_factor_id,
             refinement_round=refinement_round,
+        )
+
+    # ── Composite refinement (Round 9 Phase B) ───────────────────────────
+
+    def _expand_composite(
+        self,
+        *,
+        parent_record: ExperimentRecord,
+        parent_hypothesis: Hypothesis,
+        root_expression: str,
+        depth: int,
+        eval_request: EvaluationRequest,
+        result: RefinementResult,
+        brief: object,
+    ) -> None:
+        """Composite analogue of :meth:`_expand`.
+
+        Mutates each component via the scalar mutator, rebuilds the
+        recipe, and runs a precompiled-factor cycle through the
+        orchestrator.  Children inherit ``parent_factor_id`` and bump
+        ``refinement_round`` exactly like scalar refinement.
+        """
+        cfg = self._config
+        parent_recipe = parent_record.factor.composite_recipe
+        if parent_recipe is None:  # defensive — caller already gated
+            return
+
+        # Per-component mutations may explode combinatorially with N
+        # components; the cap below applies to the *flattened* candidate
+        # list so a wide basket can't escape the budget.
+        candidates = propose_composite_mutations(
+            parent_recipe,
+            brief=brief,  # type: ignore[arg-type]
+        )
+        if not candidates:
+            return
+
+        seen_sibling_ids: set[str] = set()
+        children_this_level = 0
+
+        for new_recipe, label in candidates:
+            if children_this_level >= cfg.max_variants_per_step:
+                break
+            if len(result.children) >= cfg.max_total_children:
+                break
+
+            accepted = self._try_composite_cycle(
+                recipe=new_recipe,
+                label=label,
+                parent_hypothesis=parent_hypothesis,
+                parent_factor_id=parent_record.factor.id,
+                refinement_round=depth + 1,
+                root_expression=root_expression,
+                sibling_recipe_ids=seen_sibling_ids,
+                eval_request=eval_request,
+                result=result,
+            )
+            if accepted is None:
+                continue
+
+            seen_sibling_ids.add(new_recipe.recipe_id)
+            children_this_level += 1
+            result.children.append(accepted)
+
+            # Recurse only when the child itself earns REFINE.  The
+            # composite path can't refine indefinitely either — the
+            # max_depth cap is the same as the scalar path.
+            if accepted.decision == ExperimentDecision.REFINE:
+                self._expand(
+                    parent_record=accepted,
+                    parent_hypothesis=accepted.hypothesis,
+                    root_expression=root_expression,
+                    depth=depth + 1,
+                    eval_request=eval_request,
+                    result=result,
+                )
+
+    def _try_composite_cycle(
+        self,
+        *,
+        recipe: CombinationRecipe,
+        label: str,
+        parent_hypothesis: Hypothesis,
+        parent_factor_id: str,
+        refinement_round: int,
+        root_expression: str,
+        sibling_recipe_ids: set[str],
+        eval_request: EvaluationRequest,
+        result: RefinementResult,
+    ) -> ExperimentRecord | None:
+        """Build + evaluate one composite mutation candidate."""
+        if recipe.recipe_id in sibling_recipe_ids:
+            # Two different mutation paths happened to produce the same
+            # recipe — skip the second, like the scalar runner does for
+            # duplicate expressions.
+            result.skipped.append(
+                (f"composite:{recipe.recipe_id}", "duplicate_of_sibling"),
+            )
+            return None
+
+        components_str = ", ".join(recipe.components)
+        nice_expression = f"combine.{recipe.method.value}([{components_str}])"
+        factor = FactorSpec(
+            id=f"composite_{recipe.recipe_id}_refine_{refinement_round}",
+            name=f"composite_{recipe.recipe_id}",
+            expression=nice_expression,
+            composite_recipe=recipe,
+        )
+
+        child = Hypothesis(
+            text=nice_expression,
+            rationale=f"Refined from {parent_hypothesis.id} via {label}",
+            source=parent_hypothesis.source or "refinement",
+            asset_class=parent_hypothesis.asset_class,
+            tags=list(
+                dict.fromkeys([*parent_hypothesis.tags, self._config.refine_tag]),
+            ),
+            parent_id=parent_hypothesis.id,
+        )
+
+        logger.info(
+            "Refinement (composite): running child %s (mutation=%s) of parent %s",
+            child.id,
+            label,
+            parent_hypothesis.id,
+        )
+        return self._orchestrator.run_cycle(
+            child,
+            eval_request,
+            parent_factor_id=parent_factor_id,
+            refinement_round=refinement_round,
+            precompiled_factor=factor,
         )
 
     def _is_novel(

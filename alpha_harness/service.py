@@ -91,10 +91,24 @@ class AlphaHarnessService:
         return self._evaluator.evaluate(factor, request)
 
     def run_research_cycle(
-        self, hypothesis: Hypothesis, eval_request: EvaluationRequest
+        self,
+        hypothesis: Hypothesis,
+        eval_request: EvaluationRequest,
+        *,
+        precompiled_factor: FactorSpec | None = None,
     ) -> ExperimentRecord:
-        """Execute one full research cycle: compile → evaluate → judge → record."""
-        factor = self.compile_factor(hypothesis)
+        """Execute one full research cycle: compile → evaluate → judge → record.
+
+        ``precompiled_factor`` (Round 9 Phase B) lets the caller supply a
+        FactorSpec directly, bypassing the DSL compile step.  This is the
+        path composite factors take — they aren't DSL strings, so there's
+        nothing for the compiler to parse.  Scalar callers leave the
+        kwarg unset and behave exactly as before.
+        """
+        if precompiled_factor is not None:
+            factor = precompiled_factor
+        else:
+            factor = self.compile_factor(hypothesis)
         evaluation = self.evaluate_factor(factor, eval_request)
         detail = self._judge.judge(hypothesis, factor, evaluation, eval_request)
 

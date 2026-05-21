@@ -79,6 +79,7 @@ class ResearchOrchestrator:
         *,
         parent_factor_id: str | None = None,
         refinement_round: int = 0,
+        precompiled_factor: FactorSpec | None = None,
     ) -> ExperimentRecord:
         """Execute one complete research cycle.
 
@@ -103,7 +104,11 @@ class ResearchOrchestrator:
             hypothesis.text[:80],
         )
         try:
-            record = self._service.run_research_cycle(hypothesis, eval_request)
+            record = self._service.run_research_cycle(
+                hypothesis,
+                eval_request,
+                precompiled_factor=precompiled_factor,
+            )
         except Exception as exc:
             # Compilation or evaluation failure → record as REJECT
             logger.warning(
