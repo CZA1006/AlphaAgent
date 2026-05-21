@@ -31,7 +31,7 @@ import argparse
 import json
 import logging
 import sys
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import pandas as pd
@@ -46,7 +46,14 @@ from alpha_harness.data.synthetic import generate_price_panel
 from alpha_harness.evaluators.signal_quality import evaluate_precomputed_signal
 from alpha_harness.evaluators.walk_forward import WalkForwardEvaluator
 from alpha_harness.regimes import get_regime
+from alpha_harness.reports import (
+    DEFAULT_COMBINATION_DIR,
+    CombinationReportWriter,
+    FactorThumbnail,
+    build_combination_report,
+)
 from alpha_harness.schemas.evaluation import EvaluationBundle, EvaluationRequest
+from alpha_harness.schemas.experiment import PromotionTrail
 from alpha_harness.schemas.factor import FactorSpec
 
 logging.basicConfig(
@@ -283,7 +290,58 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Emit JSON instead of a text block.",
     )
+
+    # Round 8 Phase A — persist a CombinationReport per run.
+    p.add_argument(
+        "--out-dir",
+        default=str(DEFAULT_COMBINATION_DIR),
+        help=(
+            "Directory for persisted CombinationReport JSONs (default: "
+            f"{DEFAULT_COMBINATION_DIR}).  Mirrors the on-disk shape of "
+            "artifacts/validations/."
+        ),
+    )
+    p.add_argument(
+        "--cycle-id",
+        default=None,
+        help=(
+            "Identifier for this combination run.  Becomes the report "
+            "filename ({cycle_id}.json).  Defaults to combine-<ts>."
+        ),
+    )
+    p.add_argument(
+        "--universe-id",
+        default="combine_factors",
+        help="Label recorded in the report (informational; no resolution).",
+    )
+    p.add_argument(
+        "--no-write",
+        action="store_true",
+        help="Skip writing the CombinationReport to disk.",
+    )
     return p
+
+
+def _build_eval_request(
+    *, df: pd.DataFrame, regime, factor_id: str, universe_id: str,
+) -> EvaluationRequest:
+    """Construct the EvaluationRequest used for one combine_factors run.
+
+    Shared between per-factor scoring, basket scoring, and the
+    regime-trail hash so all three see byte-identical regime knobs.
+    """
+    ts_dates = pd.to_datetime(df["timestamp"]).dt.date
+    return EvaluationRequest(
+        factor_id=factor_id,
+        universe_id=universe_id,
+        eval_start=ts_dates.min(),
+        eval_end=ts_dates.max(),
+        label=regime.label_definition(),
+        profile=regime.evaluation_profile(),
+        neutralize=regime.neutralize,
+        cost_bps=regime.cost_bps,
+        holdout=regime.holdout_policy(),
+    )
 
 
 def _score_signal(
@@ -291,7 +349,7 @@ def _score_signal(
     signal: pd.Series,
     df: pd.DataFrame,
     regime,
-    factor_id: str,
+    request: EvaluationRequest,
 ) -> EvaluationBundle:
     """Run a precomputed signal through the strict-regime walk-forward stack.
 
@@ -304,23 +362,28 @@ def _score_signal(
     ``_PrecomputedSignalEvaluator`` so the basket signal (which has no
     DSL form) can ride the same pipeline.
     """
-    ts_dates = pd.to_datetime(df["timestamp"]).dt.date
-    request = EvaluationRequest(
-        factor_id=factor_id,
-        universe_id="combine_factors",
-        eval_start=ts_dates.min(),
-        eval_end=ts_dates.max(),
-        label=regime.label_definition(),
-        profile=regime.evaluation_profile(),
-        neutralize=regime.neutralize,
-        cost_bps=regime.cost_bps,
-        holdout=regime.holdout_policy(),
-    )
     inner = _PrecomputedSignalEvaluator(signal=signal, df=df)
     wf = WalkForwardEvaluator(inner, regime.walk_forward_config())
     return wf.evaluate(
-        FactorSpec(name=factor_id, expression="<precomputed>"),
+        FactorSpec(name=request.factor_id, expression="<precomputed>"),
         request,
+    )
+
+
+def _thumbnail(
+    *, factor_id: str, expression: str, decision: str, bundle: EvaluationBundle,
+) -> FactorThumbnail:
+    """Squash one EvaluationBundle into the persistable thumbnail shape."""
+    return FactorThumbnail(
+        factor_id=factor_id,
+        expression=expression,
+        decision=decision,
+        ic=bundle.ic,
+        rank_ic=bundle.rank_ic,
+        quantile_spread=bundle.quantile_spread,
+        net_quantile_spread=bundle.net_quantile_spread,
+        sharpe=bundle.sharpe,
+        turnover=bundle.turnover,
     )
 
 
@@ -335,6 +398,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     regime = get_regime(args.regime)
+    started_at = datetime.now(UTC)
     logger.info(
         "Combining %d factors via %s under '%s' regime (ic>=%.4f rank_ic>=%.4f)",
         len(expressions),
@@ -352,6 +416,7 @@ def main(argv: list[str] | None = None) -> int:
 
     individuals: list[dict[str, object]] = []
     signals: list[pd.Series] = []
+    component_thumbs: list[FactorThumbnail] = []
     for i, expr in enumerate(expressions):
         try:
             sig = compute_signal(expr, df)
@@ -359,8 +424,14 @@ def main(argv: list[str] | None = None) -> int:
             print(f"error: failed to compile {expr!r}: {exc}", file=sys.stderr)
             return 3
         signals.append(sig)
-        bundle = _score_signal(
-            signal=sig, df=df, regime=regime, factor_id=f"individual_{i}",
+        factor_id = f"individual_{i}"
+        request = _build_eval_request(
+            df=df, regime=regime, factor_id=factor_id, universe_id=args.universe_id,
+        )
+        bundle = _score_signal(signal=sig, df=df, regime=regime, request=request)
+        passes_ic = bundle.ic is not None and bundle.ic >= regime.ic_threshold
+        passes_rank_ic = (
+            bundle.rank_ic is not None and bundle.rank_ic >= regime.rank_ic_threshold
         )
         individuals.append(
             {
@@ -369,19 +440,27 @@ def main(argv: list[str] | None = None) -> int:
                 "rank_ic": bundle.rank_ic,
                 "quantile_spread": bundle.quantile_spread,
                 "net_quantile_spread": bundle.net_quantile_spread,
-                "passes_ic": bundle.ic is not None and bundle.ic >= regime.ic_threshold,
-                "passes_rank_ic": (
-                    bundle.rank_ic is not None
-                    and bundle.rank_ic >= regime.rank_ic_threshold
-                ),
+                "passes_ic": passes_ic,
+                "passes_rank_ic": passes_rank_ic,
             },
+        )
+        component_thumbs.append(
+            _thumbnail(
+                factor_id=factor_id,
+                expression=expr,
+                decision="component",
+                bundle=bundle,
+            ),
         )
 
     # Combination
     method = CombinationMethod(args.method)
     basket_sig = combine_signals(signals, timestamps, method)
+    basket_request = _build_eval_request(
+        df=df, regime=regime, factor_id="basket", universe_id=args.universe_id,
+    )
     basket_bundle = _score_signal(
-        signal=basket_sig, df=df, regime=regime, factor_id="basket",
+        signal=basket_sig, df=df, regime=regime, request=basket_request,
     )
     basket: dict[str, object] = {
         "method": method.value,
@@ -406,6 +485,45 @@ def main(argv: list[str] | None = None) -> int:
         else float("nan")
     )
 
+    # ── Round 8 Phase A: persist a CombinationReport ─────────────────────
+    passes_regime = bool(basket["passes_ic"]) and bool(basket["passes_rank_ic"])
+    regime_trail = PromotionTrail.from_inputs(
+        evaluation_request=basket_request,
+        judge_thresholds=regime.judge_thresholds(),
+        walk_forward={
+            "n_folds": regime.n_folds,
+            "fold_size_days": regime.fold_size_days,
+            "step_days": regime.step_days,
+            "embargo_days": regime.embargo_days,
+        },
+    )
+    basket_thumb = _thumbnail(
+        factor_id="basket",
+        expression=f"<combine:{method.value}({len(expressions)})>",
+        decision="basket",
+        bundle=basket_bundle,
+    )
+    cycle_id = args.cycle_id or f"combine-{started_at.strftime('%Y%m%dT%H%M%SZ')}"
+    report = build_combination_report(
+        cycle_id=cycle_id,
+        regime_trail_id=regime_trail.trail_id,
+        universe_id=args.universe_id,
+        started_at=started_at,
+        method=method,
+        components=expressions,
+        component_factor_ids=None,
+        basket_metrics=basket_thumb,
+        component_metrics=component_thumbs,
+        avg_pairwise_rank_corr=(
+            None if avg_off_diag != avg_off_diag else avg_off_diag  # NaN guard
+        ),
+        passes_regime=passes_regime,
+    )
+    if not args.no_write:
+        report_path = CombinationReportWriter(args.out_dir).write(report)
+        if report_path is not None:
+            logger.info("Combination report persisted to %s", report_path)
+
     summary = {
         "regime": args.regime,
         "method": method.value,
@@ -418,6 +536,10 @@ def main(argv: list[str] | None = None) -> int:
             "rank_ic": regime.rank_ic_threshold,
             "quantile_spread": regime.quantile_spread_threshold,
         },
+        "cycle_id": cycle_id,
+        "regime_trail_id": regime_trail.trail_id,
+        "recipe_id": report.recipe.recipe_id,
+        "passes_regime": passes_regime,
     }
 
     if args.json:

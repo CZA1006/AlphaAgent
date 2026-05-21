@@ -8,6 +8,18 @@ memory remain the source of truth; the report is a self-contained
 audit mirror.
 """
 
+from alpha_harness.reports.combination import (
+    COMBINATION_INDEX_NAME,
+    DEFAULT_COMBINATION_DIR,
+    CombinationRecipe,
+    CombinationReport,
+    CombinationReportWriter,
+    build_combination_report,
+    recipe_id_for,
+)
+from alpha_harness.reports.combination import (
+    read_index as read_combination_index,
+)
 from alpha_harness.reports.cycle_report import (
     DEFAULT_REPORT_DIR,
     REPORT_INDEX_NAME,
@@ -33,21 +45,29 @@ from alpha_harness.reports.validation import (
 )
 
 __all__ = [
+    "COMBINATION_INDEX_NAME",
+    "DEFAULT_COMBINATION_DIR",
     "DEFAULT_REPORT_DIR",
     "DEFAULT_VALIDATION_DIR",
     "REPORT_INDEX_NAME",
     "VALIDATION_INDEX_NAME",
     "BudgetSnapshot",
+    "CombinationRecipe",
+    "CombinationReport",
+    "CombinationReportWriter",
     "CycleReport",
     "CycleReportWriter",
     "ExperimentThumbnail",
     "FactorThumbnail",
     "StrictValidationReport",
     "StrictValidationReportWriter",
+    "build_combination_report",
     "build_cycle_report",
     "build_validation_report",
     "classify_failure",
     "index_path",
+    "read_combination_index",
     "read_index",
     "read_validation_index",
+    "recipe_id_for",
 ]
