@@ -17,10 +17,16 @@ from alpha_harness.combination.combiner import (
     compute_signal,
     pairwise_rank_corr,
 )
+from alpha_harness.combination.recipe import (
+    CombinationRecipe,
+    recipe_id_for,
+)
 
 __all__ = [
     "CombinationMethod",
+    "CombinationRecipe",
     "combine_signals",
     "compute_signal",
     "pairwise_rank_corr",
+    "recipe_id_for",
 ]

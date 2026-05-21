@@ -127,7 +127,20 @@ class NoveltyEvaluator:
 
     @staticmethod
     def _canonicalize_factor(factor: FactorSpec) -> CanonNode | None:
-        """Canonicalize a factor using its stored AST if available."""
+        """Canonicalize a factor using its stored AST if available.
+
+        Composite factors (Round 8) have no DSL AST — their expression is
+        a synthetic ``<composite:{recipe_id}>`` placeholder.  We return
+        ``None`` so the score fallback drops to string equality, which
+        does the right thing automatically: two composites with the same
+        ``recipe_id`` share the same placeholder string → similarity 1.0
+        → flagged as a duplicate.  Two composites with different recipe
+        ids have different placeholders → similarity 0.0.  Composites
+        and scalar factors never collide because the placeholder won't
+        equal any DSL expression.
+        """
+        if factor.composite_recipe is not None:
+            return None  # forces string-equality fallback, see docstring
         if factor.operator_tree is not None:
             try:
                 return canonicalize(factor.operator_tree)

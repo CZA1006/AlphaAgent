@@ -36,8 +36,17 @@ from pathlib import Path
 
 import pandas as pd
 
+from alpha_harness.artifacts.promoted import (
+    DEFAULT_PROMOTED_DIR,
+    PromotedArtifactWriter,
+)
+from alpha_harness.artifacts.trail_registry import (
+    DEFAULT_TRAIL_DIR,
+    TrailRegistryWriter,
+)
 from alpha_harness.combination import (
     CombinationMethod,
+    CombinationRecipe,
     combine_signals,
     compute_signal,
     pairwise_rank_corr,
@@ -53,8 +62,13 @@ from alpha_harness.reports import (
     build_combination_report,
 )
 from alpha_harness.schemas.evaluation import EvaluationBundle, EvaluationRequest
-from alpha_harness.schemas.experiment import PromotionTrail
+from alpha_harness.schemas.experiment import (
+    ExperimentDecision,
+    ExperimentRecord,
+    PromotionTrail,
+)
 from alpha_harness.schemas.factor import FactorSpec
+from alpha_harness.schemas.hypothesis import Hypothesis
 
 logging.basicConfig(
     level=logging.INFO,
@@ -319,6 +333,27 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Skip writing the CombinationReport to disk.",
     )
+
+    # Round 8 Phase B — promotion path.
+    p.add_argument(
+        "--promote",
+        action="store_true",
+        help=(
+            "If the basket clears the regime, register it as a "
+            "composite FactorSpec (PromotedArtifact + PromotionTrail).  "
+            "No-op when the basket fails the regime."
+        ),
+    )
+    p.add_argument(
+        "--promoted-dir",
+        default=str(DEFAULT_PROMOTED_DIR),
+        help="Directory for PromotedArtifact JSONs (when --promote).",
+    )
+    p.add_argument(
+        "--trail-dir",
+        default=str(DEFAULT_TRAIL_DIR),
+        help="Directory for PromotionTrail JSONs (when --promote).",
+    )
     return p
 
 
@@ -368,6 +403,62 @@ def _score_signal(
         FactorSpec(name=request.factor_id, expression="<precomputed>"),
         request,
     )
+
+
+def _promote_basket(
+    *,
+    args: argparse.Namespace,
+    recipe: CombinationRecipe,
+    basket_bundle: EvaluationBundle,
+    regime_trail: PromotionTrail,
+    cycle_id: str,
+) -> Path | None:
+    """Register a passing basket as a composite-factor PromotedArtifact.
+
+    Builds a synthetic ExperimentRecord whose ``factor`` carries the
+    recipe under ``composite_recipe``.  The ``expression`` placeholder
+    is intentionally human-readable so it surfaces nicely in the
+    proposer's memory digest in a later cycle (``combine.<method>([
+    expr, expr, expr ])``).
+
+    Returns the path of the written PromotedArtifact, or ``None`` if
+    the writer chose to skip (which it would not, since we just gated
+    on ``passes_regime``).
+    """
+    components_str = ", ".join(recipe.components)
+    nice_expression = f"combine.{recipe.method.value}([{components_str}])"
+    factor = FactorSpec(
+        name=f"composite_{recipe.recipe_id}",
+        expression=nice_expression,
+        composite_recipe=recipe,
+    )
+    hypothesis = Hypothesis(
+        text=(
+            f"Basket of {len(recipe.components)} components combined via "
+            f"{recipe.method.value}.  Promoted from combine_factors "
+            f"under cycle {cycle_id}."
+        ),
+        source="combine_factors",
+    )
+    record = ExperimentRecord(
+        hypothesis=hypothesis,
+        factor=factor,
+        evaluation=basket_bundle,
+        decision=ExperimentDecision.PROMOTE_CANDIDATE,
+        promotion_trail=regime_trail,
+        tags=["composite", f"recipe:{recipe.recipe_id}"],
+        notes=(
+            f"Promoted by scripts.combine_factors --promote; "
+            f"recipe_id={recipe.recipe_id}, trail={regime_trail.trail_id}."
+        ),
+    )
+    trail_registry = TrailRegistryWriter(args.trail_dir)
+    writer = PromotedArtifactWriter(
+        base_dir=args.promoted_dir,
+        cycle_id=cycle_id,
+        trail_registry=trail_registry,
+    )
+    return writer.maybe_write(record)
 
 
 def _thumbnail(
@@ -524,6 +615,29 @@ def main(argv: list[str] | None = None) -> int:
         if report_path is not None:
             logger.info("Combination report persisted to %s", report_path)
 
+    # ── Round 8 Phase B: optional promotion ──────────────────────────────
+    promoted_artifact_path: Path | None = None
+    if args.promote:
+        if not passes_regime:
+            logger.info(
+                "--promote set but basket failed regime "
+                "(ic=%s rank_ic=%s); skipping promotion.",
+                basket_bundle.ic,
+                basket_bundle.rank_ic,
+            )
+        else:
+            promoted_artifact_path = _promote_basket(
+                args=args,
+                recipe=report.recipe,
+                basket_bundle=basket_bundle,
+                regime_trail=regime_trail,
+                cycle_id=cycle_id,
+            )
+            if promoted_artifact_path is not None:
+                logger.info(
+                    "Basket promoted as composite factor: %s", promoted_artifact_path,
+                )
+
     summary = {
         "regime": args.regime,
         "method": method.value,
@@ -540,6 +654,9 @@ def main(argv: list[str] | None = None) -> int:
         "regime_trail_id": regime_trail.trail_id,
         "recipe_id": report.recipe.recipe_id,
         "passes_regime": passes_regime,
+        "promoted_artifact": (
+            str(promoted_artifact_path) if promoted_artifact_path is not None else None
+        ),
     }
 
     if args.json:

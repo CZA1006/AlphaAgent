@@ -280,6 +280,15 @@ class PromotedArtifactWriter:
     def _build_payload(self, record: ExperimentRecord) -> dict[str, Any]:
         ev = record.evaluation
         trail = record.promotion_trail
+        # Round 8: serialize composite_recipe when the promoted factor is a
+        # basket — the recipe is the canonical content the audit story
+        # references, so it has to land in the artifact alongside the
+        # placeholder expression.
+        composite = (
+            record.factor.composite_recipe.model_dump(mode="json")
+            if record.factor.composite_recipe is not None
+            else None
+        )
         return {
             "schema_version": 3,
             "experiment_id": record.id,
@@ -287,6 +296,7 @@ class PromotedArtifactWriter:
             "factor_name": record.factor.name,
             "expression": record.factor.expression,
             "operator_tree": record.factor.operator_tree,
+            "composite_recipe": composite,
             "parent_factor_id": record.factor.parent_factor_id,
             "refinement_round": record.factor.refinement_round,
             "promotion_trail": (trail.model_dump(mode="json") if trail is not None else None),

@@ -37,6 +37,7 @@ from alpha_harness.evaluators.neutralize import (
     compute_factor_turnover,
     neutralize_forward_returns,
 )
+from alpha_harness.factors.composite_executor import execute_composite
 from alpha_harness.factors.dsl_executor import DslExecutor
 from alpha_harness.factors.dsl_parser import parse_expression
 from alpha_harness.schemas.evaluation import (
@@ -410,10 +411,16 @@ class SignalQualityEvaluator:
                 metadata={"evaluator": "signal_quality", "mode": "real"},
             )
 
-        # ── 2. Execute the factor DSL ─────────────────────────────────
-        ast: dict[str, Any] = factor.operator_tree or parse_expression(factor.expression)
-        executor = DslExecutor(df)
-        signal = executor.execute(ast)
+        # ── 2. Execute the factor ─────────────────────────────────────
+        # Composite factors (Round 8) route through the recipe executor
+        # instead of the DSL parser — every downstream gate is unchanged
+        # because both paths land at evaluate_precomputed_signal.
+        if factor.composite_recipe is not None:
+            signal = execute_composite(factor.composite_recipe, df)
+        else:
+            ast: dict[str, Any] = factor.operator_tree or parse_expression(factor.expression)
+            executor = DslExecutor(df)
+            signal = executor.execute(ast)
 
         return evaluate_precomputed_signal(signal=signal, df=df, request=request)
 

@@ -22,7 +22,6 @@ basket twice.
 from __future__ import annotations
 
 import contextlib
-import hashlib
 import json
 import logging
 import os
@@ -34,9 +33,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from alpha_harness.combination import CombinationMethod
-from alpha_harness.factors.canonical import canonicalize
-from alpha_harness.factors.dsl_parser import DslParseError, parse_expression
+from alpha_harness.combination import CombinationMethod, CombinationRecipe, recipe_id_for
 from alpha_harness.reports.validation import FactorThumbnail
 
 logger = logging.getLogger(__name__)
@@ -46,54 +43,14 @@ COMBINATION_INDEX_NAME = "_index.jsonl"
 SCHEMA_VERSION = 1
 
 
-# ── Recipe id ───────────────────────────────────────────────────────────────
-
-
-def _canonical_hash(expression: str) -> str:
-    """Return a stable 16-hex-char digest for a single DSL expression.
-
-    Uses the same canonicalizer the novelty check uses so two expressions
-    that differ only in commutative-operand order collapse to the same
-    component hash.  Raises ``ValueError`` if the expression won't parse —
-    re-wrapping ``DslParseError`` keeps callers from having to depend on
-    DSL internals.
-    """
-    try:
-        ast = parse_expression(expression)
-    except DslParseError as exc:
-        raise ValueError(f"unparseable component expression {expression!r}: {exc}") from exc
-    canon_repr = repr(canonicalize(ast))
-    return hashlib.sha256(canon_repr.encode("utf-8")).hexdigest()[:16]
-
-
-def recipe_id_for(method: CombinationMethod, components: list[str]) -> str:
-    """SHA-256 over ``(method, sorted component hashes)``.
-
-    Sorting is the load-bearing step: ``equal_weight(A, B, C)`` and
-    ``equal_weight(C, B, A)`` describe the same basket and must hash
-    identically, otherwise the novelty check would let the proposer
-    re-promote the same recipe under a permuted order.
-    """
-    component_hashes = sorted(_canonical_hash(e) for e in components)
-    payload = method.value + "|" + "|".join(component_hashes)
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+# Re-export so existing callers can keep importing from
+# ``alpha_harness.reports.combination`` even though the value type now
+# lives in ``alpha_harness.combination`` (moved to avoid the
+# ``schemas.factor → reports → factors`` import cycle).
+__all_recipe_reexports__ = (CombinationRecipe, recipe_id_for)
 
 
 # ── Schema ──────────────────────────────────────────────────────────────────
-
-
-class CombinationRecipe(BaseModel):
-    """Hashable description of one basket.
-
-    ``component_factor_ids`` is populated when the components were loaded
-    from a validation report (so promotion can cite their lineage);
-    otherwise it's an empty list and the components are anonymous.
-    """
-
-    method: CombinationMethod
-    components: list[str]
-    component_factor_ids: list[str] = Field(default_factory=list)
-    recipe_id: str
 
 
 class CombinationReport(BaseModel):
