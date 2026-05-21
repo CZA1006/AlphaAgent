@@ -64,6 +64,13 @@ class FactorThumbnail(BaseModel):
     turnover: float | None = None
     gate: str | None = None  # set when decision == reject
     failure_detail: str = ""
+    # Round 9.1 — holdout metrics surfaced from bundle.metadata["holdout"]
+    # so a reader of the report can see whether the in-sample edge
+    # survived out-of-sample.  All three are ``None`` when the
+    # evaluator wasn't run with a TAIL holdout policy.
+    holdout_ic: float | None = None
+    holdout_rank_ic: float | None = None
+    holdout_decay_ratio: float | None = None
 
 
 class StrictValidationReport(BaseModel):
@@ -164,6 +171,15 @@ def build_validation_report(
             counts["archived"] += 1
 
         ev = r.evaluation
+        # Round 9.1 — pull holdout fields out of metadata so the
+        # report is self-contained.  All three default to ``None``
+        # when the evaluator ran without a TAIL holdout.
+        holdout_meta = ev.metadata.get("holdout") if isinstance(ev.metadata, dict) else None
+        holdout_ic = holdout_rank_ic = holdout_decay_ratio = None
+        if isinstance(holdout_meta, dict):
+            holdout_ic = holdout_meta.get("ic")
+            holdout_rank_ic = holdout_meta.get("rank_ic")
+            holdout_decay_ratio = holdout_meta.get("decay_ratio")
         thumbnails.append(
             FactorThumbnail(
                 factor_id=r.factor.id,
@@ -177,6 +193,9 @@ def build_validation_report(
                 turnover=ev.turnover,
                 gate=gate,
                 failure_detail=detail,
+                holdout_ic=holdout_ic,
+                holdout_rank_ic=holdout_rank_ic,
+                holdout_decay_ratio=holdout_decay_ratio,
             ),
         )
 

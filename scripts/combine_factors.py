@@ -471,7 +471,18 @@ def _promote_basket(
 def _thumbnail(
     *, factor_id: str, expression: str, decision: str, bundle: EvaluationBundle,
 ) -> FactorThumbnail:
-    """Squash one EvaluationBundle into the persistable thumbnail shape."""
+    """Squash one EvaluationBundle into the persistable thumbnail shape.
+
+    Round 9.1 — extracts the holdout block from ``bundle.metadata`` so
+    out-of-sample IC survives serialization.  Returns ``None`` for each
+    holdout field when no TAIL holdout was applied.
+    """
+    holdout = bundle.metadata.get("holdout") if isinstance(bundle.metadata, dict) else None
+    holdout_ic = holdout_rank_ic = holdout_decay_ratio = None
+    if isinstance(holdout, dict):
+        holdout_ic = holdout.get("ic")
+        holdout_rank_ic = holdout.get("rank_ic")
+        holdout_decay_ratio = holdout.get("decay_ratio")
     return FactorThumbnail(
         factor_id=factor_id,
         expression=expression,
@@ -482,6 +493,9 @@ def _thumbnail(
         net_quantile_spread=bundle.net_quantile_spread,
         sharpe=bundle.sharpe,
         turnover=bundle.turnover,
+        holdout_ic=holdout_ic,
+        holdout_rank_ic=holdout_rank_ic,
+        holdout_decay_ratio=holdout_decay_ratio,
     )
 
 

@@ -246,6 +246,20 @@ def evaluate_precomputed_signal(
             "they must be aligned row-for-row.",
         )
 
+    # Round 9.1 — honor the HoldoutPolicy on this path too.  Previously
+    # only ``SignalQualityEvaluator.evaluate`` checked the strategy,
+    # which meant the combiner (which dispatches here directly) was
+    # silently ignoring the holdout split.  Same dispatch as the class
+    # method: when TAIL with positive fraction, recurse with holdout
+    # disabled on the in-sample and holdout halves, then merge.
+    if (
+        request.holdout.strategy is HoldoutStrategy.TAIL
+        and request.holdout.holdout_fraction > 0
+    ):
+        return _evaluate_precomputed_with_holdout(
+            signal=signal, df=df, request=request,
+        )
+
     groups = df["symbol"] if "symbol" in df.columns else None
     fwd_returns = build_forward_returns(df["close"].astype(float), groups, request.label)
     timestamps = df["timestamp"]
@@ -342,6 +356,97 @@ def evaluate_precomputed_signal(
         eval_end=request.eval_end,
         forecast_horizon_bars=request.label.forecast_horizon_bars,
         metadata=metadata,
+    )
+
+
+def _evaluate_precomputed_with_holdout(
+    *,
+    signal: pd.Series,
+    df: pd.DataFrame,
+    request: EvaluationRequest,
+) -> EvaluationBundle:
+    """Holdout-aware version of :func:`evaluate_precomputed_signal`.
+
+    Mirrors :meth:`SignalQualityEvaluator._evaluate_with_holdout`:
+    split the window at ``holdout_fraction`` from the end, evaluate
+    both halves with the holdout disabled, attach the holdout block
+    as ``metadata.holdout`` on the in-sample bundle.
+
+    The in-sample window ends at ``split_start - 1``; both halves
+    work with a filtered ``df``/``signal`` slice so the recursive
+    call still sees aligned inputs.  No embargo gap between the two
+    halves yet — that's a separate finding tracked in
+    ``docs/AUDIT_LOOK_AHEAD.md`` (Finding 3).
+    """
+    from datetime import timedelta as _td
+
+    ts_dates = pd.to_datetime(df["timestamp"]).dt.date
+    eval_start = request.eval_start
+    eval_end = request.eval_end
+    total_days = (eval_end - eval_start).days + 1
+    holdout_days = max(1, round(total_days * request.holdout.holdout_fraction))
+    holdout_days = min(holdout_days, total_days - 1)
+    if holdout_days < 1:
+        # Span too short — fall back to non-holdout evaluation.
+        return evaluate_precomputed_signal(
+            signal=signal,
+            df=df,
+            request=request.model_copy(update={"holdout": HoldoutPolicy()}),
+        )
+
+    split_start = eval_end - _td(days=holdout_days - 1)
+    is_end = split_start - _td(days=1)
+    disabled = HoldoutPolicy(strategy=HoldoutStrategy.NONE)
+
+    is_mask = (ts_dates >= eval_start) & (ts_dates <= is_end)
+    ho_mask = (ts_dates >= split_start) & (ts_dates <= eval_end)
+
+    is_req = request.model_copy(
+        update={"eval_end": is_end, "holdout": disabled},
+    )
+    ho_req = request.model_copy(
+        update={
+            "eval_start": split_start,
+            "eval_end": eval_end,
+            "holdout": disabled,
+        },
+    )
+    is_bundle = evaluate_precomputed_signal(
+        signal=signal.loc[is_mask].reset_index(drop=True),
+        df=df.loc[is_mask].reset_index(drop=True),
+        request=is_req,
+    )
+    ho_bundle = evaluate_precomputed_signal(
+        signal=signal.loc[ho_mask].reset_index(drop=True),
+        df=df.loc[ho_mask].reset_index(drop=True),
+        request=ho_req,
+    )
+
+    is_rank = is_bundle.rank_ic
+    ho_rank = ho_bundle.rank_ic
+    decay_ratio: float | None = None
+    if is_rank is not None and ho_rank is not None and is_rank != 0:
+        decay_ratio = ho_rank / is_rank
+
+    merged_metadata = dict(is_bundle.metadata)
+    merged_metadata["holdout"] = {
+        "holdout_start": str(split_start),
+        "holdout_end": str(eval_end),
+        "holdout_days": holdout_days,
+        "ic": ho_bundle.ic,
+        "rank_ic": ho_rank,
+        "quantile_spread": ho_bundle.quantile_spread,
+        "net_quantile_spread": ho_bundle.net_quantile_spread,
+        "turnover": ho_bundle.turnover,
+        "n_periods": ho_bundle.n_periods,
+        "decay_ratio": decay_ratio,
+    }
+    return is_bundle.model_copy(
+        update={
+            "eval_start": eval_start,
+            "eval_end": eval_end,
+            "metadata": merged_metadata,
+        },
     )
 
 
