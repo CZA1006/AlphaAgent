@@ -183,6 +183,34 @@ avg pairwise rank-corr = +0.05. The plumbing works; manufacturing a
 combination that promotes is now an experiment, not an engineering
 task.
 
+## Milestone 3.8 — 3.12: Rounds 7–9 + case study + audit
+
+### Status — ✅ complete
+
+Rounds 7 → 9 turned baskets from operator one-shots into agent-loop
+citizens.  Round 7 made validation reports self-contained
+(`FactorThumbnail`); 7.1 closed the measurement gap between combiner
+and validator (`evaluate_precomputed_signal` extracted, walk-forward
+parity guaranteed).  Round 8 promoted baskets to registry citizens
+(`FactorSpec.composite_recipe`, `CombinationRecipe` with hashable
+`recipe_id`, `combine_factors --promote`).  Round 9 closed the loop
+back to the proposer: memory digest reads the durable promoted-
+artifact index, refinement learned a composite path (mutate one
+component, rebuild the recipe), and `scripts/inspect_composite` lets
+operators audit any recipe.
+
+The Q2 2026 case study (`docs/CASE_STUDY_2026Q2.md`) ran the full
+Round-1-to-9 stack against real DeepSeek + real Polygon SP-50.  The
+post-study look-ahead audit (`docs/AUDIT_LOOK_AHEAD.md`) found
+two CRITICAL bugs — the combiner bypassed `HoldoutPolicy`, and
+`FactorThumbnail` dropped the holdout block — both fixed in commit
+`c535059`.  Holdout-aware re-run shows the basket still clears
+strict on both gates (in-sample IC `+0.0244` / rank_IC `+0.0314`)
+with a holdout window that outperforms.
+
+Full per-sub-round design notes in
+[`docs/ROUND7_TO_9_SUMMARY.md`](docs/ROUND7_TO_9_SUMMARY.md).
+
 ## Milestone 4: Broader data and more asset support
 
 ### Scope

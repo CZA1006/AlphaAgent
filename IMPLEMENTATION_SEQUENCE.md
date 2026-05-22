@@ -1,9 +1,11 @@
 # Implementation Sequence
 
 > **Historical document.** Steps 1–9 below shipped across Rounds 1–3.
-> For the current state and Round 4 sequencing, see
-> [docs/ROUND3_SUMMARY.md](docs/ROUND3_SUMMARY.md) and the Round 4
-> section of [ROADMAP.md](ROADMAP.md).
+> Rounds 4 → 9 are sequenced in [ROADMAP.md](ROADMAP.md) (milestones
+> M3.5 → M3.12) with per-sub-round design notes in
+> [docs/ROUND3_SUMMARY.md](docs/ROUND3_SUMMARY.md),
+> [docs/ROUND4_TO_6_SUMMARY.md](docs/ROUND4_TO_6_SUMMARY.md), and
+> [docs/ROUND7_TO_9_SUMMARY.md](docs/ROUND7_TO_9_SUMMARY.md).
 
 ## Step 1
 Initialize repo and Python project.

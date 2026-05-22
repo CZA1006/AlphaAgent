@@ -2,17 +2,27 @@
 
 > **Historical document.** Every task group below shipped in Rounds 1–2,
 > was extended in Round 3, and has been completely superseded by the
-> Round 4–6 work. The judge stack now has six gates, the agent loop
-> runs end-to-end against real OpenRouter + Polygon data, and the
-> on-disk reproducibility chain (4F → 4G → 4H → 4I → 4J) is fully
-> wired with operator CLIs.
+> Round 4–9 work. The judge stack now has six gates, the agent loop
+> runs end-to-end against real OpenRouter + Polygon data, composites
+> are first-class registry citizens that feed back into the proposer's
+> memory digest, and the on-disk reproducibility chain
+> (4F → 4G → 4H → 4I → 4J → Round 8 composite trails) is fully wired
+> with operator CLIs.
 >
 > For the current status, read:
 > - [README.md](README.md) — front-door status + capability table
-> - [ROADMAP.md](ROADMAP.md) — milestone tracker (M1 → M3.7 complete)
+> - [ROADMAP.md](ROADMAP.md) — milestone tracker (M1 → M3.12 complete)
 > - [docs/ROUND3_SUMMARY.md](docs/ROUND3_SUMMARY.md) — Round 3 closeout
 > - [docs/ROUND4_TO_6_SUMMARY.md](docs/ROUND4_TO_6_SUMMARY.md) — every
 >   sub-round from 4A.1 through Round 6 with design notes
+> - [docs/ROUND7_TO_9_SUMMARY.md](docs/ROUND7_TO_9_SUMMARY.md) —
+>   Round 7 thumbnails, 7.1 combiner/validator parity, Round 8
+>   composite promotion, Round 9 loop closure + composite refinement
+>   + inspect_composite
+> - [docs/CASE_STUDY_2026Q2.md](docs/CASE_STUDY_2026Q2.md) — end-to-end
+>   run against real DeepSeek + Polygon SP-50
+> - [docs/AUDIT_LOOK_AHEAD.md](docs/AUDIT_LOOK_AHEAD.md) — post-case-
+>   study leakage audit + the two CRITICAL fixes that came out of it
 >
 > This file is kept for traceability only; do not use it as a live
 > to-do list.

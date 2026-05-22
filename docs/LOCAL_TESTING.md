@@ -611,6 +611,72 @@ didn't: high correlation means combining adds little, near-zero means
 the basket should improve on individuals (provided the individuals
 have signal in the first place).
 
+### 7.1 Pull survivors straight out of a validation report (Round 7)
+
+Round 7 embedded a `FactorThumbnail` per factor in every
+`StrictValidationReport`.  The combiner can reload them without
+re-running the validation cycle:
+
+```bash
+uv run python -m scripts.combine_factors \
+  --from-validation-report artifacts/validations \
+  --filter-passes-ic --filter-passes-rank-ic \
+  --data-source parquet --universe configs/universes/sp50.txt \
+  --start-date 2024-04-19 --end-date 2026-04-17 \
+  --regime strict --method zscore_average
+```
+
+### 7.2 Promote a basket as a composite factor (Round 8)
+
+Add `--promote` and the basket gets registered as a composite
+`FactorSpec` (`composite_recipe` populated), with a deterministic
+`factor_id = composite_{recipe_id}_{trail_prefix}` so re-promoting
+the same recipe under the same regime overwrites instead of
+duplicating:
+
+```bash
+uv run python -m scripts.combine_factors \
+  --from-validation-report artifacts/validations \
+  --filter-passes-ic --filter-passes-rank-ic \
+  --regime strict --method zscore_average \
+  --data-source parquet --universe configs/universes/sp50.txt \
+  --start-date 2024-04-19 --end-date 2026-04-17 \
+  --promote \
+  --out-dir artifacts/combinations \
+  --promoted-dir artifacts/promoted \
+  --trail-dir artifacts/trails
+```
+
+The promoted basket then shows up in the next `validate_strict`
+cycle's proposer prompt automatically (Round 9 Phase A loop closure)
+— no extra wiring required, as long as `--promoted-dir` matches
+across the two CLIs.
+
+### 7.3 Audit promoted composites (Round 9 Phase C)
+
+`scripts/inspect_composite` is a read-only auditor:
+
+```bash
+# list every promoted composite, newest first
+uv run python -m scripts.inspect_composite --list \
+  --promoted-dir artifacts/promoted
+
+# detail view: recipe + metrics + regime trail + refinement ancestry
+uv run python -m scripts.inspect_composite \
+  --recipe-id <recipe_id> \
+  --promoted-dir artifacts/promoted
+```
+
+### 7.4 Look-ahead audit (Round 9.1 fix)
+
+The combiner used to bypass `HoldoutPolicy` (the basket IC was
+computed without out-of-sample protection).  Fixed in commit
+`c535059`.  Validation + combination reports now both carry
+`holdout_ic`, `holdout_rank_ic`, `holdout_decay_ratio` on every
+factor thumbnail (`FactorThumbnail` schema version bump).  Read
+[`docs/AUDIT_LOOK_AHEAD.md`](AUDIT_LOOK_AHEAD.md) for the full
+audit + the case-study correction.
+
 ---
 
 ## 8. What's deliberately deferred
@@ -656,6 +722,17 @@ make validate-strict ARGS="\
   --data-source parquet --universe configs/universes/sp50.txt \
   --start-date 2024-04-19 --end-date 2026-04-17 \
   --llm openrouter --n-candidates 6 --n-cycles 5"
+
+# combine survivors → promote basket → next cycle sees it in memory
+uv run python -m scripts.combine_factors \
+  --from-validation-report artifacts/validations \
+  --filter-passes-ic --filter-passes-rank-ic \
+  --data-source parquet --universe configs/universes/sp50.txt \
+  --start-date 2024-04-19 --end-date 2026-04-17 \
+  --regime strict --method zscore_average --promote
+
+# audit promoted composites
+uv run python -m scripts.inspect_composite --list
 
 # browse what landed on disk
 make list-factors      # promoted-factor zoo

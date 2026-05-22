@@ -91,6 +91,45 @@ We need structured research memory, including:
 - promotion history
 - meta-policy notes
 
+## Composite factors (Round 8 → 9)
+
+Round 6 introduced multi-factor combination as an operator one-shot.
+Rounds 8 and 9 turned baskets into first-class registry citizens
+without inventing a new evaluation pipeline:
+
+- **`FactorSpec.composite_recipe`** — optional `CombinationRecipe`
+  field on the existing factor schema.  Non-`None` ⇒ the factor is
+  a basket; the DSL `expression` becomes a placeholder
+  `"<composite:{recipe_id}>"`.
+- **`SignalQualityEvaluator.evaluate`** — one-line dispatch on
+  `composite_recipe`.  Composites go through
+  `execute_composite(recipe, df)` (a thin wrapper around
+  `compute_signal` + `combine_signals`).  Both paths land at the
+  shared `evaluate_precomputed_signal`, so every Round 4 gate
+  (walk-forward, embargo, holdout, tail concentration, sign
+  consistency) works for composites automatically.
+- **`recipe_id`** — SHA-256 of `(method, sorted canonical-AST
+  hashes of components)`.  Permuted components collapse to the
+  same id, so the novelty check can't be tricked by reordering.
+- **`combine_factors --promote`** — when a basket clears the
+  regime, writes a `PromotedArtifact` (with the recipe in the
+  payload) + a `PromotionTrail`, and the deterministic
+  `factor_id = composite_{recipe_id}_{trail_prefix}` makes
+  re-promotion idempotent.
+- **Proposer memory** reads the durable
+  `artifacts/promoted/_index.jsonl` and surfaces recent composites
+  in the prompt, so the next cycle's LLM sees what's already been
+  promoted.
+- **`RefinementRunner._expand_composite`** mutates one component
+  at a time via the existing scalar mutator and rebuilds the
+  recipe — composites participate in the iterative search the
+  same way scalar factors do.
+
+The deliberate design choice: **a parallel field, not a new DSL
+node.**  Adding a `combine()` operator to the DSL would have been
+~400 lines of parser / AST / executor / refiner work; the parallel-
+field approach is ~150 and leaves every existing path untouched.
+
 ## Current directory layout (post-Round-3)
 
 ```text

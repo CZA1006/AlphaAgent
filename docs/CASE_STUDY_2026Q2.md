@@ -8,6 +8,20 @@
 
 All artifacts are under `artifacts/case_study_2026q2/`.
 
+> **⚠️ Correction notice.**  The original Stage 3 headline was
+> reported as IC `+0.0392` / rank_IC `+0.0432`.  A post-study
+> look-ahead audit (see [`docs/AUDIT_LOOK_AHEAD.md`](AUDIT_LOOK_AHEAD.md))
+> found that `combine_factors` was bypassing the regime's
+> `HoldoutPolicy` — the basket IC was computed with no out-of-sample
+> split.  The bug is now fixed (commit `c535059`).  Holdout-aware
+> re-run: in-sample IC `+0.0244` / rank_IC `+0.0314` over the 80 %
+> in-sample window — **still clears strict** on both gates — and the
+> 20 % holdout (≈146 days) yields IC `+0.22` / rank_IC `+0.20`, so
+> the edge survives out-of-sample on this data.  The corrected
+> numbers are surfaced in the Stage 3 table below; the original
+> walk-forward inflated metrics are kept for traceability but
+> struck through.
+
 ---
 
 ## Setup
@@ -68,15 +82,28 @@ combination method against the **strict** regime.  The
 combiner/validator parity guarantee from Round 7.1 means basket
 metrics here are directly comparable to the validation thumbnails.
 
+**Original (walk-forward inflated; ~~strikethrough~~ pending audit fix):**
+
 | basket | method | IC | rank_IC | strict? |
 |---|---|---:|---:|---|
-| 4 components | rank_aggregate | +0.0210 | +0.0320 | ✅ both |
-| 4 components | **zscore_average** | **+0.0392** | **+0.0432** | **✅ best** |
-| 4 components | equal_weight | +0.0360 | +0.0356 | ✅ both |
+| 4 components | rank_aggregate | ~~+0.0210~~ | ~~+0.0320~~ | ~~✅ both~~ |
+| 4 components | **zscore_average** | ~~**+0.0392**~~ | ~~**+0.0432**~~ | ~~**✅ best**~~ |
+| 4 components | equal_weight | ~~+0.0360~~ | ~~+0.0356~~ | ~~✅ both~~ |
 
-**All three baskets cleared strict.  The best one nearly doubled the
-strongest individual's IC (+0.0392 vs +0.0288) and beat the strongest
-individual rank_IC by 60 % (+0.0432 vs +0.0377).**
+**Corrected (holdout-aware, post-audit re-run, 5 components after
+Stage 4 added one more survivor):**
+
+| basket | method | in-sample IC | in-sample rank_IC | holdout IC | holdout rank_IC | strict (in-sample)? |
+|---|---|---:|---:|---:|---:|---|
+| 5 components | **zscore_average** | **+0.0244** | **+0.0314** | **+0.2162** | **+0.1999** | **✅ both** |
+
+The basket still clears strict on the in-sample window — barely —
+and the holdout window outperforms.  A holdout decay ratio that high
+(`holdout_rank_ic / in_sample_rank_ic = +6.37`) deserves scrutiny:
+it could be a genuine regime shift in the last ~146 days of the
+sample, or a small-sample artifact in a short holdout window.
+Either way, **"basket survives holdout"** is defensible — the basket
+isn't a pure in-sample illusion.
 
 The decisive ingredient was decorrelation: average pairwise rank
 correlation across the four components was **−0.0886** (genuinely
@@ -174,11 +201,13 @@ Well inside the `--token-budget 80000 --cost-budget-usd 1.0` cap.
 
 ## Takeaways
 
-1. **Round 6 combination thesis confirmed for the second time on
-   independent data.**  The first confirmation (previous session, 6
-   factors, +0.34 correlation, narrow lift) and this one (4 factors,
-   −0.09 correlation, dramatic lift) bracket the regime where
-   combination pays off.
+1. **Round 6 combination thesis still holds after audit-fix.**
+   With the holdout-aware metrics, the basket clears strict on the
+   in-sample window (IC `+0.0244` / rank_IC `+0.0314`) — narrower
+   margins than the originally-reported walk-forward inflated
+   numbers, but the qualitative claim survives.  The combination
+   thesis (decorrelated weak factors → basket clears strict)
+   continues to hold; the original headline magnitudes did not.
 2. **The loop closes against real LLM output.**  Stage 4 proves that
    a basket promoted by `combine_factors` in one process is visible
    in the proposer prompt of a later `validate_strict` cycle — the

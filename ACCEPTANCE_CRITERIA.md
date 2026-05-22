@@ -1,16 +1,31 @@
 # Acceptance Criteria
 
 > **Status note.** Milestone 1 (Round 2 MVP), Round 3 autonomy,
-> Round 4 (4A.1 → 4J), Round 5 (strict-regime validation), and
-> Round 6 (multi-factor combination) are all complete. The full agent
-> loop runs end-to-end against real OpenRouter + Polygon data with all
-> 6 judge gates active.
+> Round 4 (4A.1 → 4J), Round 5 (strict-regime validation), Round 6
+> (multi-factor combination), Round 7 (validation thumbnails) + 7.1
+> (combiner/validator parity), Round 8 (composites as registry
+> citizens) and Round 9 (loop closure + composite refinement +
+> inspect) are all complete.  The full agent loop runs end-to-end
+> against real OpenRouter + Polygon data and **closes back on
+> itself**: composites promoted by `combine_factors --promote` show
+> up in the next `validate_strict` cycle's proposer prompt.
+>
+> A post-Round-9 look-ahead audit found two CRITICAL bugs (combiner
+> bypassed `HoldoutPolicy`; `FactorThumbnail` dropped the holdout
+> block); both are fixed and the honest correction to the case-study
+> headline metrics is documented in `docs/AUDIT_LOOK_AHEAD.md`.
 >
 > For the current status:
 > - [README.md](README.md) — front-door capability table
 > - [ROADMAP.md](ROADMAP.md) — milestone tracker
 > - [docs/ROUND4_TO_6_SUMMARY.md](docs/ROUND4_TO_6_SUMMARY.md) —
 >   per-sub-round design notes (4A.1 through Round 6)
+> - [docs/ROUND7_TO_9_SUMMARY.md](docs/ROUND7_TO_9_SUMMARY.md) —
+>   per-sub-round design notes (Round 7 through Round 9 Phase C)
+> - [docs/CASE_STUDY_2026Q2.md](docs/CASE_STUDY_2026Q2.md) — end-to-end
+>   real-data + real-LLM case study
+> - [docs/AUDIT_LOOK_AHEAD.md](docs/AUDIT_LOOK_AHEAD.md) — look-ahead
+>   / data-snooping audit + the two CRITICAL fixes that came out of it
 > - [docs/ROUND3_SUMMARY.md](docs/ROUND3_SUMMARY.md) — Round 3 closeout
 >
 > This file is retained as historical reference.

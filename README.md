@@ -27,14 +27,23 @@ The data model is designed to support additional asset classes later (ETFs, futu
 
 This repository keeps those responsibilities clearly separated, and a static auditor (`make audit`) blocks any inward import from `hermes.*` / `runtime.*` into the harness.
 
-## What works today (post Round 4–6)
+## What works today (post Round 4–9)
 
-The full agent loop runs end-to-end on real data:
+The full agent loop runs end-to-end on real data and **closes back on itself** — composites promoted by one cycle feed the proposer's prompt in the next:
 
 ```
-LLM proposer → DSL compile → walk-forward + embargo evaluator
+LLM proposer → DSL compile → walk-forward + embargo + holdout evaluator
             → 6-gate judge → trail-stamped artifact + cycle report
+            → combine_factors --promote → composite registry citizen
+            → next cycle's proposer memory digest
 ```
+
+Validated end-to-end against real DeepSeek + real Polygon SP-50 in
+[`docs/CASE_STUDY_2026Q2.md`](docs/CASE_STUDY_2026Q2.md), then audited for
+look-ahead / data-snooping bias in
+[`docs/AUDIT_LOOK_AHEAD.md`](docs/AUDIT_LOOK_AHEAD.md) (two CRITICAL bugs
+found and fixed; honest correction to the case-study headline numbers
+landed in the same commit).
 
 ### The judge stack (six gates)
 
@@ -78,9 +87,40 @@ Every research artifact is queryable from a CLI:
 
 We've exercised this against 50 SP large-caps × 2 years of daily bars × 30+ LLM-proposed factors per regime, with all six judge gates confirmed firing in production. See [docs/LOCAL_TESTING.md](docs/LOCAL_TESTING.md) for end-to-end recipes.
 
-### Multi-factor combination (Round 6)
+### Multi-factor combination (Round 6 → 9)
 
-`scripts/combine_factors.py` takes N DSL expressions and produces a basket via rank aggregation, z-score average, or equal weight. Returns per-factor + basket IC / rank-IC plus the average pairwise rank correlation so the operator can see whether the combination should have helped.
+`scripts/combine_factors.py` takes N DSL expressions and produces a basket
+via rank aggregation, z-score average, or equal weight.  Returns per-factor
++ basket IC / rank-IC plus the average pairwise rank correlation so the
+operator can see whether the combination should have helped.
+
+Round 7 → 9 layered three things on top of the combination plumbing:
+
+- **Round 7 — audit-grade reports.**  Every validation report now carries
+  per-factor thumbnails (expression + headline metrics + gate name on
+  reject) so downstream tools (notably the combiner) can reload the
+  full evaluated set without re-running the cycle.  Round 7.1 fixed a
+  measurement gap: the combiner now uses the same
+  `WalkForwardEvaluator + regime` pipeline the validator does, so basket
+  IC matches the validator's individual-factor IC byte-for-byte.
+- **Round 8 — composites are first-class registry citizens.**
+  `combine_factors --promote` writes a `PromotedArtifact` + `PromotionTrail`
+  for the basket, with a stable `recipe_id` (SHA-256 of method + sorted
+  canonical-AST hashes — permuted components collapse).  `FactorSpec`
+  gained a `composite_recipe` field; the evaluator dispatches on it.
+- **Round 9 — loop closure.**  Proposer memory digest reads the durable
+  promoted-artifact index, so a basket promoted by `combine_factors` in
+  one process shows up in the next `validate_strict` cycle's prompt.
+  `RefinementRunner` learned a composite path: mutate one component at
+  a time via the existing scalar mutator, rebuild the recipe, evaluate.
+  `scripts/inspect_composite` is the read-only auditor (`--list` or
+  `--recipe-id`).
+
+Read the per-round design notes in
+[`docs/ROUND7_TO_9_SUMMARY.md`](docs/ROUND7_TO_9_SUMMARY.md).  The
+end-to-end case study (real DeepSeek + real Polygon SP-50, basket clears
+strict on both gates with holdout-aware metrics) lives in
+[`docs/CASE_STUDY_2026Q2.md`](docs/CASE_STUDY_2026Q2.md).
 
 ## Persistence backends
 
@@ -115,7 +155,13 @@ make validate-strict ARGS="\
   --llm openrouter --n-cycles 5"      # full agent loop, real data
 ```
 
-For the per-round design notes (4A.1 through 4J + Round 5 + Round 6), see [docs/ROUND4_TO_6_SUMMARY.md](docs/ROUND4_TO_6_SUMMARY.md). Round 3 closeout lives in [docs/ROUND3_SUMMARY.md](docs/ROUND3_SUMMARY.md).
+For the per-round design notes:
+
+- [docs/ROUND3_SUMMARY.md](docs/ROUND3_SUMMARY.md) — Round 3 closeout
+- [docs/ROUND4_TO_6_SUMMARY.md](docs/ROUND4_TO_6_SUMMARY.md) — 4A.1 through 4J + Round 5 + Round 6
+- [docs/ROUND7_TO_9_SUMMARY.md](docs/ROUND7_TO_9_SUMMARY.md) — Round 7 thumbnails, 7.1 parity fix, Round 8 composite promotion, Round 9 loop closure + composite refinement + inspect
+- [docs/CASE_STUDY_2026Q2.md](docs/CASE_STUDY_2026Q2.md) — end-to-end run on real DeepSeek + Polygon SP-50
+- [docs/AUDIT_LOOK_AHEAD.md](docs/AUDIT_LOOK_AHEAD.md) — post-case-study look-ahead / leakage audit + the two CRITICAL fixes that came out of it
 
 ## What we're not doing yet
 
