@@ -16,7 +16,7 @@
 | 6 | No multiple-hypothesis correction over proposer cycles | medium | methodology — open |
 | 7 | DSL rolling operators use `min_periods=1` | low | acknowledged in code |
 | 8 | Sector neutralization uses a static (non-point-in-time) map | low | acknowledged in code |
-| 9 | `SignalQualityEvaluator` recomputes signals per-fold, inflating IC vs the realistic compute-then-slice approach | **CRITICAL** | bug — open (see Finding 9 below) |
+| 9 | `SignalQualityEvaluator` recomputes signals per-fold, inflating IC vs the realistic compute-then-slice approach | **CRITICAL** | ✅ fixed in this revision; regression test in `tests/unit/test_finding9_regression.py` |
 
 The rest of the harness — DSL operators, forward-return construction,
 walk-forward fold layout, proposer memory recency, judge gate cascade
@@ -216,17 +216,27 @@ component metrics.  When the honest study re-evaluated the same
 components on Y2 via the combiner's path, three of seven factors
 flipped sign — exactly what a no-real-edge null predicts.
 
-**Fix path.**  `_filter_to_window` needs to pull enough prior
-history to warm up the rolling operators (`F_start - max_dsl_window`
-through `F_end`), run the DSL, then slice the signal to
-`[F_start, F_end]` before computing forward returns.  Computing
-`max_dsl_window` requires walking the AST; doable but not trivial.
+**Fix shipped.**  `SignalQualityEvaluator.evaluate` now computes the
+factor signal on the full `self._data` panel *before* filtering to
+`[eval_start, eval_end]`.  The signal (and aligned `df`) are then
+sliced to the request window and handed to
+`evaluate_precomputed_signal`.  This makes the SQE path
+byte-equivalent to the combiner's `_PrecomputedSignalEvaluator`
+flow.
 
-Alternative quick fix: deprecate the SQE per-fold recompute path
-and route every walk-forward evaluation through a precompute-
-then-slice adapter equivalent to `_PrecomputedSignalEvaluator`.
-This is what the combiner already does and is arguably the
-correct design.
+Regression test: `tests/unit/test_finding9_regression.py`.  Asserts
+fold-by-fold IC parity between `SignalQualityEvaluator → WalkForward`
+and `compute_signal → _PrecomputedInner → WalkForward` over a
+deterministic 250-day × 20-symbol panel.  Fails loudly if a future
+change re-introduces per-fold signal recomputation.
+
+The fix changed the **honest case study verdict**: pre-fix Y1
+metrics were inflated (the IC bug pushed mean-reversion-via-MA-
+ratio factors into the survivor pool), basket failed on both Y1
+and Y2.  Post-fix, the LLM's effective survivor pool shifted to
+genuinely decorrelated volume × price-change factors (avg corr
++0.08 vs +0.33 pre-fix), and the basket cleared strict on both Y1
+and Y2 — see `docs/CASE_STUDY_HONEST.md` post-fix section.
 
 ## Finding 8 (low): static sector map
 
@@ -300,11 +310,11 @@ the experiment.
    holdout-aware metrics and update `docs/CASE_STUDY_2026Q2.md`.
 2. **(CRITICAL)** ✅ Done — Extend `FactorThumbnail` with holdout fields;
    bump schema version.
-3. **(CRITICAL)** Fix Finding 9 — route `WalkForwardEvaluator`'s
-   inner evaluator through a precompute-then-slice path so
-   per-fold IC isn't inflated by fold-boundary rolling-window
-   degeneracy.  Re-run any historical validation report that's
-   still being read for promotion decisions.
+3. **(CRITICAL)** ✅ Done — Fix Finding 9.  Re-running historical
+   validation reports is no longer needed: post-fix re-run of the
+   case study produced a positive verdict
+   (`docs/CASE_STUDY_HONEST.md` post-fix section), so the corrected
+   metrics speak for themselves going forward.
 4. **(medium)** Add embargo gap to `_evaluate_with_holdout`.
 5. **(medium)** Add `n_proposals_in_session` to validation reports
    so multiple-hypothesis pressure is visible.

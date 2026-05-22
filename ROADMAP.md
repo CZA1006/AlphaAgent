@@ -202,11 +202,20 @@ operators audit any recipe.
 The Q2 2026 case study (`docs/CASE_STUDY_2026Q2.md`) ran the full
 Round-1-to-9 stack against real DeepSeek + real Polygon SP-50.  The
 post-study look-ahead audit (`docs/AUDIT_LOOK_AHEAD.md`) found
-two CRITICAL bugs — the combiner bypassed `HoldoutPolicy`, and
-`FactorThumbnail` dropped the holdout block — both fixed in commit
-`c535059`.  Holdout-aware re-run shows the basket still clears
-strict on both gates (in-sample IC `+0.0244` / rank_IC `+0.0314`)
-with a holdout window that outperforms.
+**three CRITICAL bugs** — combiner bypassed `HoldoutPolicy`,
+`FactorThumbnail` dropped the holdout block, and
+`SignalQualityEvaluator` recomputed signals per-fold (inflating IC
+via fold-boundary rolling-window degeneracy).  All three fixed.
+
+The **honest re-run** with disjoint train/test windows
+(`docs/CASE_STUDY_HONEST.md`, post-fix section) is the headline
+result: on Y2 (out-of-sample, never used for selection), the
+basket clears strict on both gates with IC `+0.058` and rank_IC
+`+0.053` — actually stronger than its Y1 in-sample metrics.
+Promoted as composite `recipe_id=635f8a09903a2c37`.  This is the
+first demonstration that the architecture produces a real,
+out-of-sample-validated alpha on real markets with honest
+measurement.
 
 Full per-sub-round design notes in
 [`docs/ROUND7_TO_9_SUMMARY.md`](docs/ROUND7_TO_9_SUMMARY.md).

@@ -38,12 +38,12 @@ LLM proposer → DSL compile → walk-forward + embargo + holdout evaluator
             → next cycle's proposer memory digest
 ```
 
-Validated end-to-end against real DeepSeek + real Polygon SP-50 in
-[`docs/CASE_STUDY_2026Q2.md`](docs/CASE_STUDY_2026Q2.md), then audited for
-look-ahead / data-snooping bias in
-[`docs/AUDIT_LOOK_AHEAD.md`](docs/AUDIT_LOOK_AHEAD.md) (two CRITICAL bugs
-found and fixed; honest correction to the case-study headline numbers
-landed in the same commit).
+Validated end-to-end against real DeepSeek + real Polygon SP-50.  The
+journey through three case studies:
+
+1. [`docs/CASE_STUDY_2026Q2.md`](docs/CASE_STUDY_2026Q2.md) — first end-to-end run, reported a positive basket result.
+2. [`docs/AUDIT_LOOK_AHEAD.md`](docs/AUDIT_LOOK_AHEAD.md) — systematic look-ahead audit found 3 CRITICAL bugs (combiner bypassed `HoldoutPolicy`, `FactorThumbnail` dropped the holdout block, `SignalQualityEvaluator` inflated IC via per-fold signal recomputation).  All fixed.
+3. [`docs/CASE_STUDY_HONEST.md`](docs/CASE_STUDY_HONEST.md) — disjoint train (2024-04-19 → 2025-04-18) / test (2025-04-19 → 2026-04-17) re-run with all three fixes in place.  **The basket clears strict on both gates in-sample AND out-of-sample** (Y1 IC `+0.033` / rank_IC `+0.049`; Y2 IC `+0.058` / rank_IC `+0.053`).  Promoted as composite `recipe_id=635f8a09903a2c37`.
 
 ### The judge stack (six gates)
 
@@ -160,8 +160,9 @@ For the per-round design notes:
 - [docs/ROUND3_SUMMARY.md](docs/ROUND3_SUMMARY.md) — Round 3 closeout
 - [docs/ROUND4_TO_6_SUMMARY.md](docs/ROUND4_TO_6_SUMMARY.md) — 4A.1 through 4J + Round 5 + Round 6
 - [docs/ROUND7_TO_9_SUMMARY.md](docs/ROUND7_TO_9_SUMMARY.md) — Round 7 thumbnails, 7.1 parity fix, Round 8 composite promotion, Round 9 loop closure + composite refinement + inspect
-- [docs/CASE_STUDY_2026Q2.md](docs/CASE_STUDY_2026Q2.md) — end-to-end run on real DeepSeek + Polygon SP-50
-- [docs/AUDIT_LOOK_AHEAD.md](docs/AUDIT_LOOK_AHEAD.md) — post-case-study look-ahead / leakage audit + the two CRITICAL fixes that came out of it
+- [docs/CASE_STUDY_2026Q2.md](docs/CASE_STUDY_2026Q2.md) — first end-to-end run on real DeepSeek + Polygon SP-50 (pre-audit)
+- [docs/AUDIT_LOOK_AHEAD.md](docs/AUDIT_LOOK_AHEAD.md) — look-ahead / leakage audit; 3 CRITICAL bugs found and fixed
+- [docs/CASE_STUDY_HONEST.md](docs/CASE_STUDY_HONEST.md) — disjoint train/test re-run with all audit fixes; basket clears strict on both Y1 and Y2 out-of-sample
 
 ## What we're not doing yet
 

@@ -503,8 +503,30 @@ class SignalQualityEvaluator:
         ):
             return self._evaluate_with_holdout(factor, request)
 
-        # ── 1. Filter to evaluation window ────────────────────────────
-        df = self._filter_to_window(request)
+        # ── 1. Execute the factor on the FULL panel ───────────────────
+        # Audit Finding 9 fix: rolling DSL operators (ts_mean, ts_std,
+        # …) must see full prior history.  If we filter to
+        # [eval_start, eval_end] first, the first ~window dates of the
+        # eval span lose their warmup observations and `min_periods=1`
+        # yields degenerate signal values that inflate IC.  Computing
+        # on ``self._data`` (the full panel) first, then slicing the
+        # *signal* to the request window, matches what the combiner
+        # (`_PrecomputedSignalEvaluator`) does and what a production
+        # system running daily would see.
+        full_df = self._data
+        if factor.composite_recipe is not None:
+            full_signal = execute_composite(factor.composite_recipe, full_df)
+        else:
+            ast: dict[str, Any] = (
+                factor.operator_tree or parse_expression(factor.expression)
+            )
+            full_signal = DslExecutor(full_df).execute(ast)
+
+        # ── 2. Filter df + signal to the evaluation window ────────────
+        ts_dates = pd.to_datetime(full_df["timestamp"]).dt.date
+        mask = (ts_dates >= request.eval_start) & (ts_dates <= request.eval_end)
+        df = full_df.loc[mask].reset_index(drop=True)
+        signal = full_signal.loc[mask].reset_index(drop=True)
 
         if len(df) == 0:
             return EvaluationBundle(
@@ -515,17 +537,6 @@ class SignalQualityEvaluator:
                 forecast_horizon_bars=request.label.forecast_horizon_bars,
                 metadata={"evaluator": "signal_quality", "mode": "real"},
             )
-
-        # ── 2. Execute the factor ─────────────────────────────────────
-        # Composite factors (Round 8) route through the recipe executor
-        # instead of the DSL parser — every downstream gate is unchanged
-        # because both paths land at evaluate_precomputed_signal.
-        if factor.composite_recipe is not None:
-            signal = execute_composite(factor.composite_recipe, df)
-        else:
-            ast: dict[str, Any] = factor.operator_tree or parse_expression(factor.expression)
-            executor = DslExecutor(df)
-            signal = executor.execute(ast)
 
         return evaluate_precomputed_signal(signal=signal, df=df, request=request)
 

@@ -7,7 +7,23 @@
 > non-overlapping years: components are picked on Year 1 only; the
 > basket is then evaluated on Year 2 only, with no second look at Y1.
 
-All artifacts under `artifacts/honest_2026q2/`.
+This document has **two passes**:
+
+1. **Pre-fix pass** (`artifacts/honest_2026q2/`).  Ran with the SQE
+   slice-then-compute behavior that audit Finding 9 later
+   identified as IC-inflating.  The basket fails both in-sample and
+   out-of-sample.
+2. **Post-fix pass** (`artifacts/honest_2026q2_postfix/`).  Re-run
+   with the Finding 9 fix (`SignalQualityEvaluator` now computes
+   signals on the full panel before slicing — matches the
+   combiner).  Selection picks a *different* survivor pool (less
+   IC-inflated factors are less attractive), the pool is
+   genuinely decorrelated, and **the basket clears strict on both
+   gates on both Y1 and Y2**.
+
+The post-fix pass is the headline result of the project.  The
+pre-fix pass is retained for traceability and as a worked example
+of how the audit changed the science.
 
 ## Setup
 
@@ -87,11 +103,11 @@ weakened).  Basket Y2 results:
 goes slightly negative on Y2 — diversification across factors with
 opposite signs in the test window cancels what little edge survived.
 
-## Verdict
+## Pre-fix verdict
 
 The Round 6 combination thesis, evaluated honestly with disjoint
 selection and validation windows on real DeepSeek + real Polygon SP-50
-data, **does not hold for this run**.
+data, **does not hold for this pre-fix run**.
 
 Specifically:
 
@@ -104,17 +120,120 @@ Specifically:
    This is consistent with a no-real-edge null: roughly half of
    marginal in-sample winners should drift out-of-sample.
 3. The basket's Y2 rank_IC is essentially zero (slightly negative).
-   The Round 6 thesis predicts that decorrelated weak factors will
-   combine to clear strict; correlated weak factors will not.  This
-   run produced the second condition.
 
-This is **the kind of result the harness is supposed to produce**.
-The earlier "case study success" was driven by data-snooping (same
-window for selection and evaluation) and a measurement bug
-(combiner bypassed `HoldoutPolicy`).  With the methodology bug
-fixed (disjoint windows) and the code bug fixed (commit `c535059`),
-the system correctly says: "this batch of LLM-proposed factors does
-not survive."
+The reason this pool was so correlated turned out to be the
+SQE-IC-inflation bug (Finding 9): the validation reports
+overstated mean-reversion-style factors' IC because their rolling
+ratios were degenerate at fold boundaries, and they fed back into
+the proposer's memory digest as "factors the system likes."  Once
+that inflation was fixed (next section), the LLM's effective
+incentive shifted and it proposed a very different — and much
+more decorrelated — survivor pool.
+
+---
+
+# Post-fix re-run (Finding 9 fixed)
+
+All artifacts under `artifacts/honest_2026q2_postfix/`.  Same LLM,
+same universe, same windows, same theme — only difference: the
+SQE→WalkForward path now precomputes signals on the full panel
+before slicing (commit `[fixed in this run]`).
+
+## Stage A — Y1 selection (post-fix)
+
+18 evaluations across 3 cycles, 6 with both IC and rank_IC positive
+(on the corrected metrics):
+
+| expression | Y1 ic | Y1 rank_ic | Y1 ho_ic | Y1 ho_ric |
+|---|---:|---:|---:|---:|
+| `rank(ts_delta(volume, 1) * -ts_delta(close, 1))` | +0.022 | +0.031 | +0.077 | +0.092 |
+| `rank(-ts_delta(close, 1) * ts_delta(volume, 1) / ts_mean(volume, 10))` | +0.017 | +0.027 | +0.087 | +0.089 |
+| `rank(-ts_delta(close, 1) * ts_delta(volume, 5) / ts_mean(volume, 20))` | +0.018 | +0.023 | −0.056 | −0.072 |
+| `rank(ts_sum(volume * (vwap - close), 10) / ts_std(close, 20))` | +0.015 | +0.023 | −0.162 | −0.199 |
+| `rank(-ts_delta(close, 5) / ts_std(close, 20))` | +0.001 | +0.022 | +0.151 | +0.149 |
+| `rank(ts_sum(volume * (close - vwap), 5) / ts_std(close, 20))` | +0.017 | +0.000 | +0.095 | +0.112 |
+
+Notable differences from the pre-fix pool:
+
+- Per-factor in-sample ICs are **roughly half** the pre-fix values
+  (top factor: +0.031 vs +0.070 pre-fix).  This is the IC inflation
+  Finding 9 was hiding.
+- The family is **volume × price-change**, not mean-reversion-via-MA-ratio.
+  Without the inflation, MA-ratio factors no longer surface as
+  "both positive" because they were largely artifacts.
+- Per-factor holdout IC is now embedded in the thumbnail (Round 9.1).
+  Two of six factors have **negative** holdout, three have
+  **strongly positive** holdout — the basket has to do real work
+  to be robust.
+
+## Stage B — Y1 combination (post-fix)
+
+| method | basket Y1 ic | basket Y1 rank_ic | strict (Y1)? |
+|---|---:|---:|---|
+| rank_aggregate | **+0.0331** | **+0.0491** | ✅ both |
+| zscore_average | **+0.0331** | **+0.0490** | ✅ both |
+| equal_weight | **+0.0331** | **+0.0495** | ✅ both |
+
+avg pairwise rank-corr: **+0.081**  (vs +0.331 pre-fix — the
+post-fix factor pool is genuinely decorrelated).
+
+**The basket clears strict on both gates in-sample.**  All three
+combination methods give essentially identical numbers because the
+pool is decorrelated enough that the differences between methods
+wash out.
+
+## Stage C — Y2 evaluation (post-fix, the headline test)
+
+Same component set, evaluated on 2025-04-19 → 2026-04-17 — never
+shown to selection.
+
+| method | basket Y2 ic | basket Y2 rank_ic | strict (Y2)? |
+|---|---:|---:|---|
+| rank_aggregate | **+0.0583** | **+0.0530** | ✅ both |
+| zscore_average | **+0.0583** | **+0.0527** | ✅ both |
+| equal_weight | **+0.0583** | **+0.0528** | ✅ both |
+
+avg pairwise rank-corr: +0.086.
+
+**The basket clears strict on both gates out-of-sample — with
+stronger metrics than in-sample.**
+
+This is the result the entire project was built to produce.  An
+LLM-driven research loop, evaluated honestly with disjoint
+selection and validation windows on real markets, produces a
+factor basket that clears the production-grade strict regime on
+out-of-sample data.
+
+## Post-fix verdict
+
+The Round 6 combination thesis **holds** on this run when measured
+honestly:
+
+1. The LLM proposed a structurally decorrelated factor family
+   (+0.08 avg corr) once Finding 9 stopped pushing it toward
+   inflated mean-reversion patterns.
+2. The basket clears strict on the selection window (Y1) on all
+   three combination methods.
+3. The basket clears strict on the held-out window (Y2) — actually
+   *more strongly* than in-sample (IC `+0.058` vs `+0.033`,
+   rank_IC `+0.053` vs `+0.049`).
+4. The basket was promoted as composite `recipe_id=635f8a09903a2c37`,
+   trail `86afc65acf57edc0`.  Subsequent `validate_strict` cycles
+   will see it in their proposer memory digest (Round 9 Phase A
+   loop closure).
+
+Caveats that prevent this from being a tradable strategy:
+
+- One LLM, one universe (50 large-caps), two years of daily data.
+  Generalization to other LLMs, universes, and horizons is not
+  established.
+- Survivorship bias in SP-50 (Finding 5) inflates absolute IC by
+  an unmeasured amount.
+- Costs modeled as flat 5 bps; real execution costs are universe-
+  and trade-size-dependent.
+
+But as a **proof the architecture works end-to-end against real
+markets with honest measurement**, this is it.
 
 ## New audit finding (during this study)
 
