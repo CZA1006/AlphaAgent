@@ -8,14 +8,15 @@
 
 | # | finding | severity | status |
 |---|---|---|---|
-| 1 | Combiner's basket evaluation bypasses `HoldoutPolicy` | **CRITICAL** | bug — open |
-| 2 | `CombinationReport.basket_metrics` drops `metadata.holdout` | **CRITICAL** | bug — open |
+| 1 | Combiner's basket evaluation bypasses `HoldoutPolicy` | **CRITICAL** | ✅ fixed in `c535059` |
+| 2 | `CombinationReport.basket_metrics` drops `metadata.holdout` | **CRITICAL** | ✅ fixed in `c535059` |
 | 3 | TAIL holdout has no embargo between in-sample and holdout | medium | bug — open |
 | 4 | Beta neutralization is estimated in-sample over full window | medium | acknowledged in code |
 | 5 | SP-50 universe is survivorship-biased by construction | medium | acknowledged in universe header |
 | 6 | No multiple-hypothesis correction over proposer cycles | medium | methodology — open |
 | 7 | DSL rolling operators use `min_periods=1` | low | acknowledged in code |
 | 8 | Sector neutralization uses a static (non-point-in-time) map | low | acknowledged in code |
+| 9 | `SignalQualityEvaluator` recomputes signals per-fold, inflating IC vs the realistic compute-then-slice approach | **CRITICAL** | bug — open (see Finding 9 below) |
 
 The rest of the harness — DSL operators, forward-return construction,
 walk-forward fold layout, proposer memory recency, judge gate cascade
@@ -165,6 +166,68 @@ boundary could be biased.
 boundary effects affect <2 % of the panel.  Acknowledged in the
 module docstring.
 
+## Finding 9 (CRITICAL): SQE per-fold signal recomputation inflates IC
+
+**Where:** `alpha_harness/evaluators/signal_quality.py:_filter_to_window`
++ `SignalQualityEvaluator.evaluate`.
+
+**Discovered:** during the honest-train/test case study
+(`docs/CASE_STUDY_HONEST.md`).
+
+**What's wrong.**  When `WalkForwardEvaluator` slices the eval window
+into folds and asks the inner evaluator for IC on each fold, the
+two inner evaluator implementations behave differently:
+
+- **`SignalQualityEvaluator`** filters `df` to
+  `[fold_start, fold_end]` *before* the DSL runs, so rolling
+  operators (`ts_mean(close, 10)` etc.) see zero prior history at
+  the fold boundary.  With `min_periods=1` (Finding 7), early-fold
+  signal values are computed from 1, 2, 3 … observations instead of
+  the full window — i.e., they're degenerate.
+- **`_PrecomputedSignalEvaluator`** (used by `combine_factors`)
+  computes the signal on the *full* panel once and slices the
+  resulting series.  Early-fold signal values use full prior
+  history.
+
+Empirically, running the same DSL expression on the same Y1
+window through both paths (holdout disabled, walk-forward identical
+in both):
+
+| path | fold 1 | fold 2 | fold 3 | fold 4 |
+|---|---:|---:|---:|---:|
+| SQE → WF | −0.068 | +0.034 | −0.045 | +0.081 |
+| precomputed → WF | −0.068 | +0.024 | −0.053 | −0.017 |
+
+Fold 1 matches because there's no prior history regardless.  Folds
+2–4 differ — sometimes dramatically.  The fold-averaged IC swings
+from +0.0003 (precomputed) to +0.049 (SQE) for one of the
+case-study top factors.
+
+**Direction:** SQE generally produces *higher* IC.  Reason: rank()
+and zscore() are sensitive to tail outliers; degenerate
+early-fold-window signal values give a few extreme normalized
+ranks that happen to correlate with forward returns by chance.
+
+**Severity: CRITICAL.**  Every IC value in every historical
+validation report has been inflated by this fold-boundary
+artifact.  The "case study success" basket from
+`docs/CASE_STUDY_2026Q2.md` was selected based on these inflated
+component metrics.  When the honest study re-evaluated the same
+components on Y2 via the combiner's path, three of seven factors
+flipped sign — exactly what a no-real-edge null predicts.
+
+**Fix path.**  `_filter_to_window` needs to pull enough prior
+history to warm up the rolling operators (`F_start - max_dsl_window`
+through `F_end`), run the DSL, then slice the signal to
+`[F_start, F_end]` before computing forward returns.  Computing
+`max_dsl_window` requires walking the AST; doable but not trivial.
+
+Alternative quick fix: deprecate the SQE per-fold recompute path
+and route every walk-forward evaluation through a precompute-
+then-slice adapter equivalent to `_PrecomputedSignalEvaluator`.
+This is what the combiner already does and is arguably the
+correct design.
+
 ## Finding 8 (low): static sector map
 
 **Where:** `configs/universes/sp50_sectors.csv` + neutralize loader.
@@ -232,16 +295,21 @@ the experiment.
 
 ## Action items
 
-1. **(CRITICAL)** Fix `evaluate_precomputed_signal` to honor
+1. **(CRITICAL)** ✅ Done — Fix `evaluate_precomputed_signal` to honor
    `HoldoutPolicy`.  Re-run the Q2 case-study combination with
    holdout-aware metrics and update `docs/CASE_STUDY_2026Q2.md`.
-2. **(CRITICAL)** Extend `FactorThumbnail` with holdout fields;
+2. **(CRITICAL)** ✅ Done — Extend `FactorThumbnail` with holdout fields;
    bump schema version.
-3. **(medium)** Add embargo gap to `_evaluate_with_holdout`.
-4. **(medium)** Add `n_proposals_in_session` to validation reports
+3. **(CRITICAL)** Fix Finding 9 — route `WalkForwardEvaluator`'s
+   inner evaluator through a precompute-then-slice path so
+   per-fold IC isn't inflated by fold-boundary rolling-window
+   degeneracy.  Re-run any historical validation report that's
+   still being read for promotion decisions.
+4. **(medium)** Add embargo gap to `_evaluate_with_holdout`.
+5. **(medium)** Add `n_proposals_in_session` to validation reports
    so multiple-hypothesis pressure is visible.
-5. **(low)** Add point-in-time universe loader path for future
+6. **(low)** Add point-in-time universe loader path for future
    research; SP-50 is fine for harness-validation purposes.
 
-The first two are open bugs.  The rest are well-flagged design
-choices, not silent cheats.
+Findings 1, 2 are fixed.  Finding 9 is the next must-fix CRITICAL.
+The rest are well-flagged design choices, not silent cheats.
