@@ -35,6 +35,10 @@
 - `docs/DATA_INFRA_PLAN.md` — scaling roadmap: Bloomberg tick
   ingestion → cloud lake + access API → RAG → multi-market (HK …),
   designed against the existing loader/data-contract seams
+- `docs/BLOOMBERG_DATASET_BUILD.md` — concrete F1+F2 build spec:
+  canonical tick schema (from a real HK IPO sample), the 140-day
+  `IntradayTickRequest` capture constraint, push-from-terminal →
+  cloud-lake → `source="cloud"` access path, sizing math, checklist
 - `docs/LOCAL_TESTING.md` — real-API local-testing guide
 - `docs/BACKENDS.md` — memory vs SQL registry backend selection
 

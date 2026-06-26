@@ -52,6 +52,13 @@ incremental rather than a rewrite.
 
 ---
 
+> **Execution detail:** the concrete F1+F2 build spec — grounded in a
+> real HK IPO tick sample and the official `IntradayTickRequest`
+> mechanics — lives in
+> [`BLOOMBERG_DATASET_BUILD.md`](BLOOMBERG_DATASET_BUILD.md).  Read that
+> for the canonical tick schema, the 140-day capture constraint, sizing
+> math, and the step-by-step build checklist.
+
 ## Phase F1 — Bloomberg ingestion bridge
 
 **Problem.** We have no Bloomberg API entitlement that works from an
