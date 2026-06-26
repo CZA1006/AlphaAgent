@@ -129,7 +129,24 @@ The architecture is done enough to *answer* the real question, which a
 single run cannot: **does this loop produce alpha on average, or only
 by chance?**  Ranked by leverage:
 
-### 1. Planned multi-run robustness study (highest leverage)
+### 0. Data scaling — the actual prerequisite (decided)
+
+The fragility in v2/v3 is most likely **starved-for-data**: 50
+survivorship-biased names × ~2y of daily bars gives the LLM almost no
+decorrelation budget and the judge almost no statistical power.  The
+scaling path is designed in
+[`DATA_INFRA_PLAN.md`](DATA_INFRA_PLAN.md): Bloomberg tick ingestion →
+cloud lake + access API → RAG → multi-market (HK …), built against the
+existing `loader_factory` / `DataRequest` seams.  Buildable now: tick
+schema, exporter interface + mock, cloud loader.  Blocked on a
+Bloomberg Terminal + cloud account: the real data itself.
+
+**Decision:** data scaling precedes more autonomy, and the future
+autonomous research-director loop (Round 10) is **robustness-first** —
+every self-generated candidate basket auto-confirmed on a held-out
+window before it counts as alpha.
+
+### 1. Planned multi-run robustness study (highest leverage once data lands)
 
 Turn the ad-hoc case studies into a designed experiment:
 

@@ -1,5 +1,14 @@
 # Data Plan
 
+> This doc covers the **current** local data layer (Polygon/parquet,
+> US equities + crypto, daily bars).  For the **scaling** roadmap —
+> Bloomberg tick ingestion → cloud lake + access API → RAG →
+> multi-market (HK …) — see
+> [`docs/DATA_INFRA_PLAN.md`](docs/DATA_INFRA_PLAN.md).  Data scaling
+> is the prerequisite for the autonomous alpha loop to find robust
+> alpha (today's 50-name × 2y sample gives too little decorrelation
+> budget — see the honest case studies).
+
 ## Initial asset focus
 
 ### US equities

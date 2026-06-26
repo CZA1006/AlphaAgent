@@ -242,6 +242,29 @@ edge it measured does not hold up across small perturbations.  See
 [`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md) for the full
 achievements / limitations / next-steps breakdown.
 
+## Milestone 3.14: Data-scaling plan + autonomous-loop direction
+
+### Status — ✅ plan written (build pending data/infra)
+
+Two decisions were taken to steer the next phase:
+
+1. **Data scaling comes before more autonomy.**  The fragility in
+   v2/v3 is most likely starved-for-data (50 survivorship-biased
+   names × ~2y daily).  The scaling path —
+   Bloomberg tick ingestion → cloud lake + access API → RAG →
+   multi-market (HK …) — is designed in
+   [`docs/DATA_INFRA_PLAN.md`](docs/DATA_INFRA_PLAN.md), built against
+   the existing `loader_factory` / `DataRequest` seams so no consumer
+   churns.  Most of it is blocked on a Bloomberg Terminal + cloud
+   account; the **tick schema + exporter interface + cloud loader**
+   are buildable now.
+
+2. **The autonomous loop (Round 10) will be robustness-first.**  The
+   self-directed `ResearchDirector` that generates its own themes must
+   auto-confirm every candidate basket on a held-out window before it
+   counts as alpha — directly answering the v2/v3 finding.  It is
+   gated on having real data to chew on (Milestone 4 data work first).
+
 ## Milestone 4: Planned multi-run robustness study (next)
 
 ### Goal

@@ -32,6 +32,9 @@
   DeepSeek; also sign-flips OOS (failure is window- not LLM-specific)
 - `docs/AUDIT_LOOK_AHEAD.md` — look-ahead / leakage audit; 3 CRITICAL
   bugs found + fixed, 6 lesser findings documented
+- `docs/DATA_INFRA_PLAN.md` — scaling roadmap: Bloomberg tick
+  ingestion → cloud lake + access API → RAG → multi-market (HK …),
+  designed against the existing loader/data-contract seams
 - `docs/LOCAL_TESTING.md` — real-API local-testing guide
 - `docs/BACKENDS.md` — memory vs SQL registry backend selection
 
