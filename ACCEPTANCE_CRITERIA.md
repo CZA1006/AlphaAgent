@@ -10,22 +10,30 @@
 > itself**: composites promoted by `combine_factors --promote` show
 > up in the next `validate_strict` cycle's proposer prompt.
 >
-> A post-Round-9 look-ahead audit found two CRITICAL bugs (combiner
-> bypassed `HoldoutPolicy`; `FactorThumbnail` dropped the holdout
-> block); both are fixed and the honest correction to the case-study
-> headline metrics is documented in `docs/AUDIT_LOOK_AHEAD.md`.
+> A post-Round-9 look-ahead audit found **three CRITICAL bugs**
+> (combiner bypassed `HoldoutPolicy`; `FactorThumbnail` dropped the
+> holdout block; `SignalQualityEvaluator` inflated IC via per-fold
+> signal recomputation); all three are fixed and regression-tested.
+> Three honest disjoint-window case studies then produced **1
+> out-of-sample positive and 2 negatives** — the architecture
+> measures alpha honestly; the measured edge is not yet robust.
 >
 > For the current status:
-> - [README.md](README.md) — front-door capability table
-> - [ROADMAP.md](ROADMAP.md) — milestone tracker
+> - [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md) — **the live
+>   achievements / limitations / next-steps doc; start here**
+> - [README.md](README.md) — front-door capability table + case-study journey
+> - [ARCHITECTURE.md](ARCHITECTURE.md) — system design + "how the agent
+>   does quant research" end-to-end
+> - [ROADMAP.md](ROADMAP.md) — milestone tracker (M1 → M3.13 done;
+>   M4 = planned multi-run study)
 > - [docs/ROUND4_TO_6_SUMMARY.md](docs/ROUND4_TO_6_SUMMARY.md) —
 >   per-sub-round design notes (4A.1 through Round 6)
 > - [docs/ROUND7_TO_9_SUMMARY.md](docs/ROUND7_TO_9_SUMMARY.md) —
 >   per-sub-round design notes (Round 7 through Round 9 Phase C)
-> - [docs/CASE_STUDY_2026Q2.md](docs/CASE_STUDY_2026Q2.md) — end-to-end
->   real-data + real-LLM case study
+> - `docs/CASE_STUDY_*.md` (Q2 / HONEST / HONEST_V2 / HONEST_V3) — the
+>   four empirical runs
 > - [docs/AUDIT_LOOK_AHEAD.md](docs/AUDIT_LOOK_AHEAD.md) — look-ahead
->   / data-snooping audit + the two CRITICAL fixes that came out of it
+>   / data-snooping audit + the three CRITICAL fixes that came out of it
 > - [docs/ROUND3_SUMMARY.md](docs/ROUND3_SUMMARY.md) — Round 3 closeout
 >
 > This file is retained as historical reference.

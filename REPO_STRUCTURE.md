@@ -16,19 +16,22 @@
 - `IMPLEMENTATION_SEQUENCE.md` — historical Round-1 implementation order
 - `Makefile` — `make doctor`, `validate-strict`, `list-{factors,cycles,trails}`,
   `refine-factor`, `audit`, `smoke`, `check`, `check-full`, `combine-factors`
+- `docs/PROJECT_STATUS.md` — **live achievements / limitations /
+  next-steps; start here for "where is the project"**
 - `docs/ROUND3_SUMMARY.md` — Round 3 closeout
 - `docs/ROUND4_TO_6_SUMMARY.md` — per-sub-round design notes for 4A.1
   through 4J + Round 5 + Round 6
 - `docs/ROUND7_TO_9_SUMMARY.md` — Round 7 thumbnails, 7.1 combiner /
   validator parity, Round 8 composite promotion, Round 9 loop closure
   + composite refinement + inspect_composite
-- `docs/CASE_STUDY_2026Q2.md` — end-to-end run against real
-  DeepSeek-Chat-v3.1 + real Polygon SP-50; the basket clears strict
-  on both gates with holdout-aware metrics
-- `docs/AUDIT_LOOK_AHEAD.md` — post-case-study look-ahead / leakage
-  audit; lists the 2 CRITICAL bugs found (combiner bypassed
-  `HoldoutPolicy`; `FactorThumbnail` dropped the holdout block) and
-  the 6 lesser findings
+- `docs/CASE_STUDY_2026Q2.md` — first end-to-end run (pre-audit)
+- `docs/CASE_STUDY_HONEST.md` — disjoint train/test re-run; v1
+  positive out-of-sample (post all 3 audit fixes)
+- `docs/CASE_STUDY_HONEST_V2.md` — Y1 slid ~2 mo; basket sign-flips OOS
+- `docs/CASE_STUDY_HONEST_V3.md` — same window, Qwen instead of
+  DeepSeek; also sign-flips OOS (failure is window- not LLM-specific)
+- `docs/AUDIT_LOOK_AHEAD.md` — look-ahead / leakage audit; 3 CRITICAL
+  bugs found + fixed, 6 lesser findings documented
 - `docs/LOCAL_TESTING.md` — real-API local-testing guide
 - `docs/BACKENDS.md` — memory vs SQL registry backend selection
 

@@ -208,28 +208,62 @@ post-study look-ahead audit (`docs/AUDIT_LOOK_AHEAD.md`) found
 via fold-boundary rolling-window degeneracy).  All three fixed.
 
 The **honest re-run** with disjoint train/test windows
-(`docs/CASE_STUDY_HONEST.md`, post-fix section) is the headline
-result: on Y2 (out-of-sample, never used for selection), the
-basket clears strict on both gates with IC `+0.058` and rank_IC
-`+0.053` — actually stronger than its Y1 in-sample metrics.
-Promoted as composite `recipe_id=635f8a09903a2c37`.  This is the
-first demonstration that the architecture produces a real,
-out-of-sample-validated alpha on real markets with honest
-measurement.
+(`docs/CASE_STUDY_HONEST.md`, post-fix section) produced one
+out-of-sample-positive basket: on Y2 (never used for selection)
+IC `+0.058` / rank_IC `+0.053`, promoted as composite
+`recipe_id=635f8a09903a2c37`.
 
 Full per-sub-round design notes in
 [`docs/ROUND7_TO_9_SUMMARY.md`](docs/ROUND7_TO_9_SUMMARY.md).
 
-## Milestone 4: Broader data and more asset support
+## Milestone 3.13: Robustness check — the result doesn't replicate
+
+### Status — ✅ complete (negative result, honestly reported)
+
+Two follow-up honest case studies tested whether the v1 positive
+generalized:
+
+- **v2** (`docs/CASE_STUDY_HONEST_V2.md`) — same LLM (DeepSeek), Y1
+  window slid ~2 months.  In-sample looked *better* (avg pairwise
+  corr −0.007), but the basket **sign-flipped out-of-sample**
+  (Y2 IC −0.023 / rank_IC −0.014).
+- **v3** (`docs/CASE_STUDY_HONEST_V3.md`) — same window as v2,
+  **different LLM** (Qwen-2.5-72B).  Different factor family, **also
+  sign-flipped** (Y2 IC −0.036 / rank_IC −0.043).
+
+Joint verdict across the three honest studies: **1 positive, 2
+negative on out-of-sample.**  Two LLMs on the same Y2 window both
+fail, so the failure is window-specific, not LLM-specific.  The v1
+positive is real-but-fragile.
+
+**This is a research-tool success and a trading-strategy non-result
+at once.**  The harness honestly measures out-of-sample edge; the
+edge it measured does not hold up across small perturbations.  See
+[`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md) for the full
+achievements / limitations / next-steps breakdown.
+
+## Milestone 4: Planned multi-run robustness study (next)
+
+### Goal
+Answer the question a single run cannot: does the loop produce alpha
+*on average*, or only by chance?
 
 ### Scope
-- better equity fundamentals
-- more crypto exchange data
-- ETF / macro context layers
-- richer novelty comparison
-- broader robustness checks
-- universe diversification (mid-caps, longer horizons, international)
-  to find a regime where the harness's gates promote real factors
+- A sweep harness around `validate_strict` + `combine_factors` that
+  runs many disjoint Y1/Y2 windows (rolling quarterly) × ≥3 LLMs ×
+  ≥2 universes through the audit-clean pipeline.
+- The headline metric: fraction of basket runs that clear strict on
+  Y2, vs a no-edge null.
+- Close remaining audit findings first (holdout embargo gap;
+  `n_proposals_in_session` multiple-hypothesis correction).
+- Then Round 10 proposer prompt-engineering (compose *complements*
+  to promoted composites) once there are enough promotions to chain.
+
+### Also in scope (was the old Milestone 4)
+- better equity fundamentals; more crypto exchange data
+- ETF / macro context layers; richer novelty comparison
+- universe diversification (point-in-time, mid-caps, longer horizons)
+  to kill survivorship bias and widen the decorrelation budget
 
 ## Milestone 5: Optional cloud migration
 

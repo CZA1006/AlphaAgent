@@ -91,6 +91,114 @@ We need structured research memory, including:
 - promotion history
 - meta-policy notes
 
+## How the agent does quant research (end-to-end)
+
+This is the concrete path a single research cycle takes, from a
+free-text theme to a persisted, reproducible verdict on US-equity
+data.  It is the heart of the system — read this section to understand
+"what actually happens."
+
+### The two-layer split
+
+```
+┌─────────────────────── Hermes runtime (substrate) ───────────────────────┐
+│  agent loop · prompt assembly · model/provider abstraction · sessions     │
+└──────────────────────────────────┬───────────────────────────────────────┘
+                                    │  calls INTO (never the reverse)
+┌──────────────────────────────────▼───────────────────────────────────────┐
+│                       Alpha Harness (quant brain)                          │
+│                                                                            │
+│   proposer/  ──LLM──▶  factors/ (DSL compile)  ──▶  evaluators/  ──▶       │
+│   judge  ──▶  registries/ + artifacts/  ──▶  proposer memory (next cycle)  │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+The boundary is enforced statically (`make audit`): nothing under
+`alpha_harness/` may import `hermes.*`, and **only `proposer/` may
+touch `llm/`**.  Every quantitative decision — compile, evaluate,
+judge — is pure Python with no model call in the path, which is what
+makes results deterministic and reproducible.
+
+### The cycle, step by step
+
+1. **Theme → hypotheses (the only LLM step).**
+   `HypothesisProposer.propose()` takes a free-text theme (e.g.
+   *"cross-sectional equity signals from price and volume, reversal
+   short / momentum medium"*) plus a memory digest of what's already
+   been tried, and asks the LLM (via OpenRouter) for N candidate
+   factor *expressions* in a structured-JSON envelope.  Every reply is
+   Pydantic-validated; up to one repair round is allowed if too few
+   survive.  This is the **only** place the model enters the loop.
+
+2. **Expression → safe factor (DSL compile).**
+   Each candidate string is parsed by `factors/dsl_parser.py` against
+   a hard whitelist — fields `{open, high, low, close, volume, vwap}`
+   and functions `{ts_mean, ts_std, ts_sum, ts_min, ts_max, ts_delta,
+   ts_lag, lag, rank, zscore}`.  There is **no `eval`, no arbitrary
+   code** — an LLM proposal that isn't expressible in the DSL is
+   rejected, not executed.  The result is a `FactorSpec` carrying a
+   typed AST (`operator_tree`).
+
+3. **Factor → metrics (deterministic evaluation).**
+   `SignalQualityEvaluator` runs the factor on the full price panel,
+   then slices to the eval window (Finding-9 fix: compute-then-slice
+   so rolling operators see real history).  It builds forward returns
+   from the `LabelDefinition` (`fwd[t] = close[t+lag+h]/close[t+lag]-1`,
+   `lag=1` so the trade starts *after* the signal is known), applies
+   sector/beta neutralization, and computes IC / rank-IC /
+   quantile-spread / turnover / cost-adjusted spread / Sharpe.  The
+   whole evaluation is wrapped in `WalkForwardEvaluator` — rolling
+   calendar folds with an embargo of `lag + horizon` days and a TAIL
+   holdout reserved off the end.
+
+4. **Metrics → verdict (the six-gate judge).**
+   `PromotionJudge` applies six gates in order — data sufficiency →
+   profile thresholds (IC/rank-IC/spread) → multi-horizon sign
+   consistency → walk-forward stability → tail concentration →
+   out-of-sample holdout decay.  The output is `PROMOTE_CANDIDATE`,
+   `REFINE`, `REJECT`, or `ARCHIVE_ONLY`, with a structured
+   `FailureRecord` naming the gate that fired.
+
+5. **Verdict → durable record.**
+   The `ResearchOrchestrator` persists an `ExperimentRecord` to the
+   registry; promotions additionally write a `PromotedArtifact` plus a
+   `PromotionTrail` — a SHA-256 of every evaluator + judge knob — so a
+   promoted factor is reproducible across config drift.  A
+   `StrictValidationReport` captures per-gate rejection counts and a
+   `FactorThumbnail` (incl. holdout metrics) for *every* candidate.
+
+6. **REFINE → bounded mutation.**
+   A `REFINE` verdict feeds `RefinementRunner`, which applies
+   deterministic, AST-level mutations (window halve/double, wrap/unwrap
+   rank/zscore) under hard budgets and a canonical-AST novelty guard,
+   re-running each child through the same cycle.
+
+7. **Memory → next cycle.**
+   The proposer's memory digest (recent rejections + promoted
+   scalars + promoted composites read from the durable artifact
+   index) is fed back into step 1, so the LLM avoids re-proposing
+   near-duplicates and can build on what survived.
+
+### Multi-factor combination + composites
+
+Individually weak factors sometimes combine into a basket that clears
+the bar — *if* they are decorrelated.  `scripts/combine_factors.py`
+reloads survivors from validation reports, combines them
+(rank-aggregate / z-score-average / equal-weight), scores the basket
+through the **same** walk-forward + regime pipeline (Round 7.1 parity),
+and with `--promote` registers the basket as a composite factor.  See
+the next section for how composites stay first-class without a new DSL
+node.
+
+### What the operator drives
+
+The whole loop is reachable from CLIs: `validate_strict` (the
+production research entry point, `--llm openrouter --n-cycles N
+--regime {strict,lenient}`), `combine_factors`, `refine_factor`,
+`inspect_composite`, and the read-only browsers `list_factors` /
+`list_cycles` / `list_trails`.  `make doctor` preflights keys +
+Postgres + the import audit before any real run.
+
 ## Composite factors (Round 8 → 9)
 
 Round 6 introduced multi-factor combination as an operator one-shot.
