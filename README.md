@@ -38,13 +38,16 @@ LLM proposer → DSL compile → walk-forward + embargo + holdout evaluator
             → next cycle's proposer memory digest
 ```
 
-Validated end-to-end against real DeepSeek + real Polygon SP-50.  The
-journey through four case studies:
+Validated end-to-end against real DeepSeek + Qwen + real Polygon SP-50.
+The journey through five case studies + one audit:
 
 1. [`docs/CASE_STUDY_2026Q2.md`](docs/CASE_STUDY_2026Q2.md) — first end-to-end run, reported a positive basket result.
 2. [`docs/AUDIT_LOOK_AHEAD.md`](docs/AUDIT_LOOK_AHEAD.md) — systematic look-ahead audit found 3 CRITICAL bugs (combiner bypassed `HoldoutPolicy`, `FactorThumbnail` dropped the holdout block, `SignalQualityEvaluator` inflated IC via per-fold signal recomputation).  All fixed.
-3. [`docs/CASE_STUDY_HONEST.md`](docs/CASE_STUDY_HONEST.md) — disjoint train (2024-04-19 → 2025-04-18) / test (2025-04-19 → 2026-04-17) re-run with all three fixes in place.  Basket clears strict in-sample AND out-of-sample (Y1 IC `+0.033` / rank_IC `+0.049`; Y2 IC `+0.058` / rank_IC `+0.053`).  Promoted as composite `recipe_id=635f8a09903a2c37`.
-4. [`docs/CASE_STUDY_HONEST_V2.md`](docs/CASE_STUDY_HONEST_V2.md) — robustness re-run with the Y1 window slid by ~2 months (selection: 2024-06-25 → 2025-05-21).  In-sample looks *better* (IC `+0.035`, rank_IC `+0.044`, avg pairwise corr `−0.007`) — but the basket **sign-flips out-of-sample** (Y2 IC `−0.023`, rank_IC `−0.014`).  Two studies, same LLM, same universe, almost-identical Y2 windows, opposite verdicts.  **Honest take:** the architecture works correctly; single-window LLM-proposed baskets on SP-50 are not yet robust enough to call alpha — multiple disjoint runs and broader universes are needed to settle the question.
+3. [`docs/CASE_STUDY_HONEST.md`](docs/CASE_STUDY_HONEST.md) — disjoint train (2024-04-19 → 2025-04-18) / test (2025-04-19 → 2026-04-17) re-run with all three fixes in place.  Basket clears strict in-sample AND out-of-sample (Y1 IC `+0.033` / rank_IC `+0.049`; Y2 IC `+0.058` / rank_IC `+0.053`).
+4. [`docs/CASE_STUDY_HONEST_V2.md`](docs/CASE_STUDY_HONEST_V2.md) — Y1 window slid by ~2 months (selection: 2024-06-25 → 2025-05-21).  In-sample looks *better* — basket **sign-flips out-of-sample** (Y2 IC `−0.023`, rank_IC `−0.014`).
+5. [`docs/CASE_STUDY_HONEST_V3.md`](docs/CASE_STUDY_HONEST_V3.md) — same window as v2, **different LLM** (Qwen-2.5-72B).  Different factor family, **also sign-flips out-of-sample** (Y2 IC `−0.036`, rank_IC `−0.043`).
+
+**Joint verdict across 3 honest studies:** 1 positive Y2, 2 negative Y2.  The architecture works correctly on all three runs — the negative results are real, not measurement bugs.  Two LLMs on the same Y2 window both fail, so the failure isn't LLM-specific; it's window-specific.  The v1 positive result is real-but-fragile.  **An honest "this loop produces alpha" claim requires a planned multi-run study** (many disjoint windows + universes + LLMs, count fraction that clear OOS).  What's now demonstrated is that the architecture honestly measures the question — not that the answer is "yes."
 
 ### The judge stack (six gates)
 
