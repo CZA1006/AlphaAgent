@@ -52,10 +52,19 @@ def create_equities_loader(
 
         return PolygonEquitiesLoader(api_key=api_key)
 
+    if source == "bigquery":
+        # HK IPO daily panel from BigQuery (project bloomberg-database-0629,
+        # table ipo_daily_prices).  Imported lazily so the GCP SDK is only
+        # required when this source is actually selected.
+        from alpha_harness.data.bigquery_loader import BigQueryEquitiesLoader
+
+        return BigQueryEquitiesLoader()
+
     msg = (
         f"Unknown equities source: {source!r}. "
         "Use 'parquet' (or 'local') for the local Parquet store, "
-        "or 'polygon' for live API calls."
+        "'polygon' for live US API calls, "
+        "or 'bigquery' for the HK IPO daily panel."
     )
     raise ValueError(msg)
 

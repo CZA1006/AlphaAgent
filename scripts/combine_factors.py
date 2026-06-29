@@ -244,7 +244,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument(
         "--data-source",
-        choices=["synthetic", "parquet", "polygon"],
+        choices=["synthetic", "parquet", "polygon", "bigquery"],
         default="parquet",
     )
     p.add_argument("--data-path", default="data/silver/equities")

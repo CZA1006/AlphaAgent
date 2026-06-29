@@ -255,7 +255,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p.add_argument(
         "--data-source",
-        choices=["synthetic", "parquet", "polygon"],
+        choices=["synthetic", "parquet", "polygon", "bigquery"],
         default="synthetic",
     )
     p.add_argument(

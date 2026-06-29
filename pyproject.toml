@@ -31,6 +31,15 @@ dev = [
     "mypy>=1.7,<2",
     "pandas-stubs>=2.0",
 ]
+# -- GCP data access (HK IPO BigQuery + GCS tick lake) --
+# Optional so the core install stays light; data/bigquery_loader.py and
+# the future cloud/tick loaders import these lazily, mirroring how the
+# Polygon loader is imported only when source="polygon".
+gcp = [
+    "google-cloud-bigquery>=3.20,<4",  # query ipo_daily_prices et al.
+    "db-dtypes>=1.2,<2",               # BigQuery → pandas dtype bridge
+    "gcsfs>=2024.2",                   # GCS parquet reads (tick lake)
+]
 
 [build-system]
 requires = ["hatchling"]
