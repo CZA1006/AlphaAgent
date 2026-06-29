@@ -29,7 +29,19 @@ from typing import Any
 
 # ── Whitelists ───────────────────────────────────────────────────────────────
 
-ALLOWED_FIELDS = frozenset({"open", "high", "low", "close", "volume", "vwap"})
+# Core OHLCV fields (present in every market panel) plus the HK IPO
+# microstructure fields the BigQuery loader joins in from
+# ``micro_features_daily``.  Micro fields are syntactically allowed
+# everywhere but only resolve when the panel actually carries them — on a
+# parquet/synthetic panel a micro factor fails at execution and is simply
+# rejected, never silently mis-evaluated.
+ALLOWED_FIELDS = frozenset({
+    # OHLCV
+    "open", "high", "low", "close", "volume", "vwap",
+    # Microstructure (HK IPO tick-derived)
+    "ofi", "rel_spread", "realized_vol",
+    "n_trades", "tick_volume", "avg_trade_size", "n_quotes",
+})
 
 ALLOWED_FUNCTIONS = frozenset({
     "lag",

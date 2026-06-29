@@ -131,3 +131,65 @@ def test_factory_returns_bigquery_loader() -> None:
 
     loader = create_equities_loader(source="bigquery")
     assert isinstance(loader, BigQueryEquitiesLoader)
+
+
+# ── microstructure feature join (Track B) ──────────────────────────────────
+
+
+def _raw_rows_with_micro() -> pd.DataFrame:
+    df = _raw_rows()
+    # Micro columns as the LEFT JOIN would return them (one row has no
+    # tick coverage → NaN, exercising the nullable path).
+    df["ofi"] = [0.05, -0.02, None]
+    df["rel_spread"] = [0.002, 0.003, None]
+    df["realized_vol"] = [0.08, 0.06, None]
+    df["n_trades"] = [114674, 90000, None]
+    df["tick_volume"] = [36_762_009, 20_000_000, None]
+    df["avg_trade_size"] = [321.0, 222.0, None]
+    df["n_quotes"] = [60000, 40000, None]
+    return df
+
+
+def test_micro_features_pass_through_as_dsl_fields() -> None:
+    client = _FakeBQClient(_raw_rows_with_micro())
+    loader = BigQueryEquitiesLoader(client=client, with_micro_features=True)
+    df, _meta = loader.load_bars(_request())
+
+    # OHLCV columns first, micro columns appended.
+    for col in ("ofi", "rel_spread", "realized_vol", "n_trades",
+                "tick_volume", "avg_trade_size", "n_quotes"):
+        assert col in df.columns
+        assert pd.api.types.is_float_dtype(df[col])
+    row = df[df["symbol"] == "00068"].iloc[0]
+    assert row["ofi"] == 0.05
+    assert row["realized_vol"] == 0.08
+    # The no-coverage row keeps NaN (evaluator will skip it).
+    assert pd.isna(df[df["symbol"] == "00100"]["ofi"].iloc[0])
+
+
+def test_with_micro_features_false_uses_price_only_query() -> None:
+    client = _FakeBQClient(_raw_rows())
+    loader = BigQueryEquitiesLoader(client=client, with_micro_features=False)
+    loader.load_bars(_request())
+    # No join to the micro table in the SQL.
+    assert "micro_features_daily" not in client.last_sql
+    assert "LEFT JOIN" not in client.last_sql
+
+
+def test_micro_query_joins_micro_table_when_enabled() -> None:
+    client = _FakeBQClient(_raw_rows_with_micro())
+    loader = BigQueryEquitiesLoader(client=client, with_micro_features=True)
+    loader.load_bars(_request())
+    assert "micro_features_daily" in client.last_sql
+    assert "LEFT JOIN" in client.last_sql
+
+
+def test_micro_fields_compile_in_dsl() -> None:
+    """The microstructure field names are whitelisted in the DSL."""
+    from alpha_harness.factors.dsl_parser import ALLOWED_FIELDS, parse_expression
+
+    for f in ("ofi", "rel_spread", "realized_vol", "n_trades",
+              "tick_volume", "avg_trade_size", "n_quotes"):
+        assert f in ALLOWED_FIELDS
+    # A real microstructure factor must parse.
+    parse_expression("rank(ofi) * rank(-realized_vol)")

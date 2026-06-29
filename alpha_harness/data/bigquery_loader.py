@@ -49,6 +49,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_PROJECT = os.environ.get("GCP_PROJECT", "bloomberg-database-0629")
 DEFAULT_DATASET = os.environ.get("HK_IPO_DATASET", "hk_ipo_research")
 DEFAULT_PRICES_TABLE = "ipo_daily_prices"
+DEFAULT_MICRO_TABLE = "micro_features_daily"
 # 1 GiB scan cap — ipo_daily_prices is far smaller; this is a runaway guard.
 DEFAULT_MAX_BYTES_BILLED = int(os.environ.get("BQ_MAX_BYTES_BILLED", 1_073_741_824))
 
@@ -62,6 +63,20 @@ _COLUMN_MAP = {
     "volume": "volume",
     "weighted_avg_px": "vwap",
 }
+
+# Per-(stock, day) microstructure columns from ``micro_features_daily``.
+# These ride the panel as extra DSL fields (LLM can propose factors like
+# ``rank(ofi) * rank(-realized_vol)``).  All nullable — a stock-day with
+# no tick coverage simply gets NaN and is skipped by the evaluator.
+_MICRO_COLUMNS = (
+    "ofi",              # order-flow imbalance (Lee-Ready signed volume)
+    "rel_spread",       # average relative bid-ask spread
+    "realized_vol",     # 1-minute-sampled intraday realized vol
+    "n_trades",         # trade count
+    "tick_volume",      # summed trade size
+    "avg_trade_size",   # mean trade size
+    "n_quotes",         # quote-update count (provision intensity)
+)
 
 
 class BigQueryEquitiesLoader:
@@ -77,12 +92,16 @@ class BigQueryEquitiesLoader:
         project: str = DEFAULT_PROJECT,
         dataset: str = DEFAULT_DATASET,
         prices_table: str = DEFAULT_PRICES_TABLE,
+        micro_table: str = DEFAULT_MICRO_TABLE,
+        with_micro_features: bool = True,
         max_bytes_billed: int = DEFAULT_MAX_BYTES_BILLED,
         client: Any | None = None,
     ) -> None:
         self._project = project
         self._dataset = dataset
         self._table = prices_table
+        self._micro_table = micro_table
+        self._with_micro = with_micro_features
         self._max_bytes_billed = max_bytes_billed
         # Injectable for tests; lazily constructed in production so importing
         # this module never requires credentials.
@@ -130,15 +149,28 @@ class BigQueryEquitiesLoader:
         from google.cloud import bigquery
 
         client = self._get_client()
-        fq_table = f"`{self._project}.{self._dataset}.{self._table}`"
-        select_cols = ", ".join(_COLUMN_MAP.keys())
+        fq_prices = f"`{self._project}.{self._dataset}.{self._table}`"
+        price_cols = ", ".join(f"p.{c}" for c in _COLUMN_MAP)
         # Parameterized — symbols + dates bound, never string-interpolated.
-        sql = (
-            f"SELECT date, {select_cols} FROM {fq_table} "
-            "WHERE date BETWEEN @start AND @end "
-            "AND stock_code IN UNNEST(@symbols) "
-            "ORDER BY stock_code, date"
-        )
+        if self._with_micro:
+            fq_micro = f"`{self._project}.{self._dataset}.{self._micro_table}`"
+            micro_cols = ", ".join(f"m.{c}" for c in _MICRO_COLUMNS)
+            sql = (
+                f"SELECT p.date, {price_cols}, {micro_cols} "
+                f"FROM {fq_prices} p "
+                f"LEFT JOIN {fq_micro} m "
+                "  ON p.stock_code = m.stock_code AND p.date = m.trading_date "
+                "WHERE p.date BETWEEN @start AND @end "
+                "AND p.stock_code IN UNNEST(@symbols) "
+                "ORDER BY p.stock_code, p.date"
+            )
+        else:
+            sql = (
+                f"SELECT p.date, {price_cols} FROM {fq_prices} p "
+                "WHERE p.date BETWEEN @start AND @end "
+                "AND p.stock_code IN UNNEST(@symbols) "
+                "ORDER BY p.stock_code, p.date"
+            )
         job_config = bigquery.QueryJobConfig(
             query_parameters=[
                 bigquery.ScalarQueryParameter("start", "DATE", request.start),
@@ -162,9 +194,15 @@ class BigQueryEquitiesLoader:
         request: DataRequest,
         adjustment: AdjustmentType,
     ) -> pd.DataFrame:
-        """Rename to canonical columns + attach timestamp/provenance."""
-        cols = ["symbol", "timestamp", "open", "high", "low", "close",
-                "volume", "vwap", "adjustment", "source", "frequency"]
+        """Rename to canonical columns + attach timestamp/provenance.
+
+        When micro features were joined in, they ride through as extra
+        DSL-addressable columns appended after ``frequency``.
+        """
+        base_cols = ["symbol", "timestamp", "open", "high", "low", "close",
+                     "volume", "vwap", "adjustment", "source", "frequency"]
+        micro_present = [c for c in _MICRO_COLUMNS if c in raw.columns]
+        cols = base_cols + micro_present
         if raw.empty:
             return pd.DataFrame(columns=cols)
 
@@ -174,8 +212,8 @@ class BigQueryEquitiesLoader:
         df["timestamp"] = pd.to_datetime(df["date"], utc=True)
         df = df.drop(columns=["date"])
         # Numeric hygiene: BQ NUMERIC/FLOAT come back as object/Decimal at
-        # times; coerce the price/volume columns to float.
-        for c in ("open", "high", "low", "close", "volume", "vwap"):
+        # times; coerce the price/volume + micro columns to float.
+        for c in ("open", "high", "low", "close", "volume", "vwap", *micro_present):
             df[c] = pd.to_numeric(df[c], errors="coerce")
         df["symbol"] = df["symbol"].astype(str)
         df["adjustment"] = adjustment.value

@@ -28,10 +28,29 @@ _FUNCTION_DOCS: dict[str, str] = {
     "zscore":    "zscore(series)             — cross-sectional z-score",
 }
 
+# Short glossary for fields whose meaning isn't self-evident.  OHLCV are
+# universally understood and omitted; the microstructure fields (HK IPO
+# tick-derived, present only on the BigQuery panel) get a one-line gloss
+# so the model uses them sensibly.  Fields without an entry are listed
+# bare.
+_FIELD_DOCS: dict[str, str] = {
+    "ofi":            "order-flow imbalance: signed volume / total volume in [-1,1] (>0 net buy)",
+    "rel_spread":     "average relative bid-ask spread (liquidity / trading cost)",
+    "realized_vol":   "intraday realized volatility from 1-minute sampled prices",
+    "n_trades":       "number of trades that day (activity)",
+    "tick_volume":    "summed trade size that day",
+    "avg_trade_size": "mean trade size (small = retail, large = institutional)",
+    "n_quotes":       "number of quote updates (liquidity-provision intensity)",
+}
+
 
 def build_system_prompt() -> str:
     """Return the system prompt describing the DSL and the required JSON shape."""
-    fields = ", ".join(sorted(ALLOWED_FIELDS))
+    # Render fields with a one-line gloss when we have one, bare otherwise.
+    fields = "\n".join(
+        f"    - {name}" + (f"  — {_FIELD_DOCS[name]}" if name in _FIELD_DOCS else "")
+        for name in sorted(ALLOWED_FIELDS)
+    )
 
     function_lines = "\n".join(
         f"    - {_FUNCTION_DOCS.get(name, name)}"
@@ -53,7 +72,7 @@ def build_system_prompt() -> str:
         "    atom        = NUMBER | FIELD | function_call | '(' expression ')'\n"
         "    function_call = IDENTIFIER '(' arg_list ')'\n"
         "\n"
-        f"## Allowed fields\n    {fields}\n"
+        f"## Allowed fields\n{fields}\n"
         "\n"
         "## Allowed functions (name, arity, semantics)\n"
         f"{function_lines}\n"
