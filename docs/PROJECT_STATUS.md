@@ -86,6 +86,11 @@ two LLMs over a shared out-of-sample window the baskets did not hold up.
   net, incl. flagship `rank(ofi) - rank(rel_spread)`).  Modest magnitude,
   ~40-day test window — promising, not yet confirmed; bottleneck is data
   quantity.  See [`CASE_STUDY_HK_IPO_MICRO.md`](CASE_STUDY_HK_IPO_MICRO.md).
+- **HK IPO lockup-expiry event study** (MVP, 19 events): **clean
+  negative** — no expiry-specific order-flow anomaly; the placebo control
+  caught that the negative drift is general post-IPO weakness, not the
+  event.  Underpowered (N = 19, `listing + 6 mo` proxy).  See
+  [`DESIGN_LOCKUP_EVENT_STUDY.md`](DESIGN_LOCKUP_EVENT_STUDY.md) §8.
 
 ---
 

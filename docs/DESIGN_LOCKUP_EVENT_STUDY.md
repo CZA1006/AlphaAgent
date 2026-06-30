@@ -2,10 +2,10 @@
 
 > Minimal-viable design for the highest-theory-value untested direction:
 > using tick order flow around the **6-month lockup expiry** — HK IPO's
-> most documented anomaly.  This is a **design doc for review**, not yet
-> built.  It deliberately starts as a standalone analysis (no harness
-> change) because the event-study shape is fundamentally different from
-> the cross-sectional IC the harness does today.
+> most documented anomaly.  The MVP (`scripts/analysis/lockup_event_study.py`)
+> is now built and run; **the result is a clean negative** — see
+> §8 below.  The placebo control caught a false positive, which is the
+> whole point of running it.
 
 ---
 
@@ -151,5 +151,44 @@ of work and zero harness risk, and it reuses everything already built
 Nothing new — all data is in place (`ipo_master`,
 `hkex_cornerstone_investors`, `ipo_daily_prices`, `market_factors_daily`,
 `micro_features_daily`).  The MVP is a self-contained script + a short
-results section appended to `CASE_STUDY_HK_IPO_MICRO.md` (or its own
-case-study doc).
+results section appended here.
+
+---
+
+## 8. MVP result — a clean negative (placebo did its job)
+
+Built as `scripts/analysis/lockup_event_study.py` and run on the **19**
+IPOs whose `listing + 6 months` expiry falls in the tick window.
+
+**Event-time abnormal-return profile** (AR = stock − HSI, market-hedged):
+the negative drift is concentrated *before* the event (CAR ≈ −7.8 % by
+τ = −4) and goes **flat around the expiry itself** (τ = 0).
+
+| test | result | verdict |
+|---|---|---|
+| **H1** selling pressure at expiry | CAR[−1,+3] = **+0.49 %**, t = +0.18, N = 19 | ❌ inconclusive — no pressure concentrated at expiry |
+| **H2** overhang scaling | corr(CAR, cornerstone %) = −0.16, N = 10 | ⚠️ weak / noise |
+| **H3** pre-positioning | mean ofi(τ∈[−5,−1]) = −0.010, t = −0.24, N = 95 | ❌ insignificant |
+| **placebo** (CAR[−1,+3] at a non-event date, τ₀ − 40 d) | **−9.45 %, t = −2.25**, N = 19 | 🚨 *more* negative + significant than the real event |
+
+**The placebo is the punchline.**  Without it, the −4 % CAR and
+"persistent pre-event weakness" could be mis-read as a lockup effect.
+The placebo shows a *larger, significant* negative CAR at a random
+non-event date — so the negativity is **general post-IPO drift, not an
+expiry-specific anomaly**.  Sensible economically: post-IPO
+underperformance plays out in the first months; by the 6-month expiry
+the selling is already done, and the expiry is a non-event.
+
+**Conclusion:** on the current data (19 events, `listing + 6 mo` proxy),
+**no evidence of a lockup-expiry order-flow anomaly.**  Per §6 this is a
+"stop here" — and the negative result is itself worth recording.
+
+**Honest limits (why this isn't a hard "no"):** N = 19 (and τ > +3
+coverage drops to 8–16 at the data edge) → underpowered; the lockup date
+is a `listing + 6 mo` proxy (true cornerstone / pre-IPO unlock dates may
+differ and smear the event); the broad post-IPO drift dominates.  Both
+this study and the microstructure one are bottlenecked by the same
+thing — **data quantity** — and both should be re-run as the tick
+archive and IPO count grow.  Sharpening the event with exact prospectus
+lockup dates (a data-extraction task) is the one refinement most likely
+to change the verdict.
