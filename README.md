@@ -38,8 +38,9 @@ LLM proposer → DSL compile → walk-forward + embargo + holdout evaluator
             → next cycle's proposer memory digest
 ```
 
-Validated end-to-end against real DeepSeek + Qwen + real Polygon SP-50.
-The journey through five case studies + one audit:
+Validated end-to-end against real DeepSeek + Qwen on real Polygon SP-50
+**and** real Bloomberg HK IPO tick data (in GCP BigQuery).
+The journey through six case studies + one audit:
 
 1. [`docs/CASE_STUDY_2026Q2.md`](docs/CASE_STUDY_2026Q2.md) — first end-to-end run, reported a positive basket result.
 2. [`docs/AUDIT_LOOK_AHEAD.md`](docs/AUDIT_LOOK_AHEAD.md) — systematic look-ahead audit found 3 CRITICAL bugs (combiner bypassed `HoldoutPolicy`, `FactorThumbnail` dropped the holdout block, `SignalQualityEvaluator` inflated IC via per-fold signal recomputation).  All fixed.
@@ -47,7 +48,9 @@ The journey through five case studies + one audit:
 4. [`docs/CASE_STUDY_HONEST_V2.md`](docs/CASE_STUDY_HONEST_V2.md) — Y1 window slid by ~2 months (selection: 2024-06-25 → 2025-05-21).  In-sample looks *better* — basket **sign-flips out-of-sample** (Y2 IC `−0.023`, rank_IC `−0.014`).
 5. [`docs/CASE_STUDY_HONEST_V3.md`](docs/CASE_STUDY_HONEST_V3.md) — same window as v2, **different LLM** (Qwen-2.5-72B).  Different factor family, **also sign-flips out-of-sample** (Y2 IC `−0.036`, rank_IC `−0.043`).
 
-**Joint verdict across 3 honest studies:** 1 positive Y2, 2 negative Y2.  The architecture works correctly on all three runs — the negative results are real, not measurement bugs.  Two LLMs on the same Y2 window both fail, so the failure isn't LLM-specific; it's window-specific.  The v1 positive result is real-but-fragile.  **An honest "this loop produces alpha" claim requires a planned multi-run study** (many disjoint windows + universes + LLMs, count fraction that clear OOS).  What's now demonstrated is that the architecture honestly measures the question — not that the answer is "yes."
+**Joint verdict across 3 US studies:** 1 positive Y2, 2 negative Y2 — the US daily SP-50 alpha is real-but-fragile, and an honest "this loop produces alpha" claim requires a planned multi-run study.  What the US studies demonstrate is that the architecture honestly measures the question — not that the answer is "yes."
+
+6. [`docs/CASE_STUDY_HK_IPO_MICRO.md`](docs/CASE_STUDY_HK_IPO_MICRO.md) — **the first signal to survive the full gauntlet.**  On real Bloomberg HK IPO data, DeepSeek proposed tick-derived **microstructure** factors (order-flow imbalance, spread, realized vol — information OHLCV bars cannot contain).  On a disjoint train/test split, **10/12 factors persisted out-of-sample** (p ≈ 1.9 % vs a no-edge null), and **4/12 stayed positive net of the real 78 bps IPO spread in a long-only, HSI-hedged form** — including the flagship `rank(ofi) - rank(rel_spread)`.  This is the first AlphaAgent result to clear disjoint-OOS **and** realistic cost **and** long-only-implementability at once.  Honest caveat: modest magnitude, hit rates ~50–59 %, and a ~40-day test window too short for confidence — the binding constraint is now **data quantity**, not the engine.  It also explains the operator's prior OHLCV null: order flow is new information.
 
 ### The judge stack (six gates)
 

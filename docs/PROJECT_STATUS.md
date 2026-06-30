@@ -79,6 +79,13 @@ two LLMs over a shared out-of-sample window the baskets did not hold up.
 - One out-of-sample-positive basket (case study v1, post-fix); two
   out-of-sample-negative baskets (v2, v3) — see the verdict table
   below.
+- **HK IPO tick microstructure** (real Bloomberg data in GCP BigQuery,
+  77 IPOs + 176 M-row tick lake): the **first signal to survive the full
+  gauntlet** — disjoint OOS (10/12 factors persist, p ≈ 1.9 %) **and**
+  realistic 78 bps cost **and** long-only-implementable (4/12 positive
+  net, incl. flagship `rank(ofi) - rank(rel_spread)`).  Modest magnitude,
+  ~40-day test window — promising, not yet confirmed; bottleneck is data
+  quantity.  See [`CASE_STUDY_HK_IPO_MICRO.md`](CASE_STUDY_HK_IPO_MICRO.md).
 
 ---
 
