@@ -67,3 +67,16 @@ make validate-hk-ipo-events ARGS="--no-write --json"
 ```
 
 Use `ARGS="--llm openrouter --n-candidates 12"` for a live proposer run after setting `OPENROUTER_API_KEY`.
+
+## Autonomous Topic Selection
+
+Use the research director to choose the next HK IPO research topic and data
+follow-up queue before running validation:
+
+```bash
+make research-director-hk-ipo
+make research-director-hk-ipo ARGS="--json"
+```
+
+See `docs/RESEARCH_DIRECTOR.md` for the director contract and current
+limitations.

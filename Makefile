@@ -1,7 +1,7 @@
 .PHONY: install dev lint format typecheck test test-unit test-integration \
        db-up db-down db-status db-bootstrap db-reset check check-full clean \
        doctor doctor-mock doctor-real doctor-sql audit smoke \
-       doctor-hk-ipo-data doctor-hk-ipo-events \
+       doctor-hk-ipo-data doctor-hk-ipo-events research-director-hk-ipo \
        run-mock run-real run-real-data run-real-sql \
        autonomous-mock autonomous-real \
        validate-hk-ipo-events \
@@ -112,6 +112,9 @@ doctor-hk-ipo-data:
 
 doctor-hk-ipo-events:
 	uv run --extra gcp python -m scripts.doctor_hk_ipo_events
+
+research-director-hk-ipo:
+	uv run python -m scripts.research_director --market hk_ipo $(ARGS)
 
 # ── Local run entrypoints ────────────────────────────────────────────────────
 # Opinionated one-liners that cover the four local-testing paths.  Pass

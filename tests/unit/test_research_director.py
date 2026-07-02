@@ -1,0 +1,62 @@
+from __future__ import annotations
+
+import json
+
+import pytest
+
+from alpha_harness.director import (
+    ResearchDirector,
+    ResearchDirectorContext,
+    build_hk_ipo_context,
+)
+
+
+def test_hk_ipo_context_reads_recent_validation_counts(tmp_path) -> None:
+    index = tmp_path / "_index.jsonl"
+    rows = [
+        {"cycle_id": "old-1", "n_promoted": 1, "n_rejected": 4},
+        {"cycle_id": "old-2", "n_promoted": 2, "n_rejected": 3},
+    ]
+    index.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+
+    context = build_hk_ipo_context(validation_dir=tmp_path)
+
+    assert context.promoted_factor_count == 3
+    assert context.rejected_factor_count == 7
+    assert context.recent_validation_notes == [
+        "old-1: promoted=1, rejected=4",
+        "old-2: promoted=2, rejected=3",
+    ]
+
+
+def test_hk_ipo_director_selects_event_microstructure_topic(tmp_path) -> None:
+    context = build_hk_ipo_context(validation_dir=tmp_path)
+    plan = ResearchDirector().plan(context)
+
+    assert plan.selected_topic_id == "hk_ipo_event_conditioned_microstructure"
+    assert plan.selected_topic.validation_command == (
+        'make validate-hk-ipo-events ARGS="--llm openrouter --n-candidates 12 --n-cycles 3"'
+    )
+    assert "--data-source" in plan.selected_topic.validation_args
+    assert "bigquery" in plan.selected_topic.validation_args
+    assert "ipo_event_features_daily" in plan.selected_topic.data_requirements
+    assert [topic.priority for topic in plan.topics] == sorted(
+        [topic.priority for topic in plan.topics],
+        reverse=True,
+    )
+
+
+def test_hk_ipo_director_surfaces_known_data_gaps(tmp_path) -> None:
+    plan = ResearchDirector().plan(build_hk_ipo_context(validation_dir=tmp_path))
+    gap_names = {gap.name for gap in plan.data_gaps}
+
+    assert "nonpositive_tick_values" in gap_names
+    assert "event_terms_needs_review" in gap_names
+    assert "prospectus_allotment_coverage" in gap_names
+    assert "bloomberg_lockup_anomalies" in gap_names
+    assert "raw_tick_intraday_loop_gap" in gap_names
+
+
+def test_director_rejects_unknown_market() -> None:
+    with pytest.raises(ValueError, match="unsupported research market"):
+        ResearchDirector().plan(ResearchDirectorContext(market="crypto"))
