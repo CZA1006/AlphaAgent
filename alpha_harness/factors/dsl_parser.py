@@ -30,17 +30,30 @@ from typing import Any
 # ── Whitelists ───────────────────────────────────────────────────────────────
 
 # Core OHLCV fields (present in every market panel) plus the HK IPO
-# microstructure fields the BigQuery loader joins in from
-# ``micro_features_daily``.  Micro fields are syntactically allowed
-# everywhere but only resolve when the panel actually carries them — on a
-# parquet/synthetic panel a micro factor fails at execution and is simply
-# rejected, never silently mis-evaluated.
+# microstructure/event fields the BigQuery loader joins in.  These extra
+# fields are syntactically allowed everywhere but only resolve when the
+# panel actually carries them — on a parquet/synthetic panel such a factor
+# fails at execution and is rejected, never silently mis-evaluated.
 ALLOWED_FIELDS = frozenset({
     # OHLCV
     "open", "high", "low", "close", "volume", "vwap",
     # Microstructure (HK IPO tick-derived)
     "ofi", "rel_spread", "realized_vol",
     "n_trades", "tick_volume", "avg_trade_size", "n_quotes",
+    # Event features (HKEX/prospectus-derived)
+    "days_since_listing", "days_since_pricing",
+    "days_to_next_cornerstone_lockup", "next_cornerstone_unlock_pct_offer",
+    "days_since_prev_cornerstone_lockup", "next_cornerstone_unlock_shares",
+    "next_cornerstone_unlock_pct_cap",
+    "days_to_next_greenshoe_expiry", "days_to_next_stabilization_end",
+    "days_since_prev_greenshoe_expiry", "days_to_next_greenshoe_exercise",
+    "days_since_prev_greenshoe_exercise", "days_since_prev_stabilization_end",
+    "days_since_prev_stabilization_start",
+    "is_pre_greenshoe_expiry_5d", "is_pre_cornerstone_lockup_5d",
+    "is_near_greenshoe_expiry_5d", "is_near_greenshoe_exercise_5d",
+    "is_near_cornerstone_lockup_5d", "is_pre_stabilization_end_5d",
+    "is_near_stabilization_end_5d",
+    "is_stabilization_window_active",
 })
 
 ALLOWED_FUNCTIONS = frozenset({

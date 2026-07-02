@@ -31,6 +31,12 @@ def test_hypothesis_defaults():
     assert h.created_at.tzinfo is not None
 
 
+def test_hk_equity_is_first_class_asset_class():
+    h = Hypothesis(text="HK IPO microstructure reversal", asset_class=AssetClass.HK_EQUITY)
+    assert h.asset_class == AssetClass.HK_EQUITY
+    assert h.model_dump()["asset_class"] == "hk_equity"
+
+
 def test_factor_spec_defaults():
     f = FactorSpec(name="mom_20d", expression="rank(ts_mean(close, 20))")
     assert f.universe_id == ""

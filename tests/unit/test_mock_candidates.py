@@ -9,9 +9,11 @@ integration smoke run; this unit test catches it in milliseconds.
 from __future__ import annotations
 
 from alpha_harness.factors.compiler import FactorDslCompiler
+from alpha_harness.proposer.prompts import build_system_prompt
 from alpha_harness.proposer.schemas import RawProposalBatch
 from alpha_harness.schemas.hypothesis import Hypothesis
 from scripts.autonomous_cycle import _MOCK_CANDIDATES
+from scripts.validate_strict import _mock_candidates_for_preset
 
 
 def test_mock_candidates_are_non_empty() -> None:
@@ -32,6 +34,25 @@ def test_every_mock_candidate_compiles() -> None:
         )
         assert spec.expression == cand.expression
         assert spec.operator_tree is not None
+
+
+def test_hk_ipo_event_mock_candidates_compile() -> None:
+    compiler = FactorDslCompiler()
+    candidates = _mock_candidates_for_preset("hk_ipo_events")
+    assert len(candidates) >= 5
+    for cand in candidates:
+        spec = compiler.compile(
+            Hypothesis(text=cand.expression, rationale=cand.rationale),
+        )
+        assert spec.expression == cand.expression
+        assert spec.operator_tree is not None
+
+
+def test_proposer_prompt_documents_hk_ipo_event_fields() -> None:
+    prompt = build_system_prompt()
+    assert "days_to_next_cornerstone_lockup" in prompt
+    assert "is_pre_greenshoe_expiry_5d" in prompt
+    assert "is_stabilization_window_active" in prompt
 
 
 # ── Doctor probe ────────────────────────────────────────────────────────────

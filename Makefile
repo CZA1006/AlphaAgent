@@ -1,8 +1,10 @@
 .PHONY: install dev lint format typecheck test test-unit test-integration \
        db-up db-down db-status db-bootstrap db-reset check check-full clean \
        doctor doctor-mock doctor-real doctor-sql audit smoke \
+       doctor-hk-ipo-data doctor-hk-ipo-events \
        run-mock run-real run-real-data run-real-sql \
        autonomous-mock autonomous-real \
+       validate-hk-ipo-events \
        backfill-sp50 backfill \
        list-factors list-cycles refine-factor list-trails validate-strict
 
@@ -105,6 +107,12 @@ doctor-real:
 doctor-sql:
 	uv run python -m scripts.doctor --mode sql
 
+doctor-hk-ipo-data:
+	uv run --extra gcp python -m scripts.doctor_hk_ipo_data
+
+doctor-hk-ipo-events:
+	uv run --extra gcp python -m scripts.doctor_hk_ipo_events
+
 # ── Local run entrypoints ────────────────────────────────────────────────────
 # Opinionated one-liners that cover the four local-testing paths.  Pass
 # additional flags via `ARGS=...` — e.g.  make run-real ARGS="--n-days 240".
@@ -188,6 +196,19 @@ list-trails:
 # synthetic data; pass --data-source parquet --universe ... for real.
 validate-strict:
 	uv run python -m scripts.validate_strict $(ARGS)
+
+validate-hk-ipo-events:
+	uv run --extra gcp python -m scripts.validate_strict \
+		--data-source bigquery \
+		--universe configs/universes/hk_ipo.txt \
+		--start-date 2025-12-12 \
+		--end-date 2026-06-26 \
+		--regime lenient \
+		--llm mock \
+		--mock-preset hk_ipo_events \
+		--theme "HK IPO event-conditioned microstructure signals" \
+		--extra-guidance "Focus on interactions between OFI, spread, realized volatility, greenshoe expiry, stabilization windows, and cornerstone lockup expiry. Prefer event-conditioned expressions over generic price or volume factors." \
+		$(ARGS)
 
 # ── Cleanup ──────────────────────────────────────────────────────────────────
 

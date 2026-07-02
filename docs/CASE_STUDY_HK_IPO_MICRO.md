@@ -9,7 +9,9 @@
 
 Data: real Bloomberg HK IPO tick + daily, in GCP
 (`bloomberg-database-0629.hk_ipo_research`), 77 IPOs, daily panel
-2025-12-03 → 2026-06-26, tick lake 176 M rows.  LLM: DeepSeek-Chat-v3.1.
+2025-12-03 → 2026-06-26, target tick lake 86.1 M rows
+(`tick_manifest_target`; the legacy manifest can include wider capture).
+LLM: DeepSeek-Chat-v3.1.
 
 ---
 
@@ -147,19 +149,24 @@ disjoint + cost + long-only pipeline is what turns "a real lead" into
 ## What's reproducible
 
 - `scripts/sql/micro_features_daily.sql` — the tick → feature table.
+- `scripts/sql/tick_manifest_target.sql` — target-scope tick coverage.
+- `scripts/sql/ipo_event_terms_curated.sql` and
+  `scripts/sql/ipo_event_features_daily.sql` — HKEX document-derived
+  event dates and daily event features.
 - `scripts/analysis/hk_ipo_micro_oos.py` — the per-factor
   train/test persistence + cost-realism + long-only-hedged analysis
   used here.
+- `scripts/analysis/lockup_event_study.py` — exact-event study over
+  curated HKEX/prospectus event dates.
 - `configs/universes/hk_ipo.txt` — the 77-name universe.
 
 ## Next directions
 
 1. **More data** — re-run as the OOS window lengthens (the binding
    constraint).
-2. **Lockup-expiry event study** — the 6-month lockup is HK IPO's most
-   documented anomaly; tick order flow around expiry is the highest-
-   theory-value untested angle (needs an event-study capability the
-   cross-sectional harness doesn't yet have).
+2. **Event-conditioned microstructure** — the HKEX document refill now
+   provides exact greenshoe, stabilization, and cornerstone lockup dates.
+   Re-run event-conditioned factors as the tick archive grows.
 3. **Selection fix** — promote on *persistence* (cross-fold / sub-window
    stability), not train-IC; recalibrate the tail-concentration gate
    for IPO first-day spikes.

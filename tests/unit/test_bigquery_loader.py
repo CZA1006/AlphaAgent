@@ -7,7 +7,7 @@ from typing import Any
 
 import pandas as pd
 
-from alpha_harness.data.bigquery_loader import BigQueryEquitiesLoader
+from alpha_harness.data.bigquery_loader import BigQueryEquitiesLoader, BigQueryTickLoader
 from alpha_harness.data.models import BarFrequency, DataRequest
 
 
@@ -21,6 +21,8 @@ class _FakeQueryJob:
 
 class _FakeBQClient:
     """Captures the query + job_config and returns a canned frame."""
+
+    use_lightweight_query_config = True
 
     def __init__(self, df: pd.DataFrame) -> None:
         self._df = df
@@ -169,7 +171,11 @@ def test_micro_features_pass_through_as_dsl_fields() -> None:
 
 def test_with_micro_features_false_uses_price_only_query() -> None:
     client = _FakeBQClient(_raw_rows())
-    loader = BigQueryEquitiesLoader(client=client, with_micro_features=False)
+    loader = BigQueryEquitiesLoader(
+        client=client,
+        with_micro_features=False,
+        with_event_features=False,
+    )
     loader.load_bars(_request())
     # No join to the micro table in the SQL.
     assert "micro_features_daily" not in client.last_sql
@@ -178,10 +184,53 @@ def test_with_micro_features_false_uses_price_only_query() -> None:
 
 def test_micro_query_joins_micro_table_when_enabled() -> None:
     client = _FakeBQClient(_raw_rows_with_micro())
-    loader = BigQueryEquitiesLoader(client=client, with_micro_features=True)
+    loader = BigQueryEquitiesLoader(
+        client=client,
+        with_micro_features=True,
+        with_event_features=False,
+    )
     loader.load_bars(_request())
     assert "micro_features_daily" in client.last_sql
     assert "LEFT JOIN" in client.last_sql
+
+
+def _raw_rows_with_event_features() -> pd.DataFrame:
+    df = _raw_rows()
+    df["days_since_listing"] = [1, 2, 1]
+    df["days_since_pricing"] = [5, 6, 4]
+    df["days_to_next_cornerstone_lockup"] = [179, 178, None]
+    df["next_cornerstone_unlock_pct_offer"] = [0.21, 0.21, None]
+    df["days_to_next_greenshoe_expiry"] = [28, 27, 20]
+    df["days_to_next_stabilization_end"] = [27, 26, 19]
+    df["is_pre_greenshoe_expiry_5d"] = [0, 0, 0]
+    df["is_pre_cornerstone_lockup_5d"] = [0, 0, 0]
+    df["is_stabilization_window_active"] = [1, 1, 1]
+    return df
+
+
+def test_event_features_pass_through_as_dsl_fields() -> None:
+    client = _FakeBQClient(_raw_rows_with_event_features())
+    loader = BigQueryEquitiesLoader(
+        client=client,
+        with_micro_features=False,
+        with_event_features=True,
+    )
+    df, _meta = loader.load_bars(_request())
+
+    for col in (
+        "days_since_listing",
+        "days_since_pricing",
+        "days_to_next_cornerstone_lockup",
+        "next_cornerstone_unlock_pct_offer",
+        "days_to_next_greenshoe_expiry",
+        "days_to_next_stabilization_end",
+        "is_pre_greenshoe_expiry_5d",
+        "is_pre_cornerstone_lockup_5d",
+        "is_stabilization_window_active",
+    ):
+        assert col in df.columns
+        assert pd.api.types.is_numeric_dtype(df[col])
+    assert "ipo_event_features_daily" in client.last_sql
 
 
 def test_micro_fields_compile_in_dsl() -> None:
@@ -193,3 +242,106 @@ def test_micro_fields_compile_in_dsl() -> None:
         assert f in ALLOWED_FIELDS
     # A real microstructure factor must parse.
     parse_expression("rank(ofi) * rank(-realized_vol)")
+
+
+def test_event_fields_compile_in_dsl() -> None:
+    """The curated IPO event feature names are whitelisted in the DSL."""
+    from alpha_harness.factors.dsl_parser import ALLOWED_FIELDS, parse_expression
+
+    for f in (
+        "days_since_listing",
+        "days_since_pricing",
+        "days_to_next_cornerstone_lockup",
+        "next_cornerstone_unlock_pct_offer",
+        "days_to_next_greenshoe_expiry",
+        "days_to_next_stabilization_end",
+        "is_pre_greenshoe_expiry_5d",
+        "is_pre_cornerstone_lockup_5d",
+        "is_stabilization_window_active",
+    ):
+        assert f in ALLOWED_FIELDS
+    parse_expression("rank(ofi) * is_pre_greenshoe_expiry_5d")
+
+
+# ── tick loader ────────────────────────────────────────────────────────────
+
+
+def _tick_request() -> DataRequest:
+    return DataRequest(
+        symbols=["00068"],
+        start=date(2026, 3, 2),
+        end=date(2026, 3, 2),
+        frequency=BarFrequency.TICK,
+    )
+
+
+def _raw_tick_rows() -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "symbol": ["00068", "00068", "00068"],
+            "timestamp": [
+                "2026-03-02T01:30:00Z",
+                "2026-03-02T01:30:01Z",
+                "2026-03-02T01:30:02Z",
+            ],
+            "event_type": ["BID", "ASK", "TRADE"],
+            "price": ["18.50", "18.54", "18.52"],
+            "size": [1000, 1000, 500],
+            "condition_codes": [None, None, "XT"],
+            "exchange_code": ["HK", "HK", "HK"],
+            "trade_time": [None, None, "2026-03-02T09:30:02+08:00"],
+            "hk_time": [
+                "2026-03-02T09:30:00+08:00",
+                "2026-03-02T09:30:01+08:00",
+                "2026-03-02T09:30:02+08:00",
+            ],
+            "trading_date": [date(2026, 3, 2)] * 3,
+            "scope": ["target"] * 3,
+        },
+    )
+
+
+def test_tick_loader_maps_raw_bid_ask_trade_events() -> None:
+    client = _FakeBQClient(_raw_tick_rows())
+    loader = BigQueryTickLoader(client=client)
+    df, meta = loader.load_ticks(_tick_request())
+
+    assert list(df["event_type"]) == ["BID", "ASK", "TRADE"]
+    assert pd.api.types.is_float_dtype(df["price"])
+    assert pd.api.types.is_numeric_dtype(df["size"])
+    assert str(df["timestamp"].dt.tz) == "UTC"
+    assert df["source"].iloc[0] == "bigquery:tick_events_ext"
+    assert meta.symbols_returned == 1
+    assert meta.bars_returned == 3
+
+
+def test_tick_query_is_parameterized_scope_filtered_and_cost_capped() -> None:
+    client = _FakeBQClient(_raw_tick_rows())
+    loader = BigQueryTickLoader(client=client, max_bytes_billed=123456)
+    loader.load_ticks(_tick_request(), event_types=("TRADE",), limit=10)
+
+    assert "@scope" in client.last_sql
+    assert "@symbols" in client.last_sql
+    assert "@event_types" in client.last_sql
+    assert "scope = @scope" in client.last_sql
+    assert "00068" not in client.last_sql
+    assert "LIMIT 10" in client.last_sql
+    assert client.last_job_config.maximum_bytes_billed == 123456
+
+
+def test_tick_loader_requires_tick_frequency() -> None:
+    client = _FakeBQClient(_raw_tick_rows())
+    loader = BigQueryTickLoader(client=client)
+    daily_request = DataRequest(
+        symbols=["00068"],
+        start=date(2026, 3, 2),
+        end=date(2026, 3, 2),
+        frequency=BarFrequency.DAILY,
+    )
+
+    try:
+        loader.load_ticks(daily_request)
+    except ValueError as exc:
+        assert "frequency='tick'" in str(exc)
+    else:
+        raise AssertionError("expected ValueError for non-tick request")

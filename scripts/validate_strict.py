@@ -117,9 +117,61 @@ _MOCK_CANDIDATES: list[RawProposal] = [
     ),
 ]
 
+_HK_IPO_EVENT_MOCK_CANDIDATES: list[RawProposal] = [
+    RawProposal(
+        expression="rank(ofi) * is_pre_greenshoe_expiry_5d",
+        rationale=(
+            "Net buying immediately before greenshoe expiry may identify IPOs "
+            "where support is ending without sell pressure."
+        ),
+        tags=["hk_ipo", "greenshoe", "ofi"],
+    ),
+    RawProposal(
+        expression="rank(ts_mean(ofi, 3)) * (1 - rank(rel_spread))",
+        rationale=(
+            "Persistent positive order flow in tighter-spread IPOs should be "
+            "more implementable than raw OFI alone."
+        ),
+        tags=["hk_ipo", "microstructure", "liquidity"],
+    ),
+    RawProposal(
+        expression="is_stabilization_window_active * (rank(ofi) - rank(rel_spread))",
+        rationale=(
+            "During stabilization windows, positive OFI combined with tight "
+            "spreads may proxy for orderly demand rather than noisy trading."
+        ),
+        tags=["hk_ipo", "stabilization", "ofi"],
+    ),
+    RawProposal(
+        expression="is_pre_cornerstone_lockup_5d * (rank(rel_spread) - rank(ofi))",
+        rationale=(
+            "Before cornerstone lockup expiry, widening spreads and weak OFI "
+            "may capture anticipated unlock selling pressure."
+        ),
+        tags=["hk_ipo", "cornerstone_lockup", "selling_pressure"],
+    ),
+    RawProposal(
+        expression="rank(-days_to_next_cornerstone_lockup) * rank(-rel_spread)",
+        rationale=(
+            "IPO names closer to cornerstone unlock with better liquidity may "
+            "price event risk more efficiently."
+        ),
+        tags=["hk_ipo", "cornerstone_lockup", "liquidity"],
+    ),
+]
 
-def _make_mock_llm(n: int) -> LLMClient:
-    payload = RawProposalBatch(proposals=_MOCK_CANDIDATES[:n]).model_dump_json()
+
+def _mock_candidates_for_preset(preset: str) -> list[RawProposal]:
+    if preset == "default":
+        return _MOCK_CANDIDATES
+    if preset == "hk_ipo_events":
+        return _HK_IPO_EVENT_MOCK_CANDIDATES
+    raise ValueError(f"unknown mock preset: {preset}")
+
+
+def _make_mock_llm(n: int, *, preset: str) -> LLMClient:
+    candidates = _mock_candidates_for_preset(preset)
+    payload = RawProposalBatch(proposals=candidates[:n]).model_dump_json()
     return MockLLMClient(handler=lambda _req: payload)
 
 
@@ -164,7 +216,10 @@ def _build_llm_client(args: argparse.Namespace, *, cycle_id: str) -> LLMClient:
     import os as _os
 
     if args.llm == "mock":
-        base: LLMClient = _make_mock_llm(args.n_candidates)
+        base: LLMClient = _make_mock_llm(
+            args.n_candidates,
+            preset=args.mock_preset,
+        )
     else:
         if not _os.environ.get("OPENROUTER_API_KEY"):
             raise RuntimeError(
@@ -283,6 +338,16 @@ def _build_parser() -> argparse.ArgumentParser:
             "hardcoded _MOCK_CANDIDATES and needs no keys.  'openrouter' "
             "calls the real OpenRouter API (requires OPENROUTER_API_KEY) — "
             "this is what tests the *agent*, not just the harness."
+        ),
+    )
+    p.add_argument(
+        "--mock-preset",
+        choices=["default", "hk_ipo_events"],
+        default="default",
+        help=(
+            "Which offline mock candidate set to use when --llm mock. "
+            "'hk_ipo_events' exercises BigQuery microstructure + curated "
+            "HKEX event fields without making an LLM call."
         ),
     )
     p.add_argument(

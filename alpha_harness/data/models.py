@@ -25,6 +25,7 @@ from pydantic import BaseModel, Field
 class BarFrequency(StrEnum):
     """Supported bar frequencies."""
 
+    TICK = "tick"
     DAILY = "1d"
     HOURLY = "1h"
     MINUTE_1 = "1m"
@@ -86,6 +87,33 @@ class CryptoBar(Bar):
 
     exchange: str = ""           # e.g. "binance", "coinbase", "bybit"
     quote_currency: str = "USDT"
+
+
+class TickEventType(StrEnum):
+    """Supported tick event types in the HK IPO tick lake."""
+
+    TRADE = "TRADE"
+    BID = "BID"
+    ASK = "ASK"
+
+
+class TickEvent(BaseModel):
+    """A single market-data tick.
+
+    HK IPO tick data stores trades and quote updates as separate events.
+    ``price`` is the trade price for TRADE rows and quoted bid/ask price
+    for BID/ASK rows.
+    """
+
+    symbol: str
+    timestamp: datetime
+    event_type: TickEventType
+    price: float
+    size: float | None = None
+    trading_date: date | None = None
+    source: str = ""
+    condition_codes: str | None = None
+    exchange_code: str | None = None
 
 
 # ── Fundamental models ───────────────────────────────────────────────────────

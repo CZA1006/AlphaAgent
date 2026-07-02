@@ -1,8 +1,9 @@
 -- Per-(stock, trading_date) microstructure features from the HK IPO tick lake.
 --
--- Source: hk_ipo_research.tick_events_ext (BID/ASK/TRADE events, ~176M rows).
--- Output: hk_ipo_research.micro_features_daily — one compact row per stock-day
---         that the harness loads as extra panel columns (DSL fields).
+-- Source: hk_ipo_research.tick_events_ext (BID/ASK/TRADE events).
+-- Target scope is tracked by hk_ipo_research.tick_manifest_target.
+-- Output: hk_ipo_research.micro_features_daily — one row per ipo_daily_prices
+--         stock-day, with nullable tick-derived columns for days without ticks.
 --
 -- Quotes arrive as separate BID and ASK events, so best bid/ask are
 -- reconstructed by forward-fill (LAST_VALUE ... IGNORE NULLS).  Trade
@@ -10,13 +11,18 @@
 -- when at/through the mid or quotes are missing.  Realized vol is computed
 -- on 1-minute sampled last-trade prices to avoid bid-ask-bounce inflation.
 --
--- Re-runnable: CREATE OR REPLACE.  One external-parquet scan (~1.6 GB).
+-- Re-runnable: CREATE OR REPLACE.  One external-parquet scan.
 
 CREATE OR REPLACE TABLE `bloomberg-database-0629.hk_ipo_research.micro_features_daily` AS
-WITH ev AS (
+WITH daily_calendar AS (
+  SELECT DISTINCT stock_code, date AS trading_date
+  FROM `bloomberg-database-0629.hk_ipo_research.ipo_daily_prices`
+),
+ev AS (
   SELECT stock_code, trading_date, time, event_type, value AS price, size
   FROM `bloomberg-database-0629.hk_ipo_research.tick_events_ext`
-  WHERE value > 0
+  WHERE scope = 'target'
+    AND value > 0
 ),
 q AS (
   SELECT *,
@@ -97,8 +103,8 @@ quote_feat AS (
   GROUP BY stock_code, trading_date
 )
 SELECT
-  t.stock_code,
-  t.trading_date,
+  c.stock_code,
+  c.trading_date,
   t.n_trades,
   t.tick_volume,
   t.avg_trade_size,
@@ -106,6 +112,7 @@ SELECT
   t.rel_spread,
   rv.realized_vol,
   q.n_quotes
-FROM trade_feat t
-LEFT JOIN rv         USING (stock_code, trading_date)
+FROM daily_calendar c
+LEFT JOIN trade_feat t USING (stock_code, trading_date)
+LEFT JOIN rv USING (stock_code, trading_date)
 LEFT JOIN quote_feat q USING (stock_code, trading_date);

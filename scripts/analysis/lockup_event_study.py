@@ -1,39 +1,24 @@
 #!/usr/bin/env python3
-"""HK IPO 6-month lockup-expiry event study (tick order flow).
+"""HK IPO event study using curated HKEX/prospectus event dates.
 
-MVP for the design in ``docs/DESIGN_LOCKUP_EVENT_STUDY.md``.  Aligns each
-IPO by event time τ = (trading_date − lockup_expiry) in trading days and
-averages across events to test:
+Examples:
 
-  H1  selling pressure at expiry — CAR[−1,+3] < 0 and net-sell ofi
-  H2  overhang scaling — per-event CAR vs cornerstone unlock %
-  H3  pre-positioning — mean ofi < 0 for τ < 0
-
-plus a **placebo** (same statistic at a non-event date) to confirm the
-effect is specific to expiry.  Standalone — no harness change; reuses
-the BigQuery data + the already-built ``micro_features_daily``.
-
-Honest by construction: only ~19 IPOs have their expiry inside the tick
-window, so this detects a strong average effect only.  Every output
-prints N.
-
-Usage::
-
-    GOOGLE_CLOUD_PROJECT=bloomberg-database-0629 \\
-    uv run python -m scripts.analysis.lockup_event_study
+    python -m scripts.analysis.lockup_event_study --event-type cornerstone_lockup_expiry
+    python -m scripts.analysis.lockup_event_study --event-type greenshoe_expiry
 """
 
 from __future__ import annotations
 
 import argparse
 import math
+import os
 
-import numpy as np
 import pandas as pd
 
-WIN = 10            # event window τ ∈ [−WIN, +WIN]
-CAR_LO, CAR_HI = -1, 3   # CAR accumulation window for H1/H2
-PLACEBO_SHIFT = 40       # trading days before expiry → non-event date
+WIN = 10
+CAR_LO = -1
+CAR_HI = 3
+PLACEBO_SHIFT = 40
 
 
 def _client(project: str):
@@ -42,53 +27,99 @@ def _client(project: str):
     return bigquery.Client(project=project)
 
 
-def _pull(project: str, tick_lo: str, tick_hi: str):
+def _pull(project: str, event_type: str) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    from google.cloud import bigquery
+
     bq = _client(project)
     events = bq.query(
-        "SELECT m.stock_code, "
-        "DATE_ADD(m.listing_date, INTERVAL 6 MONTH) AS expiry, "
-        "a.cornerstone_pct_of_offer_total AS overhang "
-        "FROM hk_ipo_research.ipo_master m "
-        "LEFT JOIN hk_ipo_research.hkex_ipo_allotment_summary a USING (stock_code) "
-        f"WHERE DATE_ADD(m.listing_date, INTERVAL 6 MONTH) "
-        f"BETWEEN DATE '{tick_lo}' AND DATE '{tick_hi}'",
+        """
+        SELECT
+          stock_code,
+          event_type,
+          event_date,
+          listing_date,
+          primary_source_doc_id AS source_doc_id,
+          primary_source_url AS source_url
+        FROM `bloomberg-database-0629.hk_ipo_research.ipo_event_dates_curated`
+        WHERE event_type = @event_type
+          AND event_date IS NOT NULL
+        ORDER BY stock_code, event_date
+        """,
+        job_config=bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("event_type", "STRING", event_type),
+            ],
+            maximum_bytes_billed=200_000_000,
+        ),
     ).to_dataframe()
-    codes = events["stock_code"].tolist()
+
     daily = bq.query(
-        "SELECT p.stock_code, p.date, p.chg_pct_1d, mf.ofi "
-        "FROM hk_ipo_research.ipo_daily_prices p "
-        "LEFT JOIN hk_ipo_research.micro_features_daily mf "
-        "  ON p.stock_code = mf.stock_code AND p.date = mf.trading_date "
-        f"WHERE p.stock_code IN UNNEST({codes})",
+        """
+        SELECT
+          p.stock_code,
+          p.date,
+          p.chg_pct_1d,
+          mf.ofi,
+          ef.next_cornerstone_unlock_pct_offer AS overhang
+        FROM `bloomberg-database-0629.hk_ipo_research.ipo_daily_prices` p
+        LEFT JOIN `bloomberg-database-0629.hk_ipo_research.micro_features_daily` mf
+          ON p.stock_code = mf.stock_code AND p.date = mf.trading_date
+        LEFT JOIN `bloomberg-database-0629.hk_ipo_research.ipo_event_features_daily` ef
+          ON p.stock_code = ef.stock_code AND p.date = ef.date
+        """,
+        job_config=bigquery.QueryJobConfig(maximum_bytes_billed=400_000_000),
     ).to_dataframe()
+
     hsi = bq.query(
-        "SELECT date, chg_pct_1d AS hsi_ret "
-        "FROM hk_ipo_research.market_factors_daily "
-        "WHERE factor_name='hang_seng_index'",
+        """
+        SELECT date, chg_pct_1d AS hsi_ret
+        FROM `bloomberg-database-0629.hk_ipo_research.market_factors_daily`
+        WHERE factor_name = 'hang_seng_index'
+        """,
+        job_config=bigquery.QueryJobConfig(maximum_bytes_billed=100_000_000),
     ).to_dataframe()
     return events, daily, hsi
 
 
-def _event_panel(events, daily, hsi, expiry_col="expiry"):
-    """Long panel: one row per (stock, τ) with abnormal return + ofi."""
+def _event_panel(events: pd.DataFrame, daily: pd.DataFrame, hsi: pd.DataFrame) -> pd.DataFrame:
     daily = daily.merge(hsi, on="date", how="left")
-    daily["AR"] = daily["chg_pct_1d"] - daily["hsi_ret"]   # abnormal return, %
+    daily["AR"] = daily["chg_pct_1d"] - daily["hsi_ret"]
     daily["date"] = pd.to_datetime(daily["date"])
-    rows = []
+
+    rows: list[pd.DataFrame] = []
     for _, ev in events.iterrows():
-        exp = pd.Timestamp(ev[expiry_col])
-        g = daily[daily["stock_code"] == ev["stock_code"]].sort_values("date")
+        event_date = pd.Timestamp(ev["event_date"])
+        stock = ev["stock_code"]
+        g = daily[daily["stock_code"] == stock].sort_values("date").reset_index(drop=True)
         if g.empty:
             continue
-        g = g.reset_index(drop=True)
-        after = g.index[g["date"] >= exp]
-        if len(after) == 0:
+        event_index = g.index[g["date"] >= event_date]
+        if len(event_index) == 0:
             continue
-        idx0 = int(after[0])
-        g = g.assign(tau=g.index - idx0)
-        g = g[(g["tau"] >= -WIN) & (g["tau"] <= WIN)]
-        g = g.assign(stock_code=ev["stock_code"], overhang=ev["overhang"])
-        rows.append(g[["stock_code", "tau", "AR", "ofi", "overhang"]])
+        idx0 = int(event_index[0])
+        window = g.assign(
+            tau=g.index - idx0,
+            event_date=event_date.date(),
+            source_doc_id=ev.get("source_doc_id"),
+            source_url=ev.get("source_url"),
+        )
+        window = window[(window["tau"] >= -WIN) & (window["tau"] <= WIN)]
+        if len(window):
+            rows.append(
+                window[
+                    [
+                        "stock_code",
+                        "date",
+                        "event_date",
+                        "tau",
+                        "AR",
+                        "ofi",
+                        "overhang",
+                        "source_doc_id",
+                        "source_url",
+                    ]
+                ],
+            )
     return pd.concat(rows, ignore_index=True) if rows else pd.DataFrame()
 
 
@@ -97,91 +128,109 @@ def _t_stat(x: pd.Series) -> tuple[float, float, int]:
     n = len(x)
     if n < 2:
         return float("nan"), float("nan"), n
-    m = x.mean()
-    se = x.std(ddof=1) / math.sqrt(n)
-    return m, (m / se if se else float("nan")), n
+    mean = float(x.mean())
+    se = float(x.std(ddof=1) / math.sqrt(n))
+    return mean, mean / se if se else float("nan"), n
 
 
 def _per_event_car(panel: pd.DataFrame) -> pd.DataFrame:
     w = panel[(panel["tau"] >= CAR_LO) & (panel["tau"] <= CAR_HI)]
-    return w.groupby("stock_code").agg(
-        car=("AR", "sum"), overhang=("overhang", "first"),
-    ).reset_index()
+    return (
+        w.groupby(["stock_code", "event_date"])
+        .agg(car=("AR", "sum"), overhang=("overhang", "first"))
+        .reset_index()
+    )
 
 
-def run(project: str, tick_lo: str, tick_hi: str) -> None:
-    events, daily, hsi = _pull(project, tick_lo, tick_hi)
-    print(f"events with expiry in [{tick_lo}, {tick_hi}]: {len(events)}")
+def _placebo_cars(events: pd.DataFrame, daily: pd.DataFrame, hsi: pd.DataFrame) -> pd.Series:
+    daily = daily.merge(hsi, on="date", how="left")
+    daily["AR"] = daily["chg_pct_1d"] - daily["hsi_ret"]
+    daily["date"] = pd.to_datetime(daily["date"])
+    cars: list[float] = []
+    for _, ev in events.iterrows():
+        g = (
+            daily[daily["stock_code"] == ev["stock_code"]]
+            .sort_values("date")
+            .reset_index(drop=True)
+        )
+        if g.empty:
+            continue
+        event_index = g.index[g["date"] >= pd.Timestamp(ev["event_date"])]
+        if len(event_index) == 0:
+            continue
+        idx0 = int(event_index[0]) - PLACEBO_SHIFT
+        if idx0 < WIN:
+            continue
+        w = g.assign(tau=g.index - idx0)
+        w = w[(w["tau"] >= CAR_LO) & (w["tau"] <= CAR_HI)]
+        if len(w):
+            cars.append(float(w["AR"].sum()))
+    return pd.Series(cars, dtype="float64")
+
+
+def run(project: str, event_type: str) -> None:
+    events, daily, hsi = _pull(project, event_type)
+    print(f"event_type: {event_type}")
+    print(f"curated event dates: {len(events)}")
+
     panel = _event_panel(events, daily, hsi)
-    n_ev = panel["stock_code"].nunique()
-    print(f"events with usable tick/daily coverage in window: {n_ev}\n")
+    if panel.empty:
+        print("no usable daily/tick coverage in event window")
+        return
+    n_events = panel[["stock_code", "event_date"]].drop_duplicates().shape[0]
+    n_stocks = panel["stock_code"].nunique()
+    print(f"usable events in window: {n_events} / stocks: {n_stocks}\n")
 
-    # Event-time profile
-    prof = panel.groupby("tau").agg(
-        mean_AR=("AR", "mean"), mean_OFI=("ofi", "mean"), n=("AR", "count"),
-    ).reset_index().sort_values("tau")
+    prof = (
+        panel.groupby("tau")
+        .agg(mean_AR=("AR", "mean"), mean_OFI=("ofi", "mean"), n=("AR", "count"))
+        .reset_index()
+        .sort_values("tau")
+    )
     prof["CAR"] = prof["mean_AR"].cumsum()
-    print("τ   meanAR%   CAR%    meanOFI   n")
-    for _, r in prof.iterrows():
-        ofi = f"{r['mean_OFI']:+.4f}" if pd.notna(r["mean_OFI"]) else "  n/a"
-        print(f"{int(r['tau']):+3d}  {r['mean_AR']:+6.3f}  {r['CAR']:+6.3f}  {ofi:>8}  {int(r['n']):3d}")
+    print("tau  meanAR%   CAR%    meanOFI   n")
+    for _, row in prof.iterrows():
+        ofi = f"{row['mean_OFI']:+.4f}" if pd.notna(row["mean_OFI"]) else "  n/a"
+        print(
+            f"{int(row['tau']):+3d}  {row['mean_AR']:+6.3f}  "
+            f"{row['CAR']:+6.3f}  {ofi:>8}  {int(row['n']):3d}",
+        )
 
-    # H1: CAR[-1,+3] across events
     pe = _per_event_car(panel)
-    m, t, n = _t_stat(pe["car"])
-    print(f"\nH1 selling pressure: mean CAR[{CAR_LO},{CAR_HI}] = {m:+.3f}%  "
-          f"(t={t:+.2f}, N={n})  -> {'supports' if (not math.isnan(t) and t < -1.0) else 'inconclusive'}")
+    mean_car, t_car, n_car = _t_stat(pe["car"])
+    print(
+        f"\nH1 CAR[{CAR_LO},{CAR_HI}] = {mean_car:+.3f}% "
+        f"(t={t_car:+.2f}, N={n_car})",
+    )
 
-    # H2: CAR ~ overhang
-    pe2 = pe.dropna(subset=["overhang"])
-    if len(pe2) >= 3:
-        corr = pe2["car"].corr(pe2["overhang"])
-        print(f"H2 overhang scaling: corr(CAR, cornerstone%) = {corr:+.2f}  (N={len(pe2)})  "
-              f"-> {'supports (more overhang, more selling)' if corr < -0.1 else 'inconclusive'}")
+    with_overhang = pe.dropna(subset=["overhang"])
+    if len(with_overhang) >= 3:
+        corr = with_overhang["car"].corr(with_overhang["overhang"])
+        print(f"H2 corr(CAR, cornerstone overhang) = {corr:+.2f} (N={len(with_overhang)})")
     else:
         print("H2 overhang scaling: too few events with overhang data")
 
-    # H3: pre-event ofi
     pre = panel[(panel["tau"] >= -5) & (panel["tau"] <= -1)]["ofi"]
-    m3, t3, n3 = _t_stat(pre)
-    print(f"H3 pre-positioning: mean ofi(τ∈[-5,-1]) = {m3:+.4f}  (t={t3:+.2f}, N={n3})  "
-          f"-> {'supports (net selling before expiry)' if (not math.isnan(t3) and m3 < 0) else 'inconclusive'}")
+    mean_ofi, t_ofi, n_ofi = _t_stat(pre)
+    print(f"H3 pre-event OFI[-5,-1] = {mean_ofi:+.4f} (t={t_ofi:+.2f}, N={n_ofi})")
 
-    # Placebo: same CAR statistic at a non-event date (expiry − PLACEBO_SHIFT trading days)
-    pl_events = events.copy()
-    # shift each event's τ=0 back by PLACEBO_SHIFT trading days via a synthetic 'expiry'
-    daily_s = daily.merge(hsi, on="date", how="left")
-    daily_s["AR"] = daily_s["chg_pct_1d"] - daily_s["hsi_ret"]
-    daily_s["date"] = pd.to_datetime(daily_s["date"])
-    rows = []
-    for _, ev in pl_events.iterrows():
-        g = daily_s[daily_s["stock_code"] == ev["stock_code"]].sort_values("date").reset_index(drop=True)
-        exp = pd.Timestamp(ev["expiry"])
-        after = g.index[g["date"] >= exp]
-        if len(after) == 0:
-            continue
-        idx0 = int(after[0]) - PLACEBO_SHIFT
-        if idx0 < WIN:
-            continue
-        g = g.assign(tau=g.index - idx0)
-        w = g[(g["tau"] >= CAR_LO) & (g["tau"] <= CAR_HI)]
-        if len(w):
-            rows.append(w["AR"].sum())
-    if rows:
-        mp, tp, npl = _t_stat(pd.Series(rows))
-        print(f"\nplacebo CAR[{CAR_LO},{CAR_HI}] at τ0−{PLACEBO_SHIFT}d = {mp:+.3f}%  (t={tp:+.2f}, N={npl})  "
-              f"(should be ~0 / insignificant if the effect is expiry-specific)")
+    placebo = _placebo_cars(events, daily, hsi)
+    mean_p, t_p, n_p = _t_stat(placebo)
+    print(
+        f"placebo CAR[{CAR_LO},{CAR_HI}] at tau0-{PLACEBO_SHIFT}d = "
+        f"{mean_p:+.3f}% (t={t_p:+.2f}, N={n_p})",
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
-    import os
-
-    p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--project", default=os.environ.get("GCP_PROJECT", "bloomberg-database-0629"))
-    p.add_argument("--tick-lo", default="2025-12-12")
-    p.add_argument("--tick-hi", default="2026-06-26")
-    args = p.parse_args(argv)
-    run(args.project, args.tick_lo, args.tick_hi)
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--project",
+        default=os.environ.get("GCP_PROJECT", "bloomberg-database-0629"),
+    )
+    parser.add_argument("--event-type", default="cornerstone_lockup_expiry")
+    args = parser.parse_args(argv)
+    run(args.project, args.event_type)
     return 0
 
 

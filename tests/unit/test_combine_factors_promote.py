@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import json
+from datetime import date
 from pathlib import Path
 
 from alpha_harness.combination import CombinationMethod, CombinationRecipe
-from alpha_harness.schemas.evaluation import EvaluationBundle
-from alpha_harness.schemas.experiment import PromotionTrail
-from scripts.combine_factors import _promote_basket
+from alpha_harness.schemas.evaluation import EvaluationBundle, EvaluationProfile, EvaluationRequest
+from alpha_harness.schemas.experiment import ExperimentDecision, PromotionTrail
+from scripts.combine_factors import _judge_basket, _promote_basket
 
 
 class _Args:
@@ -41,6 +42,70 @@ def _make_trail(*, neutralize: str = "none") -> PromotionTrail:
 
 def _make_bundle() -> EvaluationBundle:
     return EvaluationBundle(ic=0.04, rank_ic=0.05, n_periods=200, n_assets=50)
+
+
+def _request() -> EvaluationRequest:
+    return EvaluationRequest(
+        factor_id="basket",
+        universe_id="test",
+        eval_start=date(2026, 1, 1),
+        eval_end=date(2026, 6, 30),
+        profile=EvaluationProfile(
+            thresholds={"ic": 0.02, "rank_ic": 0.03, "quantile_spread": 0.005},
+            min_periods=60,
+            min_assets=10,
+        ),
+    )
+
+
+def _recipe() -> CombinationRecipe:
+    return CombinationRecipe.build(
+        method=CombinationMethod.EQUAL_WEIGHT,
+        components=["rank(close)", "rank(volume)"],
+    )
+
+
+def test_judge_basket_uses_full_profile_not_only_ic_rank_ic() -> None:
+    bundle = EvaluationBundle(
+        ic=0.04,
+        rank_ic=0.05,
+        quantile_spread=0.001,
+        n_periods=200,
+        n_assets=50,
+    )
+
+    detail = _judge_basket(
+        recipe=_recipe(),
+        basket_bundle=bundle,
+        request=_request(),
+        judge_thresholds={},
+    )
+
+    assert detail.decision == ExperimentDecision.REJECT
+    assert detail.failure is not None
+    assert "quantile_spread" in detail.failure.detail
+
+
+def test_judge_basket_rejects_holdout_sign_flip() -> None:
+    bundle = EvaluationBundle(
+        ic=0.04,
+        rank_ic=0.05,
+        quantile_spread=0.02,
+        n_periods=200,
+        n_assets=50,
+        metadata={"holdout": {"rank_ic": -0.01}},
+    )
+
+    detail = _judge_basket(
+        recipe=_recipe(),
+        basket_bundle=bundle,
+        request=_request(),
+        judge_thresholds={},
+    )
+
+    assert detail.decision == ExperimentDecision.REJECT
+    assert detail.failure is not None
+    assert "holdout rank_ic" in detail.failure.detail
 
 
 def test_promote_basket_writes_deterministic_factor_id(tmp_path: Path) -> None:

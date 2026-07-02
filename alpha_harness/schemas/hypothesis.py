@@ -19,6 +19,7 @@ class HypothesisStatus(StrEnum):
 
 class AssetClass(StrEnum):
     US_EQUITY = "us_equity"
+    HK_EQUITY = "hk_equity"
     CRYPTO = "crypto"
 
 
