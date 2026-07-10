@@ -4,6 +4,7 @@
        doctor-hk-ipo-data doctor-hk-ipo-events research-director-hk-ipo \
        run-mock run-real run-real-data run-real-sql \
        autonomous-mock autonomous-real \
+       autonomous-researcher-hk-ipo autonomous-researcher-hk-ipo-run \
        validate-hk-ipo-events \
        backfill-sp50 backfill \
        list-factors list-cycles refine-factor list-trails validate-strict
@@ -115,6 +116,12 @@ doctor-hk-ipo-events:
 
 research-director-hk-ipo:
 	uv run python -m scripts.research_director --market hk_ipo $(ARGS)
+
+autonomous-researcher-hk-ipo:
+	uv run --extra gcp python -m scripts.autonomous_researcher --market hk_ipo $(ARGS)
+
+autonomous-researcher-hk-ipo-run:
+	uv run --extra gcp python -m scripts.autonomous_researcher --market hk_ipo --execute $(ARGS)
 
 # ── Local run entrypoints ────────────────────────────────────────────────────
 # Opinionated one-liners that cover the four local-testing paths.  Pass
