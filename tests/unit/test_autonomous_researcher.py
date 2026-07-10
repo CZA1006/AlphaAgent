@@ -125,6 +125,42 @@ def test_execute_records_new_validation_rows(tmp_path) -> None:
     ]
 
 
+def test_execute_uses_post_run_policy_to_select_next_iteration_topic(tmp_path) -> None:
+    validation_dir = tmp_path / "validations"
+    index_path = validation_dir / "_index.jsonl"
+    commands: list[list[str]] = []
+
+    def runner(argv: Sequence[str], timeout_seconds: int) -> subprocess.CompletedProcess[str]:
+        commands.append(list(argv))
+        validation_dir.mkdir(parents=True, exist_ok=True)
+        cycle_id = argv[argv.index("--cycle-id") + 1]
+        with index_path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps({"cycle_id": cycle_id, "n_promoted": 1, "n_rejected": 4}) + "\n")
+        return subprocess.CompletedProcess(list(argv), 0, stdout="ok", stderr="")
+
+    record = run_autonomous_research(
+        AutonomousRunnerConfig(
+            execute=True,
+            iterations=2,
+            run_id="execute-switch",
+            validation_dir=validation_dir,
+            no_artifact=True,
+        ),
+        command_runner=runner,
+    )
+
+    first_theme = commands[0][commands[0].index("--theme") + 1]
+    second_theme = commands[1][commands[1].index("--theme") + 1]
+
+    assert record.status == "completed"
+    assert record.iterations[0].selected_topic_id == "hk_ipo_event_conditioned_microstructure"
+    assert record.iterations[0].next_decision["action"] == "switch_topic"
+    assert record.iterations[0].next_decision["next_topic_id"] == "hk_ipo_cost_realism_oos"
+    assert record.iterations[1].selected_topic_id == "hk_ipo_cost_realism_oos"
+    assert first_theme == "HK IPO event-conditioned microstructure signals"
+    assert second_theme == "HK IPO implementability and cost realism"
+
+
 def test_execute_stops_when_validation_writes_no_new_rows(tmp_path) -> None:
     def runner(argv: Sequence[str], timeout_seconds: int) -> subprocess.CompletedProcess[str]:
         return subprocess.CompletedProcess(list(argv), 0, stdout="", stderr="")

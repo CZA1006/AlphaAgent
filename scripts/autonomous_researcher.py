@@ -21,7 +21,10 @@ from pydantic import BaseModel, Field
 
 from alpha_harness.director import (
     DEFAULT_VALIDATION_DIR,
+    NextResearchAction,
+    PostRunDecision,
     ResearchDirector,
+    ResearchDirectorPlan,
     ResearchPostRunPolicy,
     ResearchRunSummary,
     ResearchTopicPlan,
@@ -71,6 +74,7 @@ class AutonomousIterationRecord(BaseModel):
     stdout_tail: str = ""
     stderr_tail: str = ""
     stop_reason: str = ""
+    next_decision: dict[str, Any] = Field(default_factory=dict)
 
 
 class AutonomousRunRecord(BaseModel):
@@ -219,6 +223,21 @@ def _build_research_run_summary(
         ],
         data_gap_names=[str(gap.get("name")) for gap in record.data_gaps if gap.get("name")],
     )
+
+
+def _decide_next_step(
+    record: AutonomousRunRecord,
+    validation_dir: Path,
+) -> PostRunDecision:
+    summary = _build_research_run_summary(record, validation_dir)
+    return ResearchPostRunPolicy().decide(summary)
+
+
+def _select_topic(plan: ResearchDirectorPlan, topic_id: str) -> ResearchTopicPlan:
+    for topic in plan.topics:
+        if topic.topic_id == topic_id:
+            return topic
+    raise ValueError(f"policy selected unknown topic: {topic_id}")
 
 
 def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
@@ -389,11 +408,20 @@ def run_autonomous_research(
 
         context = build_hk_ipo_context(validation_dir=config.validation_dir)
         plan = ResearchDirector().plan(context)
-        selected = plan.selected_topic
+        decision = _decide_next_step(record, config.validation_dir)
+        record.iterations[-1].next_decision = json.loads(decision.model_dump_json())
+        if decision.action in {
+            NextResearchAction.STOP_FAILED,
+            NextResearchAction.STOP_NO_PROGRESS,
+        }:
+            break
+        if decision.next_topic_id:
+            selected = _select_topic(plan, decision.next_topic_id)
+        else:
+            selected = plan.selected_topic
 
     record.finished_at = datetime.now(UTC)
-    summary = _build_research_run_summary(record, config.validation_dir)
-    decision = ResearchPostRunPolicy().decide(summary)
+    decision = _decide_next_step(record, config.validation_dir)
     record.next_decision = json.loads(decision.model_dump_json())
     if not config.no_artifact:
         write_run_record(record, config.artifact_dir)
