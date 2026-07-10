@@ -83,8 +83,10 @@ def test_dry_run_writes_structured_artifact(tmp_path) -> None:
 
     assert record.status == "planned"
     assert record.dry_run is True
+    assert record.next_decision["action"] == "continue_topic"
     assert payload["schema_version"] == 1
     assert payload["run_id"] == "dry-run-artifact"
+    assert payload["next_decision"]["action"] == "continue_topic"
     assert payload["iterations"][0]["status"] == "planned"
     assert payload["iterations"][0]["stop_reason"] == "dry-run: pass --execute to run validation"
 
@@ -115,6 +117,8 @@ def test_execute_records_new_validation_rows(tmp_path) -> None:
     )
 
     assert record.status == "completed"
+    assert record.next_decision["action"] == "switch_topic"
+    assert record.next_decision["next_topic_id"] == "hk_ipo_cost_realism_oos"
     assert record.iterations[0].status == "executed"
     assert record.iterations[0].validation_reports == [
         {"cycle_id": "execute-once-i01", "n_promoted": 1, "n_rejected": 4}

@@ -22,8 +22,11 @@ from pydantic import BaseModel, Field
 from alpha_harness.director import (
     DEFAULT_VALIDATION_DIR,
     ResearchDirector,
+    ResearchPostRunPolicy,
+    ResearchRunSummary,
     ResearchTopicPlan,
     build_hk_ipo_context,
+    validation_report_summary_from_payload,
 )
 
 DEFAULT_RUN_DIR = Path("artifacts/autonomous_runs")
@@ -84,6 +87,7 @@ class AutonomousRunRecord(BaseModel):
     plan: dict[str, Any] = Field(default_factory=dict)
     data_gaps: list[dict[str, Any]] = Field(default_factory=list)
     iterations: list[AutonomousIterationRecord] = Field(default_factory=list)
+    next_decision: dict[str, Any] = Field(default_factory=dict)
     artifact_path: str | None = None
 
 
@@ -183,6 +187,38 @@ def _new_validation_rows(
 ) -> list[dict[str, Any]]:
     seen = {str(row.get("cycle_id")) for row in before if row.get("cycle_id")}
     return [row for row in after if str(row.get("cycle_id")) not in seen]
+
+
+def _read_validation_report(validation_dir: Path, cycle_id: str) -> dict[str, Any] | None:
+    path = validation_dir / f"{cycle_id}.json"
+    if not path.is_file():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _build_research_run_summary(
+    record: AutonomousRunRecord,
+    validation_dir: Path,
+) -> ResearchRunSummary:
+    report_payloads: list[dict[str, Any]] = []
+    for iteration in record.iterations:
+        for row in iteration.validation_reports:
+            cycle_id = str(row.get("cycle_id", ""))
+            full_report = _read_validation_report(validation_dir, cycle_id) if cycle_id else None
+            report_payloads.append(full_report or row)
+    return ResearchRunSummary(
+        market=record.market,
+        selected_topic_id=record.selected_topic_id,
+        status=record.status,
+        validation_reports=[
+            validation_report_summary_from_payload(payload) for payload in report_payloads
+        ],
+        data_gap_names=[str(gap.get("name")) for gap in record.data_gaps if gap.get("name")],
+    )
 
 
 def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
@@ -356,6 +392,9 @@ def run_autonomous_research(
         selected = plan.selected_topic
 
     record.finished_at = datetime.now(UTC)
+    summary = _build_research_run_summary(record, config.validation_dir)
+    decision = ResearchPostRunPolicy().decide(summary)
+    record.next_decision = json.loads(decision.model_dump_json())
     if not config.no_artifact:
         write_run_record(record, config.artifact_dir)
     return record
@@ -406,6 +445,12 @@ def _print_text(record: AutonomousRunRecord) -> None:
                 promoted = row.get("n_promoted", 0)
                 rejected = row.get("n_rejected", 0)
                 print(f"  - {cycle_id}: promoted={promoted}, rejected={rejected}")
+    if record.next_decision:
+        print("next decision    :")
+        print(f"  action         : {record.next_decision.get('action')}")
+        if record.next_decision.get("next_topic_id"):
+            print(f"  next topic     : {record.next_decision.get('next_topic_id')}")
+        print(f"  rationale      : {record.next_decision.get('rationale')}")
     print("=" * 72)
 
 
