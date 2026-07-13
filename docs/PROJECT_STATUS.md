@@ -91,6 +91,20 @@ two LLMs over a shared out-of-sample window the baskets did not hold up.
   (`ipo_event_dates_curated`, `ipo_event_features_daily`) for greenshoe,
   stabilization, and cornerstone lockup research.  Known Bloomberg
   lockup anomalies are kept out of truth tables and routed to review.
+- **Lockup-expiry event study, run twice honestly**
+  (see [`DESIGN_LOCKUP_EVENT_STUDY.md`](DESIGN_LOCKUP_EVENT_STUDY.md)):
+  on `listing + 6 mo` **proxy dates** (19 events) — a clean negative,
+  with the placebo catching what would otherwise be a false positive.
+  Re-run on **exact prospectus dates** (14 events / 13 stocks) — the
+  theory-predicted signature appears for the first time (AR(τ=0)
+  = −4.17 %, the most negative day in the window; OFI persistently
+  net-sell over τ = 0…+5), but H1 CAR[−1,+3] = −4.36 % is not
+  significant (t = −0.81, N = 14), overhang scaling (H2) and
+  front-running (H3) both fail, and the placebo window is *still more
+  negative* (−10.03 %) — post-IPO drift dominates.  Verdict:
+  **suggestive but underpowered**, not an established anomaly.  Larger
+  same-method samples are queued: greenshoe_expiry (59 events in tick
+  window) and stabilization_end (38).
 
 ---
 
