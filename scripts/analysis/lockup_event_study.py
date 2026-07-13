@@ -20,6 +20,15 @@ CAR_LO = -1
 CAR_HI = 3
 PLACEBO_SHIFT = 40
 
+# Curated extraction errors (e.g. a greenshoe "expiry" dated before listing)
+# otherwise snap onto the IPO day-1 pop at tau=0 and dominate the mean AR.
+# Stabilization end / greenshoe expiry sit ~30 days after listing under the
+# HK price-stabilizing rules, so anything under 20 days is treated as bad.
+MIN_DAYS_FROM_LISTING = {
+    "greenshoe_expiry": 20,
+    "stabilization_end": 20,
+}
+
 
 def _client(project: str):
     from google.cloud import bigquery
@@ -123,6 +132,32 @@ def _event_panel(events: pd.DataFrame, daily: pd.DataFrame, hsi: pd.DataFrame) -
     return pd.concat(rows, ignore_index=True) if rows else pd.DataFrame()
 
 
+def _drop_implausible_events(events: pd.DataFrame, event_type: str) -> pd.DataFrame:
+    if events.empty or "listing_date" not in events.columns:
+        return events
+    min_days = MIN_DAYS_FROM_LISTING.get(event_type, 0)
+    days = (pd.to_datetime(events["event_date"]) - pd.to_datetime(events["listing_date"])).dt.days
+    ok = days.isna() | (days >= min_days)
+    for _, row in events[~ok].iterrows():
+        print(
+            f"dropping implausible event date: {row['stock_code']} "
+            f"{row['event_date']} (listed {row['listing_date']})",
+        )
+    return events[ok].reset_index(drop=True)
+
+
+def _sign_test(x: pd.Series) -> tuple[int, int, float]:
+    """Two-sided binomial sign test — robust to the fat right tail of IPO returns."""
+    x = x.dropna()
+    n = len(x)
+    if n == 0:
+        return 0, 0, float("nan")
+    pos = int((x > 0).sum())
+    tail = min(pos, n - pos)
+    p = min(1.0, 2 * sum(math.comb(n, i) for i in range(tail + 1)) / 2**n)
+    return pos, n, p
+
+
 def _t_stat(x: pd.Series) -> tuple[float, float, int]:
     x = x.dropna()
     n = len(x)
@@ -142,7 +177,18 @@ def _per_event_car(panel: pd.DataFrame) -> pd.DataFrame:
     )
 
 
-def _placebo_cars(events: pd.DataFrame, daily: pd.DataFrame, hsi: pd.DataFrame) -> pd.Series:
+def _placebo_cars(
+    events: pd.DataFrame,
+    daily: pd.DataFrame,
+    hsi: pd.DataFrame,
+    shift: int = -PLACEBO_SHIFT,
+) -> pd.Series:
+    """CAR at a non-event date shifted `shift` trading days from each event.
+
+    Early-life events (stabilization end / greenshoe expiry sit ~30 days
+    after listing) have no pre-event history for a negative shift, so
+    callers should also run the positive-shift control.
+    """
     daily = daily.merge(hsi, on="date", how="left")
     daily["AR"] = daily["chg_pct_1d"] - daily["hsi_ret"]
     daily["date"] = pd.to_datetime(daily["date"])
@@ -158,8 +204,8 @@ def _placebo_cars(events: pd.DataFrame, daily: pd.DataFrame, hsi: pd.DataFrame) 
         event_index = g.index[g["date"] >= pd.Timestamp(ev["event_date"])]
         if len(event_index) == 0:
             continue
-        idx0 = int(event_index[0]) - PLACEBO_SHIFT
-        if idx0 < WIN:
+        idx0 = int(event_index[0]) + shift
+        if idx0 + CAR_LO < 0 or idx0 + CAR_HI >= len(g):
             continue
         w = g.assign(tau=g.index - idx0)
         w = w[(w["tau"] >= CAR_LO) & (w["tau"] <= CAR_HI)]
@@ -172,6 +218,7 @@ def run(project: str, event_type: str) -> None:
     events, daily, hsi = _pull(project, event_type)
     print(f"event_type: {event_type}")
     print(f"curated event dates: {len(events)}")
+    events = _drop_implausible_events(events, event_type)
 
     panel = _event_panel(events, daily, hsi)
     if panel.empty:
@@ -198,9 +245,13 @@ def run(project: str, event_type: str) -> None:
 
     pe = _per_event_car(panel)
     mean_car, t_car, n_car = _t_stat(pe["car"])
+    pos, n_sign, p_sign = _sign_test(pe["car"])
     print(
-        f"\nH1 CAR[{CAR_LO},{CAR_HI}] = {mean_car:+.3f}% "
-        f"(t={t_car:+.2f}, N={n_car})",
+        f"\nH1 CAR[{CAR_LO},{CAR_HI}] = {mean_car:+.3f}% (t={t_car:+.2f}, N={n_car})",
+    )
+    print(
+        f"H1 robust: median = {pe['car'].median():+.3f}%, "
+        f"sign test {pos}/{n_sign} positive (p={p_sign:.2f})",
     )
 
     with_overhang = pe.dropna(subset=["overhang"])
@@ -214,12 +265,17 @@ def run(project: str, event_type: str) -> None:
     mean_ofi, t_ofi, n_ofi = _t_stat(pre)
     print(f"H3 pre-event OFI[-5,-1] = {mean_ofi:+.4f} (t={t_ofi:+.2f}, N={n_ofi})")
 
-    placebo = _placebo_cars(events, daily, hsi)
-    mean_p, t_p, n_p = _t_stat(placebo)
-    print(
-        f"placebo CAR[{CAR_LO},{CAR_HI}] at tau0-{PLACEBO_SHIFT}d = "
-        f"{mean_p:+.3f}% (t={t_p:+.2f}, N={n_p})",
-    )
+    for label, shift in (
+        (f"tau0-{PLACEBO_SHIFT}d", -PLACEBO_SHIFT),
+        (f"tau0+{PLACEBO_SHIFT}d", PLACEBO_SHIFT),
+    ):
+        placebo = _placebo_cars(events, daily, hsi, shift=shift)
+        mean_p, t_p, n_p = _t_stat(placebo)
+        median_p = placebo.median() if n_p else float("nan")
+        print(
+            f"placebo CAR[{CAR_LO},{CAR_HI}] at {label} = "
+            f"{mean_p:+.3f}% (t={t_p:+.2f}, N={n_p}, median={median_p:+.3f}%)",
+        )
 
 
 def main(argv: list[str] | None = None) -> int:

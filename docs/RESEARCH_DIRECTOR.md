@@ -70,13 +70,34 @@ That command still uses the existing harness loop:
 4. evaluate and refine under the selected regime
 5. write validation reports and promoted artifacts
 
+## The Autonomous Executor
+
+`scripts/autonomous_researcher.py` closes the plan→execute loop under
+operator guardrails:
+
+```bash
+make autonomous-researcher-hk-ipo                  # dry run: plan + emit command only
+make autonomous-researcher-hk-ipo-run              # --execute: actually run validation
+make autonomous-researcher-hk-ipo-run ARGS="--llm openrouter --iterations 3 --cost-budget-usd 2"
+```
+
+Each iteration: `ResearchDirector.plan` → run the selected
+`validate_strict` command → read the new validation reports →
+`ResearchPostRunPolicy.decide` picks the next topic (or stops) → the next
+iteration re-plans with the updated history.  Guardrails: dry-run by
+default, iteration cap, per-run timeout, token/cost budgets, and stop
+after N consecutive no-promote iterations.  Every run writes a
+machine-readable record to `artifacts/autonomous_runs/`.
+
 ## What Is Not Fully Automated Yet
 
-The planning object is machine-readable, but direct execution is not enabled by
-default.  To make this fully self-running, add a controlled executor that:
-
-1. calls `ResearchDirector.plan`
-2. runs the selected validation args under explicit budget limits
-3. records the report path back into the next director context
-4. opens a data-refill topic when a blocking data gap appears
-5. stops on repeated no-progress cycles or budget exhaustion
+- **No scheduler** — an operator starts each run; nothing re-invokes the
+  loop on a cadence.
+- **Data work stays manual** — the director queues data gaps (refill,
+  ingestion, QA) but the executor never performs them.
+- **Event studies live outside the loop** — `scripts/analysis/*.py`
+  (microstructure OOS, lockup/greenshoe/stabilization event studies) are
+  operator-run analyses; the director does not schedule or read them.
+- **Promotion still selects on train-IC** — the persistence-based
+  selection fix (see the microstructure case study) is designed but not
+  built.

@@ -163,12 +163,12 @@ LEFT JOIN listing l USING (stock_code)
 LEFT JOIN pricing p USING (stock_code)
 LEFT JOIN cornerstone_next cn USING (stock_code, date)
 LEFT JOIN cornerstone_prev cp USING (stock_code, date)
-LEFT JOIN cornerstone co
-  ON cn.stock_code = co.stock_code AND cn.next_date = co.event_date
 LEFT JOIN greenshoe_expiry_next gen USING (stock_code, date)
 LEFT JOIN greenshoe_expiry_prev gep USING (stock_code, date)
 LEFT JOIN greenshoe_exercise_next gxn USING (stock_code, date)
 LEFT JOIN greenshoe_exercise_prev gxp USING (stock_code, date)
 LEFT JOIN stabilization_end_next sen USING (stock_code, date)
 LEFT JOIN stabilization_end_prev sep USING (stock_code, date)
-LEFT JOIN stabilization_start_prev ssp USING (stock_code, date);
+LEFT JOIN stabilization_start_prev ssp USING (stock_code, date)
+LEFT JOIN cornerstone co
+  ON cn.stock_code = co.stock_code AND cn.next_date = co.event_date;

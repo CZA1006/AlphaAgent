@@ -26,13 +26,13 @@ The reproducible SQL lives in:
 
 ## Coverage Snapshot
 
-From the latest review:
+From the 2026-07-13 re-curation (after adding the implausible-date sanity filter):
 
 - HKEX PDF/text uploaded: 287 PDFs and 287 text files.
 - Prospectus coverage: 75 stocks.
 - Allotment-results coverage: 75 stocks.
 - Refill staging rows: 846 document registry rows, 2,070 event terms, 693 Bloomberg recheck rows.
-- Curated outputs: 846 document rows, 1,782 curated event terms, 267 needs-review terms, 606 event dates.
+- Curated outputs: 846 document rows, 1,790 curated event terms, 267 needs-review terms + 13 implausible-date terms, 593 event dates.
 - Daily event features: 7,118 rows, aligned to the `ipo_daily_prices` panel.
 
 ## Known Bloomberg Anomalies
@@ -43,6 +43,36 @@ Bloomberg lockup fields are hints, not truth:
 - `03636`: `EQY_IPO_LOCKUP_DT=2029-01-09`, more than three years after listing.
 
 For lockup/greenshoe/stabilization research, prefer HKEX/prospectus-derived `ipo_event_dates_curated`. Use Bloomberg fields only as review candidates unless a source document confirms them.
+
+## Known HKEX-Extraction Anomalies (now filtered by construction)
+
+The HKEX-extracted dates had their own error class: **event dates before
+listing** (impossible for post-listing events).  These are catastrophic
+downstream because event studies snap an event to the first trading day at or
+after the event date — a pre-listing date lands on the IPO's first trading
+day and injects the day-1 pop/crash into τ=0.  This manufactured two false
+event-study leads before being caught (see
+[`DESIGN_LOCKUP_EVENT_STUDY.md`](DESIGN_LOCKUP_EVENT_STUDY.md) §9–§10).
+
+The curation SQL now routes to `ipo_event_terms_needs_review` with reason
+`implausible_event_date` any term where:
+
+- a post-listing event type (`stabilization_*`, `greenshoe_*` except
+  `greenshoe_granted`, `cornerstone_lockup_expiry`, `pre_ipo_investor_unlock`)
+  is dated before `ipo_master.listing_date`; or
+- a day-30 event type (`stabilization_end`, `greenshoe_expiry`) is dated
+  under `listing_date + 20 days` (the HK price-stabilizing rules put these
+  ~30 days after listing).
+
+13 terms are currently caught, including `03378` (cornerstone expiry 8 days
+pre-listing), `02706`/`01989`/`01609` (greenshoe/stabilization dates 1 day
+pre-listing), and `00068` (stabilization end at listing + 3 days).
+
+Note on `status`: the refill agent stages rows as `candidate`
+(extracted, sanity-passed) or `ok`; curation accepts both and routes anything
+else to review.  The analysis script has a matching defense-in-depth guard
+(`MIN_DAYS_FROM_LISTING` in `scripts/analysis/lockup_event_study.py`),
+regression-tested in `tests/unit/test_lockup_event_study.py`.
 
 ## Doctor Commands
 
@@ -56,7 +86,11 @@ make doctor-hk-ipo-data
 ```bash
 python -m scripts.analysis.lockup_event_study --event-type cornerstone_lockup_expiry
 python -m scripts.analysis.lockup_event_study --event-type greenshoe_expiry
+python -m scripts.analysis.lockup_event_study --event-type stabilization_end
 ```
+
+Results and verdicts (all nulls as of 2026-07-13) live in
+[`DESIGN_LOCKUP_EVENT_STUDY.md`](DESIGN_LOCKUP_EVENT_STUDY.md) §8–§10.
 
 ## Event-Conditioned Harness Run
 

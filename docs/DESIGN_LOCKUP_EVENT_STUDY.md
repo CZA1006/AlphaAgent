@@ -3,13 +3,16 @@
 > Minimal-viable design for the highest-theory-value untested direction:
 > using tick order flow around the **6-month lockup expiry** — HK IPO's
 > most documented anomaly.  The MVP (`scripts/analysis/lockup_event_study.py`)
-> is now built and run twice: on **proxy dates** (`listing + 6 mo`) the
-> result was **a clean negative** (§8 — the placebo caught a false
-> positive, which is the whole point of running it); on **exact
-> prospectus-extracted dates** (`ipo_event_dates_curated`) the
-> theory-predicted signature *appears* but is statistically
-> indistinguishable from the post-IPO background drift —
-> **suggestive but underpowered**, N = 14 (§9).
+> has now been run on **proxy dates** (`listing + 6 mo`): a clean negative
+> (§8 — the placebo caught a false positive); on **exact
+> prospectus-extracted dates**: an initially-promising signature that an
+> audit traced to a *single contaminated event date* — the corrected
+> N = 13 result shows **no expiry-day abnormal-return effect**, with a
+> persistent post-event OFI net-sell run as the only H1-consistent
+> residual (§9); and on the two larger event types, **greenshoe expiry
+> (56) and stabilization end (34): clean nulls** — and the run's real
+> product was catching 13 impossible curated event dates and hardening
+> the curation + script against them (§10).
 
 ---
 
@@ -199,7 +202,7 @@ to change the verdict.  *That refinement has since been done — see §9.*
 
 ---
 
-## 9. Re-run with exact prospectus dates — suggestive but underpowered
+## 9. Re-run with exact prospectus dates — corrected to a null after a contaminated event was caught
 
 The HKEX document refill (see
 [`HK_IPO_EVENT_DATA_CURATED.md`](HK_IPO_EVENT_DATA_CURATED.md)) replaced
@@ -210,61 +213,124 @@ extracted from prospectuses** (`ipo_event_dates_curated`).  Re-run:
 uv run python -m scripts.analysis.lockup_event_study --event-type cornerstone_lockup_expiry
 ```
 
-**Sample: 14 events / 13 stocks** with the exact expiry inside the tick
-window (65 curated cornerstone-lockup dates exist in total; most fall
-outside 2025-12 → 2026-06).  Smaller than the proxy study's 19 — the
-exact dates both move and filter events.
+### Correction notice (read this first)
 
-### What changed: the signature shape appears for the first time
+The first exact-date run (14 events) appeared to show the
+theory-predicted signature: AR(τ=0) = −4.17 % (the most negative day in
+the window) and H1 CAR[−1,+3] = −4.36 % — "suggestive but
+underpowered."  **That signature was an artifact.**  The §10 audit
+found that one of the 14 events, `03378`, had its curated "expiry"
+dated **2025-12-15 — eight days before the stock even listed**
+(2025-12-23).  The script snaps an event to the first trading day at or
+after the event date, so this impossible date landed on 03378's IPO
+debut, which crashed (worst early day −46 %), single-handedly
+manufacturing the "event-day selling pressure."  With the bad date
+routed to review (curation-level sanity filter + script-level guard,
+see §10), the clean result is:
 
-With proxy dates (§8), τ = 0 was a non-event — AR flat, no order-flow
-response.  With exact dates, the **theory-predicted "unlock supply"
-signature emerges at exactly τ = 0**:
-
-- **AR(τ=0) = −4.17 %** — the single most negative day in the
-  [−10, +10] window (proxy version: ~flat at the event).
-- **OFI turns persistently net-sell *after* the event**: mean OFI over
-  τ = 0…+5 sits at −0.055 to −0.121 every single day, after a mixed-sign
-  pre-event profile.  This is the "unlocked holders selling into the
-  market" pattern H1 predicts, appearing only once the event dates are
-  correct.
-
-### Hypothesis tests (honest: none reach significance)
+### Clean result (13 events / 13 stocks)
 
 | test | result | verdict |
 |---|---|---|
-| **H1** selling pressure at expiry | CAR[−1,+3] = **−4.355 %**, t = −0.81, N = 14 | ❌ right sign, *not significant* |
-| **H2** overhang scaling | corr(CAR, cornerstone %) = **+0.07**, N = 11 | ❌ no scaling (wrong sign, ~zero) |
-| **H3** pre-positioning | mean ofi(τ∈[−5,−1]) = **+0.025**, t = +0.57 | ❌ no front-running (slightly net-buy) |
-| **placebo** (CAR[−1,+3] at τ₀ − 40 d) | **−10.03 %**, t = −1.76, N = 13 | 🚨 still *more* negative than the real event |
+| **H1** selling pressure at expiry | CAR[−1,+3] = **+0.04 %**, t = +0.01, N = 13; median **+3.40 %**, sign test 8/13 positive (p = 0.58) | ❌ no event-day pressure at all |
+| **H2** overhang scaling | corr(CAR, cornerstone %) = **−0.16**, N = 10 | ❌ noise |
+| **H3** pre-positioning | mean ofi(τ∈[−5,−1]) = **+0.025**, t = +0.57 | ❌ no front-running |
+| **placebo** (CAR[−1,+3] at τ₀ − 40 d) | **−10.03 %**, t = −1.76, N = 13 | 🚨 far more negative than the real event |
 
-### Honest read: an upgrade from "clean negative" to "suggestive but underpowered"
+AR(τ=0) is −0.94 % — ordinary for this drifting panel, not a spike.
+The **one H1-consistent residual** is order flow: mean OFI is net-sell
+on every day of τ = 0…+5 (−0.06 to −0.16) after a mixed-sign pre-event
+profile.  But OFI is broadly net-sell across this post-IPO panel and
+the study has no OFI placebo, so this is weak evidence, noted rather
+than claimed.
 
-- **For the effect:** the event-day AR spike and the post-event
-  net-sell OFI run are exactly the shape H1 predicts, they appear at
-  exactly τ = 0, and they appear *only* when the proxy dates are
-  replaced with exact ones.  That is what a real-but-small effect
-  looks like when the event timestamp gets fixed.
-- **Against calling it real:** N = 14 gives H1 a t of −0.81 — nowhere
-  near significance — and the **placebo window is still more negative
-  than the event window**.  The pervasive post-IPO downward drift
-  (CAR ≈ −8.7 % by τ = 0 even before the event contributes) remains the
-  dominant feature of this panel, and 14 events cannot separate a
-  −4 % event effect from that background.  H2 (overhang scaling) and
-  H3 (pre-positioning), which would corroborate a supply-pressure
-  mechanism, both fail.
+**Conclusion: no evidence of a lockup-expiry abnormal-return effect on
+exact dates either** — the verdict returns to §8's, now on correct
+timestamps.  Not promotable, not tradable, not an anomaly.  The
+decisive variable is unchanged: **more events**.  As of 2026-07-13, 15
+further cornerstone expiries have already occurred after the panel's
+last date (2026-06-26) and 22 more arrive by 2026-09-30 — refreshing
+the tick/daily ingestion roughly doubles N immediately and brings it
+to ~50 by early Q4.
 
-**Conclusion:** the exact dates changed the verdict from "no
-expiry-specific effect" (§8) to "**the expiry-specific signature is
-now visible but cannot be distinguished from background drift at
-N = 14**."  Not promotable, not tradable, not claimed as an anomaly.
-The decisive variable is unchanged from §8 and from the microstructure
-study: **more events** — the sample grows automatically as the tick
-archive and IPO count accumulate.
+---
 
-**Nearer-term follow-up:** the same curated tables hold much larger
-event samples inside the tick window — **greenshoe_expiry (59 events)**
-and **stabilization_end (38 events)** vs cornerstone lockup's 14.
-Running the identical script/placebo methodology on those event types
-is the cheapest next test of whether *any* scheduled IPO event moves
-order flow at current data scale.
+## 10. Greenshoe expiry & stabilization end — clean nulls, and the audit that mattered
+
+The same script and hypotheses were run on the two much larger curated
+event types inside the tick window:
+
+```bash
+uv run python -m scripts.analysis.lockup_event_study --event-type greenshoe_expiry
+uv run python -m scripts.analysis.lockup_event_study --event-type stabilization_end
+```
+
+### The raw first run was a trap
+
+The unaudited output looked spectacular: mean AR(τ=0) = **+8.7 %**
+(greenshoe, 59 events) and **+13.7 %** (stabilization end, 38 events),
+H1 t ≈ +2.0.  Every part of that was an artifact:
+
+1. **Impossible curated dates snapped onto IPO day-1 pops.**  Three
+   stocks (`02706`, `01989`, `01609`) had greenshoe/stabilization dates
+   curated to **one day before their listing**; `00068`'s stabilization
+   end sat at listing + 3 days.  The event-alignment rule (first
+   trading day ≥ event date) mapped all of them onto the first trading
+   day(s) — day-1 moves of +244 %, +119 %, +101 %, +34 % — which
+   contributed essentially the entire mean.  Median AR(τ=0) was
+   ≈ 0 and only ~50 % of events were positive.
+2. **The placebo was mechanically N = 0.**  These events sit ~30 days
+   after listing, so the τ₀ − 40 d placebo always fell before listing
+   and silently vanished — the study ran with no control at all.
+3. **The two event types are largely the same day.**  27 of the 34
+   stabilization-end dates are identical (stock, date) pairs to
+   greenshoe-expiry dates (both are the day-30 boundary of the HK
+   price-stabilizing rules) — not two independent samples.
+
+### Fixes (now in the pipeline, regression-tested)
+
+- **Curation-level sanity filter** (`scripts/sql/ipo_event_terms_curated.sql`):
+  post-listing event types dated before listing, or day-30 types dated
+  under listing + 20 d, are routed to `ipo_event_terms_needs_review`
+  with reason `implausible_event_date` — **13 rows caught** across
+  event types, including the `03378` date that contaminated §9.
+- **Script-level guard** (`MIN_DAYS_FROM_LISTING`) drops any such event
+  that reaches the analysis, loudly.
+- **Robust statistics**: H1 now also reports the median CAR and a
+  two-sided binomial sign test — the mean/t-test is not trustworthy
+  under IPO day-1 fat tails.
+- **Two-sided placebo**: τ₀ − 40 d *and* τ₀ + 40 d, so early-life
+  events get a functioning control.
+
+### Clean results
+
+| | greenshoe_expiry (N = 56) | stabilization_end (N = 34) |
+|---|---|---|
+| AR(τ=0) mean / median / % positive | +2.10 % / +0.40 % / 52 % | +0.70 % / −0.54 % / 38 % |
+| H1 CAR[−1,+3] mean | +3.41 % (t = +1.84) | +2.13 % (t = +1.23) |
+| H1 median / sign test | +0.07 % / 29/56 pos (p = 0.89) | +0.07 % / 18/34 pos (p = 0.86) |
+| placebo CAR (τ₀ + 40 d) | +2.07 % (t = +1.31, N = 45) | +1.15 % (t = +0.47, N = 25) |
+| H3 pre-event OFI | −0.023 (t = −1.56) | −0.041 (t = −2.07) |
+
+The residual positive means are pure right-tail skew (medians ≈ 0, sign
+tests ≈ coin flip) and the placebo windows show the same magnitudes as
+the "event" windows.  H2 uses cornerstone overhang, which is not the
+relevant treatment size for these event types — reported for
+completeness, not interpreted.  The nominally significant
+stabilization-end H3 is the panel-wide post-IPO net-sell OFI drift, not
+an event-specific signal (no OFI placebo exists to separate them).
+
+**Conclusion: no evidence that greenshoe expiry or stabilization end
+moves abnormal returns at the current data scale — a clean null on the
+largest event samples we have.**  Theory would predict *negative*
+pressure when stabilization support is withdrawn; neither the sign nor
+the shape appears.  The economically sensible read: the day-30 boundary
+is fully anticipated and priced, and (per the §8/§9 lesson) whatever
+drama exists in young HK IPOs lives in the general post-listing drift,
+not in scheduled calendar events.
+
+The lasting value of this run is infrastructural: the curated event
+contract now rejects impossible dates by construction, and the event
+study is robust to the exact failure modes (fat tails, missing
+placebo, contaminated timestamps) that produced three false leads in a
+row before controls caught them.

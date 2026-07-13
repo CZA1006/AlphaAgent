@@ -91,20 +91,32 @@ two LLMs over a shared out-of-sample window the baskets did not hold up.
   (`ipo_event_dates_curated`, `ipo_event_features_daily`) for greenshoe,
   stabilization, and cornerstone lockup research.  Known Bloomberg
   lockup anomalies are kept out of truth tables and routed to review.
-- **Lockup-expiry event study, run twice honestly**
+- **HK IPO event studies — three event types, all honest nulls, and a
+  data bug caught**
   (see [`DESIGN_LOCKUP_EVENT_STUDY.md`](DESIGN_LOCKUP_EVENT_STUDY.md)):
-  on `listing + 6 mo` **proxy dates** (19 events) — a clean negative,
-  with the placebo catching what would otherwise be a false positive.
-  Re-run on **exact prospectus dates** (14 events / 13 stocks) — the
-  theory-predicted signature appears for the first time (AR(τ=0)
-  = −4.17 %, the most negative day in the window; OFI persistently
-  net-sell over τ = 0…+5), but H1 CAR[−1,+3] = −4.36 % is not
-  significant (t = −0.81, N = 14), overhang scaling (H2) and
-  front-running (H3) both fail, and the placebo window is *still more
-  negative* (−10.03 %) — post-IPO drift dominates.  Verdict:
-  **suggestive but underpowered**, not an established anomaly.  Larger
-  same-method samples are queued: greenshoe_expiry (59 events in tick
-  window) and stabilization_end (38).
+  - *Cornerstone lockup expiry*: clean negative on `listing + 6 mo`
+    proxy dates (19 events, §8).  The exact-prospectus-date re-run
+    initially looked "suggestive" (AR(τ=0) = −4.17 %), but an audit
+    traced that entire signature to **one curated date that predated
+    the stock's listing** (03378) snapping onto its IPO-debut crash.
+    Corrected (N = 13): H1 CAR[−1,+3] = +0.04 % (median +3.4 %, 8/13
+    positive) — **no expiry-day effect**; a persistent post-event OFI
+    net-sell run is the only residual, noted not claimed (§9).
+  - *Greenshoe expiry (56) and stabilization end (34)*: **clean
+    nulls** — the raw means (+8.7 %/+13.7 % at τ=0!) were entirely
+    manufactured by 4 more impossible curated dates landing on day-1
+    pops; medians ≈ 0, sign tests ≈ coin flip, placebo windows match
+    "event" windows.  27 of 34 stabilization ends are the same
+    (stock, date) as greenshoe expiries — one day-30 boundary, not two
+    samples (§10).
+  - *Infrastructure hardened*: the curation SQL now routes
+    **13 implausible event dates** (pre-listing, or day-30 types under
+    listing + 20 d) to `needs_review` by construction; the event-study
+    script gained a matching guard, median/sign-test statistics
+    (IPO fat tails break the t-test), and a two-sided placebo —
+    all regression-tested.  Sample sizes grow with ingestion: 15
+    further lockup expiries already occurred after the panel's last
+    date (2026-06-26), 22 more by 2026-09-30.
 
 ---
 

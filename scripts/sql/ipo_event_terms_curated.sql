@@ -17,26 +17,61 @@ FROM `bloomberg-database-0629.hk_ipo_research.hkex_document_registry_refill_stag
 WHERE run_id = latest_run_id;
 
 CREATE OR REPLACE TABLE `bloomberg-database-0629.hk_ipo_research.ipo_event_terms_needs_review` AS
+WITH staged AS (
+  SELECT
+    c.*,
+    -- Post-listing events cannot precede listing, and the HK price-stabilizing
+    -- rules put stabilization end / greenshoe expiry ~30 days after listing.
+    -- Extraction errors here are catastrophic downstream: an "expiry" dated
+    -- before listing snaps onto the IPO day-1 pop in event studies.
+    (
+      m.listing_date IS NOT NULL
+      AND c.event_date IS NOT NULL
+      AND (
+        (
+          c.event_type IN (
+            'stabilization_start', 'stabilization_trade', 'stabilization_end',
+            'greenshoe_expiry', 'greenshoe_full_exercise',
+            'greenshoe_partial_exercise', 'greenshoe_lapse',
+            'cornerstone_lockup_expiry', 'pre_ipo_investor_unlock'
+          )
+          AND c.event_date < m.listing_date
+        )
+        OR (
+          c.event_type IN ('stabilization_end', 'greenshoe_expiry')
+          AND c.event_date < DATE_ADD(m.listing_date, INTERVAL 20 DAY)
+        )
+      )
+    ) AS implausible_event_date
+  FROM `bloomberg-database-0629.hk_ipo_research.ipo_event_terms_refill_candidate_staging` c
+  LEFT JOIN `bloomberg-database-0629.hk_ipo_research.ipo_master` m
+    ON c.stock_code = m.stock_code
+  WHERE c.run_id = latest_run_id
+)
 SELECT
-  *,
+  * EXCEPT (implausible_event_date),
   CASE
-    WHEN status IS NULL OR status != 'ok' THEN COALESCE(status, 'missing_status')
+    -- The refill agent stages rows as 'candidate' (extracted, sanity-passed)
+    -- or 'ok'; anything else is an agent-side failure or explicit review flag.
+    WHEN status IS NULL OR status NOT IN ('ok', 'candidate')
+      THEN COALESCE(status, 'missing_status')
     WHEN event_date IS NULL THEN 'missing_event_date'
     WHEN source_url IS NULL OR source_url = '' THEN 'missing_source_url'
     WHEN source_doc_id IS NULL OR source_doc_id = '' THEN 'missing_source_doc_id'
     WHEN source_text IS NULL OR source_text = '' THEN 'missing_source_text'
+    WHEN implausible_event_date THEN 'implausible_event_date'
     WHEN confidence IS NOT NULL AND confidence < 0.5 THEN 'low_confidence'
     ELSE 'needs_review'
   END AS review_reason,
   CURRENT_TIMESTAMP() AS curated_at_utc
-FROM `bloomberg-database-0629.hk_ipo_research.ipo_event_terms_refill_candidate_staging`
-WHERE run_id = latest_run_id
-  AND (
-    status IS NULL OR status != 'ok'
+FROM staged
+WHERE (
+    status IS NULL OR status NOT IN ('ok', 'candidate')
     OR event_date IS NULL
     OR source_url IS NULL OR source_url = ''
     OR source_doc_id IS NULL OR source_doc_id = ''
     OR source_text IS NULL OR source_text = ''
+    OR implausible_event_date
     OR (confidence IS NOT NULL AND confidence < 0.5)
   );
 
