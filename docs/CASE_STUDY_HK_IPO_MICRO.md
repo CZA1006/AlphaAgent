@@ -166,7 +166,38 @@ disjoint + cost + long-only pipeline is what turns "a real lead" into
    constraint).
 2. **Event-conditioned microstructure** — the HKEX document refill now
    provides exact greenshoe, stabilization, and cornerstone lockup dates.
-   Re-run event-conditioned factors as the tick archive grows.
-3. **Selection fix** — promote on *persistence* (cross-fold / sub-window
-   stability), not train-IC; recalibrate the tail-concentration gate
-   for IPO first-day spikes.
+   Event studies on those dates so far are honest nulls (see
+   [`DESIGN_LOCKUP_EVENT_STUDY.md`](DESIGN_LOCKUP_EVENT_STUDY.md) §8–§10).
+3. ~~**Selection fix**~~ **Built and backtested — a mixed result**
+   (2026-07-13).  `alpha_harness/evaluators/persistence.py` scores
+   factors by sub-window rank-IC sign consistency + stability instead
+   of train-window mean;
+   `scripts/analysis/hk_ipo_persistence_selection.py` replays the
+   selection on this study's 12-factor answer key (4 embargoed
+   sub-windows inside the train window; top-4 baskets; same test
+   window).  Honest findings:
+   - The known trap (`high-low − rel_spread`, highest train rank-IC,
+     flipped OOS) is **excluded by construction** — its fold profile
+     (+0.33/+0.21/−0.03/+0.15) loses to four factors positive in every
+     fold.  The persistence basket's OOS rank-IC **doubles**
+     (+0.0156 → +0.0329) and its internal correlation drops
+     (+0.45 → +0.34).
+   - **But neither ordering predicts OOS at the factor level** on this
+     one window: selector→OOS Spearman is −0.55 (train-IC) vs −0.51
+     (persistence) — the best OOS factors were *low*-persistence, and
+     the persistence basket's long-only hedged net is *worse*
+     (+0.0085 vs +0.0174).  One 40-day window cannot validate a
+     selector; this is a mechanism demonstration, not proof.
+   - **The tail-concentration hypothesis was refuted**: excluding each
+     stock's first 5 trading days flips the gate on 0/12 factors (the
+     concentration is real, not a debut artifact).  The sharper
+     finding: 4 of the 5 gate-firing factors were OOS-*positive*
+     (including the best performers) — on this panel the gate's
+     criterion mispredicts OOS failure.  Recalibration should demote
+     or re-threshold the gate for IPO profiles, not exclude debut
+     days.
+   - **Decision:** the persistence machinery is in the harness and
+     unit-tested, but stays *opt-in* until the lengthened OOS window
+     can arbitrate — changing the default selector on one window's
+     evidence would repeat the original mistake in the other
+     direction.

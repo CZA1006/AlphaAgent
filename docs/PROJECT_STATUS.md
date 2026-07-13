@@ -57,6 +57,20 @@ two LLMs over a shared out-of-sample window the baskets did not hold up.
 - **Operator surface** — `validate_strict`, `combine_factors`,
   `refine_factor`, `inspect_composite`, `list_{factors,cycles,trails}`,
   `doctor`; memory + SQL registry backends behind protocols.
+- **Persistence-first selection machinery**
+  (`alpha_harness/evaluators/persistence.py`): factors can be ordered
+  by sub-window rank-IC sign consistency + stability instead of
+  train-window mean IC — the fix for the case-study failure where the
+  strict gates promoted the hottest-train-IC factor (which flipped
+  OOS).  Backtested on the 12-factor HK IPO answer key: it excludes
+  the trap factor by construction and doubles the basket's OOS
+  rank-IC (+0.0156 → +0.0329), but on one 40-day window neither
+  ordering predicts per-factor OOS rank (Spearman ≈ −0.5 for both) —
+  so it stays **opt-in** until a longer OOS window arbitrates.  The
+  companion tail-concentration audit refuted the "IPO debut spike"
+  hypothesis (0/12 gate flips) and instead showed the gate criterion
+  itself mispredicting OOS on this panel (4/5 gate-firing factors
+  were OOS-positive).
 - **~50 test files**, ruff-clean, with regression tests for each fixed
   audit finding.
 
