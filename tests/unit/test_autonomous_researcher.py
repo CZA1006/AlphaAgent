@@ -157,6 +157,8 @@ def test_execute_uses_post_run_policy_to_select_next_iteration_topic(tmp_path) -
     assert record.iterations[0].next_decision["action"] == "switch_topic"
     assert record.iterations[0].next_decision["next_topic_id"] == "hk_ipo_cost_realism_oos"
     assert record.iterations[1].selected_topic_id == "hk_ipo_cost_realism_oos"
+    assert record.next_decision["action"] == "continue_topic"
+    assert record.next_decision["next_topic_id"] == "hk_ipo_cost_realism_oos"
     assert first_theme == "HK IPO event-conditioned microstructure signals"
     assert second_theme == "HK IPO implementability and cost realism"
 

@@ -216,7 +216,11 @@ def _build_research_run_summary(
             report_payloads.append(full_report or row)
     return ResearchRunSummary(
         market=record.market,
-        selected_topic_id=record.selected_topic_id,
+        selected_topic_id=(
+            record.iterations[-1].selected_topic_id
+            if record.iterations
+            else record.selected_topic_id
+        ),
         status=record.status,
         validation_reports=[
             validation_report_summary_from_payload(payload) for payload in report_payloads
