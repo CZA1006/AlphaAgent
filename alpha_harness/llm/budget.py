@@ -62,6 +62,8 @@ class TokenBudget:
     total_tokens_spent: int = field(default=0, init=False)
     cost_usd_spent: float = field(default=0.0, init=False)
     calls: int = field(default=0, init=False)
+    actual_cost_calls: int = field(default=0, init=False)
+    estimated_cost_calls: int = field(default=0, init=False)
 
     def __post_init__(self) -> None:
         if self.max_total_tokens is not None and self.max_total_tokens < 0:
@@ -102,14 +104,20 @@ class TokenBudget:
         prompt_tokens: int,
         completion_tokens: int,
         total_tokens: int,
+        actual_cost_usd: float | None = None,
     ) -> None:
         """Record one call's usage and raise if it pushes over a cap."""
         self.calls += 1
         self.total_tokens_spent += max(0, total_tokens)
-        call_cost = (
-            (prompt_tokens / 1000.0) * self.prompt_cost_per_1k
-            + (completion_tokens / 1000.0) * self.completion_cost_per_1k
-        )
+        if actual_cost_usd is not None:
+            call_cost = max(0.0, actual_cost_usd)
+            self.actual_cost_calls += 1
+        else:
+            call_cost = (
+                (prompt_tokens / 1000.0) * self.prompt_cost_per_1k
+                + (completion_tokens / 1000.0) * self.completion_cost_per_1k
+            )
+            self.estimated_cost_calls += 1
         self.cost_usd_spent += call_cost
 
         reasons: list[str] = []
@@ -166,12 +174,21 @@ class BudgetedLLMClient:
         prompt = int(usage.get("prompt_tokens", 0))
         completion = int(usage.get("completion_tokens", 0))
         total = int(usage.get("total_tokens", prompt + completion))
+        cost_value = usage.get("cost")
+        actual_cost = (
+            float(cost_value)
+            if isinstance(cost_value, int | float)
+            and not isinstance(cost_value, bool)
+            and cost_value >= 0
+            else None
+        )
 
         # debit() raises BudgetExceededError if this call overshoots.
         self._budget.debit(
             prompt_tokens=prompt,
             completion_tokens=completion,
             total_tokens=total,
+            actual_cost_usd=actual_cost,
         )
         return response
 

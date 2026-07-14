@@ -207,6 +207,8 @@ def test_snapshot_budget_reads_duck_typed_object() -> None:
         calls = 3
         prompt_cost_per_1k = 0.001
         completion_cost_per_1k = 0.002
+        actual_cost_calls = 2
+        estimated_cost_calls = 1
 
     snap = snapshot_budget(_B())
     assert isinstance(snap, BudgetSnapshot)
@@ -215,6 +217,8 @@ def test_snapshot_budget_reads_duck_typed_object() -> None:
     assert snap.calls == 3
     assert snap.prompt_cost_per_1k == pytest.approx(0.001)
     assert snap.completion_cost_per_1k == pytest.approx(0.002)
+    assert snap.actual_cost_calls == 2
+    assert snap.estimated_cost_calls == 1
 
 
 # ── list_cycles CLI ─────────────────────────────────────────────────────────

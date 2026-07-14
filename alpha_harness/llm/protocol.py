@@ -59,7 +59,7 @@ class LLMResponse(BaseModel):
     content: str
     model: str
     finish_reason: str | None = None
-    usage: dict[str, int] = Field(default_factory=dict)
+    usage: dict[str, int | float | bool] = Field(default_factory=dict)
     raw: dict[str, Any] = Field(default_factory=dict)
 
 

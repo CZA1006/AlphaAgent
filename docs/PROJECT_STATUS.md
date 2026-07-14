@@ -60,10 +60,14 @@ two LLMs over a shared out-of-sample window the baskets did not hold up.
   two-invocation CLI integration test verifies the cross-process path.
 - **Typed cost-replay executor** — after event-conditioned discovery promotes
   candidates, the Director passes their exact validation cycle ids into a
-  no-LLM, no-mutation replay at 15 bps. Schema-v4 validation reports capture
+  no-LLM, no-mutation replay at 15 bps. Schema-v5 validation reports capture
   candidate source, source cycles, panel fingerprint, and cost provenance;
   snapshot mismatches fail closed. Discovery promotions and replay survivors
   are counted separately.
+- **Provider-reported LLM cost accounting** — OpenRouter's `usage.cost` is
+  preserved through the typed response, call log, budget ledger, and validation
+  report. Explicit token rates remain a fallback and reports distinguish actual
+  cost calls from estimated calls.
 - **Typed event-truth audit executor** — a read-only five-check BigQuery task
   writes generic research-task artifacts and feeds deterministic issue counts
   back to the post-run policy. The 2026-07-14 live smoke found 280 review rows

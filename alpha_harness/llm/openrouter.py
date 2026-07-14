@@ -142,11 +142,14 @@ def _parse_response(body: dict[str, Any]) -> LLMResponse:
         )
 
     usage_raw = body.get("usage") or {}
-    usage: dict[str, int] = {}
+    usage: dict[str, int | float | bool] = {}
     for key in ("prompt_tokens", "completion_tokens", "total_tokens"):
         value = usage_raw.get(key)
         if isinstance(value, int):
             usage[key] = value
+    cost = usage_raw.get("cost")
+    if isinstance(cost, int | float) and not isinstance(cost, bool) and cost >= 0:
+        usage["cost"] = float(cost)
 
     return LLMResponse(
         content=content,

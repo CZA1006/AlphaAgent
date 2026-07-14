@@ -62,6 +62,22 @@ def test_logger_creates_file_and_writes_jsonl(tmp_path: Path) -> None:
         assert rec["error"] is None
 
 
+def test_logger_records_provider_reported_cost(tmp_path: Path) -> None:
+    log_path = tmp_path / "cost.jsonl"
+    inner = MockLLMClient(
+        handler=lambda _r: LLMResponse(
+            content="ok",
+            model="mock/model",
+            usage={"prompt_tokens": 5, "completion_tokens": 2, "cost": 0.0001},
+        )
+    )
+
+    LoggingLLMClient(inner, LLMCallLogger(log_path, "cost")).complete(_req())
+
+    [record] = _read_records(log_path)
+    assert record["response"]["cost_usd"] == pytest.approx(0.0001)
+
+
 def test_logger_redacts_full_prompt_content(tmp_path: Path) -> None:
     log_path = tmp_path / "cycle2.jsonl"
     secret = "A" * 500

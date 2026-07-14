@@ -17,7 +17,7 @@ from alpha_harness.llm import (
 )
 
 
-def _mock_with_usage(*usages: dict[str, int]) -> MockLLMClient:
+def _mock_with_usage(*usages: dict[str, int | float | bool]) -> MockLLMClient:
     """Build a MockLLMClient that returns LLMResponses with the given usage dicts."""
     queue = list(usages)
 
@@ -104,6 +104,28 @@ def test_cost_budget_enforced_with_rates() -> None:
 
     with pytest.raises(BudgetExceededError, match="cost budget exceeded"):
         client.complete(_req())
+
+
+def test_provider_reported_cost_overrides_rate_estimate() -> None:
+    budget = TokenBudget(
+        max_cost_usd=0.01,
+        prompt_cost_per_1k=10.0,
+        completion_cost_per_1k=10.0,
+    )
+    inner = _mock_with_usage(
+        {
+            "prompt_tokens": 100,
+            "completion_tokens": 100,
+            "total_tokens": 200,
+            "cost": 0.0004,
+        }
+    )
+
+    BudgetedLLMClient(inner, budget).complete(_req())
+
+    assert budget.cost_usd_spent == pytest.approx(0.0004)
+    assert budget.actual_cost_calls == 1
+    assert budget.estimated_cost_calls == 0
 
 
 def test_no_caps_set_is_passthrough() -> None:

@@ -95,9 +95,10 @@ export ALPHA_AGENT_PROMPT_COST_PER_1K=<prompt-rate>
 export ALPHA_AGENT_COMPLETION_COST_PER_1K=<completion-rate>
 ```
 
-Validation schema v4 records those rates, cumulative tokens, calls, and USD
-spend. The 2026-07-14 first run predated this guard: its `$0.0036` figure was
-an external estimate, not a reproducible artifact value.
+Validation schema v5 records provider-reported `usage.cost`, cumulative tokens,
+calls, and the fallback rates. It also distinguishes actual-cost calls from
+estimated calls. The 2026-07-14 first run predated this guard: its `$0.0036`
+figure was an external estimate, not a reproducible artifact value.
 
 The first run's sole candidate was replayed on the same panel fingerprint after
 the global-holdout fix and rejected: rank-IC fell from +0.0230 in training to

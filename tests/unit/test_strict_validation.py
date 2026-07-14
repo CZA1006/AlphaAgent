@@ -249,7 +249,7 @@ def test_writer_round_trips_payload(tmp_path: Path) -> None:
     assert path is not None and path.is_file()
     payload = json.loads(path.read_text())
     assert payload["cycle_id"] == "c-rt"
-    assert payload["schema_version"] == 4
+    assert payload["schema_version"] == 5
     assert payload["memory_scope_id"] == "scope-1"
     assert payload["data_fingerprint"] == "data-1"
     assert payload["n_promoted"] == 1

@@ -43,6 +43,8 @@ class BudgetSnapshot(BaseModel):
     calls: int = 0
     prompt_cost_per_1k: float = 0.0
     completion_cost_per_1k: float = 0.0
+    actual_cost_calls: int = 0
+    estimated_cost_calls: int = 0
 
 
 class ExperimentThumbnail(BaseModel):
@@ -360,4 +362,6 @@ def snapshot_budget(budget: Any | None) -> BudgetSnapshot | None:
         calls=int(getattr(budget, "calls", 0)),
         prompt_cost_per_1k=float(getattr(budget, "prompt_cost_per_1k", 0.0)),
         completion_cost_per_1k=float(getattr(budget, "completion_cost_per_1k", 0.0)),
+        actual_cost_calls=int(getattr(budget, "actual_cost_calls", 0)),
+        estimated_cost_calls=int(getattr(budget, "estimated_cost_calls", 0)),
     )

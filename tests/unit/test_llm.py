@@ -142,6 +142,17 @@ class TestOpenRouterClient:
             "prompt_tokens": 5, "completion_tokens": 2, "total_tokens": 7
         }
 
+    def test_complete_preserves_provider_reported_cost(self) -> None:
+        body = _ok_body()
+        body["usage"]["cost"] = 0.000321
+        http = httpx.Client(transport=_mock_transport(body=body))
+
+        response = OpenRouterClient(
+            OpenRouterConfig(api_key="sk"), http_client=http
+        ).complete(LLMRequest(messages=[LLMMessage(role="user", content="hi")]))
+
+        assert response.usage["cost"] == pytest.approx(0.000321)
+
     def test_sends_auth_and_attribution_headers(self) -> None:
         captured: list[httpx.Request] = []
         http = httpx.Client(

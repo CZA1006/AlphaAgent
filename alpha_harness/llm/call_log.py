@@ -148,6 +148,9 @@ def _build_record(
                 + int(usage.get("completion_tokens", 0)),
             )),
         }
+        cost = usage.get("cost")
+        if isinstance(cost, int | float) and not isinstance(cost, bool) and cost >= 0:
+            resp_record["cost_usd"] = float(cost)
 
     return {
         "ts": datetime.now(tz=UTC).isoformat(timespec="milliseconds"),

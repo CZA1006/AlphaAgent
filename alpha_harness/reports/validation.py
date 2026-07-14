@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_VALIDATION_DIR = Path("artifacts/validations")
 VALIDATION_INDEX_NAME = "_index.jsonl"
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 # ── Schema ──────────────────────────────────────────────────────────────────
