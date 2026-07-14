@@ -11,6 +11,7 @@ import pytest
 
 from alpha_harness.regimes import STRICT_REGIME, StrictRegime, get_regime
 from alpha_harness.reports.validation import (
+    FactorThumbnail,
     StrictValidationReport,
     StrictValidationReportWriter,
     build_validation_report,
@@ -34,9 +35,10 @@ from alpha_harness.schemas.experiment import (
     PromotionTrail,
 )
 from alpha_harness.schemas.factor import FactorSpec
-from alpha_harness.schemas.hypothesis import Hypothesis
+from alpha_harness.schemas.hypothesis import AssetClass, Hypothesis
 from scripts.validate_strict import (
     _dataframe_fingerprint,
+    _load_replay_hypotheses,
     _validation_memory_scope_id,
 )
 
@@ -201,6 +203,7 @@ def _minimal_report(cycle_id: str = "c1") -> StrictValidationReport:
         cycle_id=cycle_id,
         regime_trail_id="t1",
         memory_scope_id="scope-1",
+        data_fingerprint="data-1",
         started_at=now,
         finished_at=now,
         n_proposals=2,
@@ -219,8 +222,9 @@ def test_writer_round_trips_payload(tmp_path: Path) -> None:
     assert path is not None and path.is_file()
     payload = json.loads(path.read_text())
     assert payload["cycle_id"] == "c-rt"
-    assert payload["schema_version"] == 2
+    assert payload["schema_version"] == 3
     assert payload["memory_scope_id"] == "scope-1"
+    assert payload["data_fingerprint"] == "data-1"
     assert payload["n_promoted"] == 1
     rows = read_validation_index(tmp_path)
     assert len(rows) == 1
@@ -277,6 +281,52 @@ def test_read_reports_filters_trail_excludes_current_and_sorts(tmp_path: Path) -
 def test_read_reports_rejects_negative_limit(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="limit must be >= 0"):
         read_reports(tmp_path, limit=-1)
+
+
+def test_load_replay_hypotheses_uses_exact_promoted_sources(tmp_path: Path) -> None:
+    report = _minimal_report("source-1").model_copy(
+        update={
+            "factors": [
+                FactorThumbnail(
+                    factor_id="promoted",
+                    expression="rank(close)",
+                    decision=ExperimentDecision.PROMOTE_CANDIDATE.value,
+                ),
+                FactorThumbnail(
+                    factor_id="rejected",
+                    expression="rank(volume)",
+                    decision=ExperimentDecision.REJECT.value,
+                ),
+            ],
+        },
+    )
+    StrictValidationReportWriter(tmp_path).write(report)
+
+    hypotheses = _load_replay_hypotheses(
+        validation_dir=tmp_path,
+        source_cycle_ids=["source-1"],
+        data_fingerprint="data-1",
+        limit=4,
+        asset_class=AssetClass.HK_EQUITY,
+    )
+
+    assert [hypothesis.text for hypothesis in hypotheses] == ["rank(close)"]
+    assert hypotheses[0].source == "validation_replay"
+    assert hypotheses[0].asset_class is AssetClass.HK_EQUITY
+    assert "source_factor:promoted" in hypotheses[0].tags
+
+
+def test_load_replay_hypotheses_rejects_snapshot_mismatch(tmp_path: Path) -> None:
+    StrictValidationReportWriter(tmp_path).write(_minimal_report("source-1"))
+
+    with pytest.raises(ValueError, match="different data snapshot"):
+        _load_replay_hypotheses(
+            validation_dir=tmp_path,
+            source_cycle_ids=["source-1"],
+            data_fingerprint="other-data",
+            limit=4,
+            asset_class=AssetClass.HK_EQUITY,
+        )
 
 
 def test_dataframe_fingerprint_is_row_order_invariant_and_content_sensitive() -> None:

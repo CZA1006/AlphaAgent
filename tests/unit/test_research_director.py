@@ -7,6 +7,7 @@ import pytest
 from alpha_harness.director import (
     ResearchDirector,
     ResearchDirectorContext,
+    ResearchExecutorKind,
     build_hk_ipo_context,
 )
 
@@ -48,6 +49,9 @@ def test_hk_ipo_director_selects_event_microstructure_topic(tmp_path) -> None:
         [topic.priority for topic in plan.topics],
         reverse=True,
     )
+    cost_topic = next(topic for topic in plan.topics if topic.topic_id == "hk_ipo_cost_realism_oos")
+    assert cost_topic.executor is ResearchExecutorKind.REPLAY_PROMOTED
+    assert cost_topic.validation_args[cost_topic.validation_args.index("--cost-bps") + 1] == "15.0"
 
 
 def test_hk_ipo_director_surfaces_known_data_gaps(tmp_path) -> None:

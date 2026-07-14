@@ -79,6 +79,27 @@ def test_policy_stops_failed_or_no_progress_runs() -> None:
     assert no_progress.action == NextResearchAction.STOP_NO_PROGRESS
 
 
+def test_policy_stops_after_bounded_cost_replay() -> None:
+    decision = ResearchPostRunPolicy().decide(
+        ResearchRunSummary(
+            market="hk_ipo",
+            selected_topic_id="hk_ipo_cost_realism_oos",
+            status="completed",
+            validation_reports=[
+                ValidationReportSummary(
+                    cycle_id="cost-1",
+                    n_proposals=3,
+                    n_promoted=1,
+                    n_rejected=2,
+                ),
+            ],
+        ),
+    )
+
+    assert decision.action == NextResearchAction.STOP_COMPLETED
+    assert decision.next_topic_id is None
+
+
 def test_policy_treats_dry_run_as_planned_not_no_progress() -> None:
     decision = ResearchPostRunPolicy().decide(
         ResearchRunSummary(

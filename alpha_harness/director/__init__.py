@@ -8,6 +8,7 @@ from alpha_harness.director.research_director import (
     ResearchDirector,
     ResearchDirectorContext,
     ResearchDirectorPlan,
+    ResearchExecutorKind,
     ResearchTopicPlan,
     build_hk_ipo_context,
 )
@@ -30,6 +31,7 @@ __all__ = [
     "ResearchDirector",
     "ResearchDirectorContext",
     "ResearchDirectorPlan",
+    "ResearchExecutorKind",
     "ResearchPostRunPolicy",
     "ResearchRunSummary",
     "ResearchTopicPlan",

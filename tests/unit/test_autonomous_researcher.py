@@ -61,6 +61,7 @@ def test_build_validation_argv_applies_budget_and_no_write(tmp_path) -> None:
     assert argv[argv.index("--llm") + 1] == "mock"
     assert argv[argv.index("--n-candidates") + 1] == "3"
     assert argv[argv.index("--n-cycles") + 1] == "2"
+    assert argv[argv.index("--candidate-source") + 1] == "propose"
     assert argv[argv.index("--token-budget") + 1] == "1000"
     assert argv[argv.index("--cost-budget-usd") + 1] == "0.25"
     assert "--no-write" in argv
@@ -157,10 +158,13 @@ def test_execute_uses_post_run_policy_to_select_next_iteration_topic(tmp_path) -
     assert record.iterations[0].next_decision["action"] == "switch_topic"
     assert record.iterations[0].next_decision["next_topic_id"] == "hk_ipo_cost_realism_oos"
     assert record.iterations[1].selected_topic_id == "hk_ipo_cost_realism_oos"
-    assert record.next_decision["action"] == "continue_topic"
-    assert record.next_decision["next_topic_id"] == "hk_ipo_cost_realism_oos"
+    assert record.next_decision["action"] == "stop_completed"
     assert first_theme == "HK IPO event-conditioned microstructure signals"
     assert second_theme == "HK IPO implementability and cost realism"
+    assert commands[1][commands[1].index("--candidate-source") + 1] == "replay_promoted"
+    assert commands[1][commands[1].index("--n-cycles") + 1] == "1"
+    assert commands[1][commands[1].index("--source-cycle-id") + 1] == ("execute-switch-i01")
+    assert commands[1][commands[1].index("--cost-bps") + 1] == "15.0"
 
 
 def test_execute_stops_when_validation_writes_no_new_rows(tmp_path) -> None:

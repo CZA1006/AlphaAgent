@@ -29,6 +29,13 @@ class DataGapSeverity(StrEnum):
     BLOCKING = "blocking"
 
 
+class ResearchExecutorKind(StrEnum):
+    """Deterministic execution path attached to a research topic."""
+
+    PROPOSE = "propose"
+    REPLAY_PROMOTED = "replay_promoted"
+
+
 class DatasetStatus(BaseModel):
     """Compact health snapshot for one dataset used by a research track."""
 
@@ -53,6 +60,7 @@ class ResearchTopicPlan(BaseModel):
     """A candidate research topic plus the command needed to test it."""
 
     topic_id: str
+    executor: ResearchExecutorKind = ResearchExecutorKind.PROPOSE
     theme: str
     priority: int
     rationale: str
@@ -94,8 +102,13 @@ class ResearchDirectorPlan(BaseModel):
         raise ValueError(f"selected topic not present: {self.selected_topic_id}")
 
 
-def _hk_ipo_validation_args(*, theme: str, extra_guidance: str) -> list[str]:
-    return [
+def _hk_ipo_validation_args(
+    *,
+    theme: str,
+    extra_guidance: str,
+    cost_bps: float | None = None,
+) -> list[str]:
+    args = [
         "--data-source",
         "bigquery",
         "--universe",
@@ -119,6 +132,9 @@ def _hk_ipo_validation_args(*, theme: str, extra_guidance: str) -> list[str]:
         "--extra-guidance",
         extra_guidance,
     ]
+    if cost_bps is not None:
+        args.extend(["--cost-bps", str(cost_bps)])
+    return args
 
 
 def _hk_ipo_make_command(args: list[str]) -> str:
@@ -363,7 +379,11 @@ class ResearchDirector:
             "liquidity, holdout decay, and post-cost quantile spread. Prefer lower-turnover "
             "variants that remain stable outside the first listing week."
         )
-        cost_args = _hk_ipo_validation_args(theme=cost_theme, extra_guidance=cost_guidance)
+        cost_args = _hk_ipo_validation_args(
+            theme=cost_theme,
+            extra_guidance=cost_guidance,
+            cost_bps=15.0,
+        )
 
         data_review_theme = "HK IPO event truth and document review"
         data_review_guidance = (
@@ -438,6 +458,7 @@ class ResearchDirector:
             ),
             ResearchTopicPlan(
                 topic_id="hk_ipo_cost_realism_oos",
+                executor=ResearchExecutorKind.REPLAY_PROMOTED,
                 theme=cost_theme,
                 priority=75,
                 rationale=(

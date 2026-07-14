@@ -98,6 +98,15 @@ precedence, and reports from another data snapshot or evaluation contract are
 excluded. This makes feedback durable across autonomous iterations without
 requiring Postgres for local runs.
 
+Topics carry a typed executor. Discovery uses `propose`; the
+`hk_ipo_cost_realism_oos` topic uses `replay_promoted`. On the switch, the
+autonomous runner passes the exact promoted source cycle ids to
+`validate_strict`, which reloads only those expressions, verifies the input
+panel fingerprint, skips the LLM and mutation paths, and evaluates once at
+15 bps instead of the 5 bps discovery baseline. The validation report records
+the candidate source, source cycle ids, data fingerprint, and cost assumption.
+The bounded run stops after this replay for operator inspection.
+
 ## What Is Not Fully Automated Yet
 
 - **No scheduler** — an operator starts each run; nothing re-invokes the
@@ -107,10 +116,10 @@ requiring Postgres for local runs.
 - **Event studies live outside the loop** — `scripts/analysis/*.py`
   (microstructure OOS, lockup/greenshoe/stabilization event studies) are
   operator-run analyses; the director does not schedule or read them.
-- **Topics share one executor** — topic switches currently change the theme
-  and guidance passed to `validate_strict`; cost replay, event-truth review,
-  and raw-tick materialization do not yet dispatch distinct deterministic
-  tools.
+- **Two topics still share the proposer executor** — event-truth review and
+  raw-tick materialization currently change prompt guidance but do not yet
+  dispatch document-review or feature-build tools. Cost replay now has a
+  separate deterministic execution path.
 - **Persistence selection is experimental** — `combine_factors` exposes
   `--selection-strategy persistence --top-k K`, and records that choice in
   its report and promotion trail, including the scoring-formula version. The

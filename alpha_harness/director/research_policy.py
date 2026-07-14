@@ -15,6 +15,7 @@ class NextResearchAction(StrEnum):
     CONTINUE_TOPIC = "continue_topic"
     SWITCH_TOPIC = "switch_topic"
     OPEN_DATA_REVIEW = "open_data_review"
+    STOP_COMPLETED = "stop_completed"
     STOP_FAILED = "stop_failed"
     STOP_NO_PROGRESS = "stop_no_progress"
 
@@ -107,6 +108,18 @@ class ResearchPostRunPolicy:
                     "Event-conditioned microstructure produced promotions; next step is "
                     "implementability, turnover, cost, and holdout stress rather than "
                     "repeating the same candidate family."
+                ),
+                evidence=evidence,
+                total_promoted=total_promoted,
+                total_rejected=total_rejected,
+                rejected_by_gate=rejected_by_gate,
+            )
+        if summary.selected_topic_id == "hk_ipo_cost_realism_oos":
+            return PostRunDecision(
+                action=NextResearchAction.STOP_COMPLETED,
+                rationale=(
+                    "Promoted discovery candidates were replayed under the cost-stress "
+                    "contract; stop this bounded run and inspect the deterministic report."
                 ),
                 evidence=evidence,
                 total_promoted=total_promoted,

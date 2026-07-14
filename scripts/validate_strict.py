@@ -47,6 +47,7 @@ from alpha_harness.artifacts import (
     TrailRegistryWriter,
 )
 from alpha_harness.data.synthetic import generate_price_panel
+from alpha_harness.director import ResearchExecutorKind
 from alpha_harness.evaluators.promotion_judge import PromotionJudge
 from alpha_harness.evaluators.signal_quality import SignalQualityEvaluator
 from alpha_harness.evaluators.walk_forward import WalkForwardEvaluator
@@ -76,10 +77,12 @@ from alpha_harness.reports.validation import (
     StrictValidationReport,
     StrictValidationReportWriter,
     build_validation_report,
+    read_report,
     read_reports,
 )
 from alpha_harness.schemas.evaluation import EvaluationRequest
-from alpha_harness.schemas.experiment import PromotionTrail
+from alpha_harness.schemas.experiment import ExperimentDecision, PromotionTrail
+from alpha_harness.schemas.hypothesis import AssetClass, Hypothesis
 from alpha_harness.service import AlphaHarnessService
 
 logging.basicConfig(
@@ -399,6 +402,18 @@ def _build_parser() -> argparse.ArgumentParser:
         default=5,
         help="How many hypotheses to draw from the proposer.",
     )
+    p.add_argument(
+        "--candidate-source",
+        choices=[kind.value for kind in ResearchExecutorKind],
+        default=ResearchExecutorKind.PROPOSE.value,
+        help="Generate candidates with the proposer or replay exact promoted factors.",
+    )
+    p.add_argument(
+        "--source-cycle-id",
+        action="append",
+        default=[],
+        help="Exact validation cycle to source promoted factors from; repeatable.",
+    )
 
     # Budget guardrails (Round 4A.1) — apply to the real-LLM path.
     p.add_argument(
@@ -441,6 +456,12 @@ def _build_parser() -> argparse.ArgumentParser:
             "the deeper gates (walk-forward, tail concentration, holdout) "
             "to near-miss candidates."
         ),
+    )
+    p.add_argument(
+        "--cost-bps",
+        type=float,
+        default=None,
+        help="Override the regime cost assumption for deterministic stress replay.",
     )
 
     # Round 4A.4 — proposer memory digest across multi-cycle runs.
@@ -495,6 +516,7 @@ def _build_eval_request(
     regime: StrictRegime,
     factor_id: str,
     df: pd.DataFrame,
+    cost_bps: float | None = None,
 ) -> EvaluationRequest:
     ts_dates = pd.to_datetime(df["timestamp"]).dt.date
     return EvaluationRequest(
@@ -505,14 +527,75 @@ def _build_eval_request(
         label=regime.label_definition(),
         profile=regime.evaluation_profile(),
         neutralize=regime.neutralize,
-        cost_bps=regime.cost_bps,
+        cost_bps=regime.cost_bps if cost_bps is None else cost_bps,
         holdout=regime.holdout_policy(),
     )
+
+
+def _load_replay_hypotheses(
+    *,
+    validation_dir: Path | str,
+    source_cycle_ids: list[str],
+    data_fingerprint: str,
+    limit: int,
+    asset_class: AssetClass,
+) -> list[Hypothesis]:
+    """Load exact promoted expressions from explicitly named source reports."""
+    if not source_cycle_ids:
+        raise ValueError("replay_promoted requires at least one --source-cycle-id")
+    if limit < 1:
+        raise ValueError("--n-candidates must be >= 1")
+
+    hypotheses: list[Hypothesis] = []
+    seen_expressions: set[str] = set()
+    for cycle_id in source_cycle_ids:
+        report = read_report(validation_dir, cycle_id)
+        if report is None:
+            raise ValueError(f"source validation report not found: {cycle_id}")
+        if not report.data_fingerprint:
+            raise ValueError(
+                f"source validation report {cycle_id} predates data fingerprints",
+            )
+        if report.data_fingerprint != data_fingerprint:
+            raise ValueError(
+                f"source validation report {cycle_id} uses a different data snapshot",
+            )
+        for factor in report.factors:
+            if factor.decision != ExperimentDecision.PROMOTE_CANDIDATE.value:
+                continue
+            if factor.expression in seen_expressions:
+                continue
+            seen_expressions.add(factor.expression)
+            hypotheses.append(
+                Hypothesis(
+                    text=factor.expression,
+                    rationale=(
+                        f"Deterministic replay of promoted factor {factor.factor_id} "
+                        f"from validation cycle {cycle_id}."
+                    ),
+                    source="validation_replay",
+                    asset_class=asset_class,
+                    tags=[
+                        "cost_stress_replay",
+                        f"source_cycle:{cycle_id}",
+                        f"source_factor:{factor.factor_id}",
+                    ],
+                ),
+            )
+            if len(hypotheses) >= limit:
+                return hypotheses
+    if not hypotheses:
+        raise ValueError("source validation reports contain no promoted factors")
+    return hypotheses
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     cycle_id = args.cycle_id or f"strict-{uuid.uuid4().hex[:12]}"
+    candidate_source = ResearchExecutorKind(args.candidate_source)
+    if args.cost_bps is not None and args.cost_bps < 0:
+        print("error: --cost-bps must be >= 0", file=sys.stderr)
+        return 2
 
     # ── Data ────────────────────────────────────────────────────────────
     try:
@@ -528,7 +611,7 @@ def main(argv: list[str] | None = None) -> int:
         args.regime,
         regime.ic_threshold,
         regime.rank_ic_threshold,
-        regime.cost_bps,
+        regime.cost_bps if args.cost_bps is None else args.cost_bps,
     )
     judge_thresholds = regime.judge_thresholds()
     inner_evaluator = SignalQualityEvaluator(price_data)
@@ -572,29 +655,12 @@ def main(argv: list[str] | None = None) -> int:
         judge_thresholds=judge_thresholds,
     )
 
-    # ── Proposer (mock by default; --llm openrouter calls the real API) ──
-    try:
-        llm_client = _build_llm_client(args, cycle_id=cycle_id)
-    except RuntimeError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 2
-    proposer = HypothesisProposer(
-        llm_client=llm_client,
-        compiler=FactorDslCompiler(),
-    )
-
     # ── Build the eval request once; HarnessAgentAdapter reuses it ──────
     eval_request = _build_eval_request(
         regime=regime,
         factor_id="pending",
         df=price_data,
-    )
-    adapter = HarnessAgentAdapter(
-        orchestrator=orch,
-        eval_request=eval_request,
-        experiment_registry=experiments,
-        proposer=proposer,
-        refinement_runner=runner,
+        cost_bps=args.cost_bps,
     )
     regime_trail = PromotionTrail.from_inputs(
         evaluation_request=eval_request,
@@ -606,14 +672,48 @@ def main(argv: list[str] | None = None) -> int:
             "embargo_days": regime.embargo_days,
         },
     )
+    data_fingerprint = _dataframe_fingerprint(price_data)
     memory_scope_id = _validation_memory_scope_id(
         eval_request,
         regime_trail_id=regime_trail.trail_id,
-        data_fingerprint=_dataframe_fingerprint(price_data),
+        data_fingerprint=data_fingerprint,
     )
+    adapter: HarnessAgentAdapter | None = None
+    replay_hypotheses: list[Hypothesis] = []
+    if candidate_source is ResearchExecutorKind.PROPOSE:
+        try:
+            llm_client = _build_llm_client(args, cycle_id=cycle_id)
+        except RuntimeError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        proposer = HypothesisProposer(
+            llm_client=llm_client,
+            compiler=FactorDslCompiler(),
+        )
+        adapter = HarnessAgentAdapter(
+            orchestrator=orch,
+            eval_request=eval_request,
+            experiment_registry=experiments,
+            proposer=proposer,
+            refinement_runner=runner,
+        )
+    else:
+        try:
+            replay_hypotheses = _load_replay_hypotheses(
+                validation_dir=args.validation_dir,
+                source_cycle_ids=list(args.source_cycle_id),
+                data_fingerprint=data_fingerprint,
+                limit=args.n_candidates,
+                asset_class=(
+                    AssetClass.HK_EQUITY if args.data_source == "bigquery" else AssetClass.US_EQUITY
+                ),
+            )
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
     prior_reports = (
         []
-        if args.no_memory
+        if args.no_memory or candidate_source is ResearchExecutorKind.REPLAY_PROMOTED
         else read_reports(
             args.validation_dir,
             regime_trail_id=regime_trail.trail_id,
@@ -629,14 +729,16 @@ def main(argv: list[str] | None = None) -> int:
             regime_trail.trail_id,
         )
     # ── Multi-cycle loop with proposer memory (Round 4A.4) ──────────────
-    n_cycles = max(1, args.n_cycles)
+    n_cycles = (
+        1 if candidate_source is ResearchExecutorKind.REPLAY_PROMOTED else max(1, args.n_cycles)
+    )
     reports: list[StrictValidationReport] = []
     for i in range(n_cycles):
         sub_cycle_id = cycle_id if n_cycles == 1 else f"{cycle_id}-c{i + 1:02d}"
         sub_started = datetime.now(UTC)
 
         # Build memory digest from accumulated experiments BEFORE this cycle.
-        if args.no_memory:
+        if args.no_memory or candidate_source is ResearchExecutorKind.REPLAY_PROMOTED:
             prior_memory = ""
         else:
             recent = experiments.list_recent(limit=args.memory_depth)
@@ -659,27 +761,32 @@ def main(argv: list[str] | None = None) -> int:
                     len(recent),
                 )
 
-        try:
-            adapter.run_theme(
-                ThemeCycleRequest(
-                    theme=args.theme,
-                    n_candidates=args.n_candidates,
-                    extra_guidance=args.extra_guidance,
-                    tags=["validate_strict"],
-                    prior_memory=prior_memory,
-                ),
-            )
-        except BudgetExceededError as exc:
-            logger.error("Cycle %d halted by budget guard: %s", i + 1, exc)
-            print(f"error: cycle halted — {exc}", file=sys.stderr)
-            return 3
-        except Exception as exc:
-            from alpha_harness.llm.openrouter import OpenRouterError
+        if candidate_source is ResearchExecutorKind.REPLAY_PROMOTED:
+            for hypothesis in replay_hypotheses:
+                orch.run_cycle(hypothesis, eval_request)
+        else:
+            assert adapter is not None
+            try:
+                adapter.run_theme(
+                    ThemeCycleRequest(
+                        theme=args.theme,
+                        n_candidates=args.n_candidates,
+                        extra_guidance=args.extra_guidance,
+                        tags=["validate_strict"],
+                        prior_memory=prior_memory,
+                    ),
+                )
+            except BudgetExceededError as exc:
+                logger.error("Cycle %d halted by budget guard: %s", i + 1, exc)
+                print(f"error: cycle halted — {exc}", file=sys.stderr)
+                return 3
+            except Exception as exc:
+                from alpha_harness.llm.openrouter import OpenRouterError
 
-            if isinstance(exc, OpenRouterError):
-                print(f"error: LLM call failed — {exc}", file=sys.stderr)
-                return 4
-            raise
+                if isinstance(exc, OpenRouterError):
+                    print(f"error: LLM call failed — {exc}", file=sys.stderr)
+                    return 4
+                raise
 
         # Report only the records produced *in this sub-cycle* — the
         # registry accumulates, so we slice off everything that existed
@@ -691,6 +798,10 @@ def main(argv: list[str] | None = None) -> int:
             regime_trail_id=regime_trail.trail_id,
             universe_id=eval_request.universe_id,
             memory_scope_id=memory_scope_id,
+            data_fingerprint=data_fingerprint,
+            candidate_source=candidate_source.value,
+            source_cycle_ids=list(args.source_cycle_id),
+            cost_bps=eval_request.cost_bps,
             started_at=sub_started,
             records=records_this_cycle,
         )

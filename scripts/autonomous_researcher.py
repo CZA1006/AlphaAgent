@@ -25,6 +25,7 @@ from alpha_harness.director import (
     PostRunDecision,
     ResearchDirector,
     ResearchDirectorPlan,
+    ResearchExecutorKind,
     ResearchPostRunPolicy,
     ResearchRunSummary,
     ResearchTopicPlan,
@@ -114,6 +115,13 @@ def _ensure_flag(argv: list[str], flag: str) -> list[str]:
     return result
 
 
+def _append_options(argv: list[str], option: str, values: Sequence[str]) -> list[str]:
+    result = list(argv)
+    for value in values:
+        result.extend([option, value])
+    return result
+
+
 def build_validation_argv(
     topic: ResearchTopicPlan,
     *,
@@ -123,21 +131,26 @@ def build_validation_argv(
     llm: Literal["mock", "openrouter"],
     n_candidates: int,
     n_cycles: int,
+    source_cycle_ids: Sequence[str] = (),
     token_budget: int | None = None,
     cost_budget_usd: float | None = None,
     no_write: bool = False,
 ) -> list[str]:
     """Return the exact ``validate_strict`` argv for a selected topic."""
     args = list(topic.validation_args)
+    args = _replace_option(args, "--candidate-source", topic.executor.value)
     args = _replace_option(args, "--llm", llm)
     args = _replace_option(args, "--n-candidates", str(n_candidates))
-    args = _replace_option(args, "--n-cycles", str(n_cycles))
+    effective_cycles = 1 if topic.executor is ResearchExecutorKind.REPLAY_PROMOTED else n_cycles
+    args = _replace_option(args, "--n-cycles", str(effective_cycles))
     args = _replace_option(args, "--cycle-id", cycle_id)
     args = _replace_option(args, "--validation-dir", str(validation_dir))
     if token_budget is not None:
         args = _replace_option(args, "--token-budget", str(token_budget))
     if cost_budget_usd is not None:
         args = _replace_option(args, "--cost-budget-usd", str(cost_budget_usd))
+    if topic.executor is ResearchExecutorKind.REPLAY_PROMOTED:
+        args = _append_options(args, "--source-cycle-id", source_cycle_ids)
     if no_write:
         args = _ensure_flag(args, "--no-write")
     args = _ensure_flag(args, "--json")
@@ -302,6 +315,12 @@ def run_autonomous_research(
     consecutive_no_promote = 0
     for iteration in range(1, config.iterations + 1):
         cycle_id = f"{run_id}-i{iteration:02d}"
+        source_cycle_ids = [
+            str(row["cycle_id"])
+            for prior_iteration in record.iterations[-1:]
+            for row in prior_iteration.validation_reports
+            if row.get("cycle_id") and int(row.get("n_promoted") or 0) > 0
+        ]
         command = build_validation_argv(
             selected,
             python_executable=python_executable,
@@ -310,6 +329,7 @@ def run_autonomous_research(
             llm=config.llm,
             n_candidates=config.n_candidates,
             n_cycles=config.n_cycles,
+            source_cycle_ids=source_cycle_ids,
             token_budget=config.token_budget,
             cost_budget_usd=config.cost_budget_usd,
             no_write=config.validation_no_write,
@@ -415,6 +435,7 @@ def run_autonomous_research(
         decision = _decide_next_step(record, config.validation_dir)
         record.iterations[-1].next_decision = json.loads(decision.model_dump_json())
         if decision.action in {
+            NextResearchAction.STOP_COMPLETED,
             NextResearchAction.STOP_FAILED,
             NextResearchAction.STOP_NO_PROGRESS,
         }:

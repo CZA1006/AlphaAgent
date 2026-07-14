@@ -56,13 +56,17 @@ two LLMs over a shared out-of-sample window the baskets did not hold up.
   proposer cycle. The scope hashes the evaluation contract and input-panel
   contents; promoted composites also surface from their artifact index. A
   two-invocation CLI integration test verifies the cross-process path.
+- **Typed cost-replay executor** — after event-conditioned discovery promotes
+  candidates, the Director passes their exact validation cycle ids into a
+  no-LLM, no-mutation replay at 15 bps. Schema-v3 validation reports capture
+  candidate source, source cycles, panel fingerprint, and cost provenance;
+  snapshot mismatches fail closed.
 - **Operator surface** — `validate_strict`, `combine_factors`,
   `refine_factor`, `inspect_composite`, `list_{factors,cycles,trails}`,
   `doctor`; memory + SQL registry backends behind protocols.
-- **Remaining autonomy gap** — Director topics still share the
-  `validate_strict` executor. Cost replay, event-truth review, raw-tick
-  materialization, event studies, and skill distillation are not yet wired
-  into one typed task loop.
+- **Remaining autonomy gap** — event-truth review, raw-tick materialization,
+  event studies, and skill distillation are not yet wired into the typed task
+  loop.
 - **Persistence-first selection machinery**
   (`alpha_harness/evaluators/persistence.py`): factors can be ordered
   by sub-window rank-IC sign consistency + stability instead of

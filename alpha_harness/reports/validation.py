@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_VALIDATION_DIR = Path("artifacts/validations")
 VALIDATION_INDEX_NAME = "_index.jsonl"
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 # ── Schema ──────────────────────────────────────────────────────────────────
@@ -84,6 +84,10 @@ class StrictValidationReport(BaseModel):
     # PromotionTrail, this changes when dates, thresholds, universe, or data
     # contents change, so proposer feedback cannot cross research samples.
     memory_scope_id: str = ""
+    data_fingerprint: str = ""
+    candidate_source: str = "propose"
+    source_cycle_ids: list[str] = Field(default_factory=list)
+    cost_bps: float = 0.0
     started_at: datetime
     finished_at: datetime
     n_proposals: int
@@ -145,6 +149,10 @@ def build_validation_report(
     regime_trail_id: str,
     universe_id: str,
     memory_scope_id: str = "",
+    data_fingerprint: str = "",
+    candidate_source: str = "propose",
+    source_cycle_ids: list[str] | None = None,
+    cost_bps: float = 0.0,
     started_at: datetime,
     records: list[ExperimentRecord],
     finished_at: datetime | None = None,
@@ -209,6 +217,10 @@ def build_validation_report(
         regime_trail_id=regime_trail_id,
         universe_id=universe_id,
         memory_scope_id=memory_scope_id,
+        data_fingerprint=data_fingerprint,
+        candidate_source=candidate_source,
+        source_cycle_ids=list(source_cycle_ids or []),
+        cost_bps=cost_bps,
         started_at=started_at,
         finished_at=finished,
         n_proposals=len(records),
@@ -303,6 +315,19 @@ def read_reports(
     return reports if limit is None else reports[:limit]
 
 
+def read_report(
+    base_dir: Path | str,
+    cycle_id: str,
+) -> StrictValidationReport | None:
+    """Load one full validation report by its exact cycle id."""
+    path = Path(base_dir) / f"{cycle_id}.json"
+    try:
+        return StrictValidationReport.model_validate_json(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        logger.warning("Unable to load validation report %s: %s", path, exc)
+        return None
+
+
 # ── Writer (mirrors PromotedArtifactWriter's atomic shape) ──────────────────
 
 
@@ -384,6 +409,10 @@ class StrictValidationReportWriter:
                 "regime_trail_id": report.regime_trail_id,
                 "universe_id": report.universe_id,
                 "memory_scope_id": report.memory_scope_id,
+                "data_fingerprint": report.data_fingerprint,
+                "candidate_source": report.candidate_source,
+                "source_cycle_ids": list(report.source_cycle_ids),
+                "cost_bps": report.cost_bps,
                 "started_at": report.started_at.isoformat(),
                 "finished_at": report.finished_at.isoformat(),
                 "n_proposals": report.n_proposals,
