@@ -1,0 +1,21 @@
+# Intraday v1 candidate factors — first-hour tick features vs daily analogs.
+# Run with: scripts.analysis.hk_ipo_micro_oos --factors-file <this> --with-intraday
+#
+# Daily-feature baselines (the case-study flagship + best OOS performer),
+# for side-by-side incremental-information comparison:
+rank(ofi) - rank(rel_spread)
+rank(ts_mean(ofi, 5)) - rank(ts_mean(realized_vol, 5))
+# Intraday analogs of the daily winners:
+rank(first_hour_ofi) - rank(first_hour_rel_spread)
+rank(ts_mean(first_hour_ofi, 5)) - rank(ts_mean(first_hour_realized_vol, 5))
+# Raw first-hour order flow / activity:
+rank(first_hour_ofi)
+rank(ts_mean(first_hour_ofi, 5))
+rank(first_hour_n_trades) - rank(first_hour_tick_volume / (first_hour_n_trades + 1))
+# Opening auction concentration (share of daily volume done in the auction):
+rank(opening_auction_trade_share)
+# Liquidity-stress candidates (spread shock vs own 20d baseline; withdrawal):
+rank(first_hour_spread_shock)
+rank(first_hour_liquidity_withdrawal)
+# Cross of early flow with early liquidity stress:
+rank(first_hour_ofi) - rank(first_hour_spread_shock)

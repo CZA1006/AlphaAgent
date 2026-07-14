@@ -52,6 +52,7 @@ DEFAULT_DATASET = os.environ.get("HK_IPO_DATASET", "hk_ipo_research")
 DEFAULT_PRICES_TABLE = "ipo_daily_prices"
 DEFAULT_MICRO_TABLE = "micro_features_daily"
 DEFAULT_EVENT_FEATURES_TABLE = "ipo_event_features_daily"
+DEFAULT_INTRADAY_TABLE = "micro_features_intraday_v1_candidate"
 DEFAULT_TICK_TABLE = "tick_events_ext"
 # 1 GiB scan cap — ipo_daily_prices is far smaller; this is a runaway guard.
 DEFAULT_MAX_BYTES_BILLED = int(os.environ.get("BQ_MAX_BYTES_BILLED", 1_073_741_824))
@@ -83,6 +84,26 @@ _MICRO_COLUMNS = (
     "tick_volume",      # summed trade size
     "avg_trade_size",   # mean trade size
     "n_quotes",         # quote-update count (provision intensity)
+)
+
+# Candidate intraday v1 features from the operator-approved raw-tick
+# materialization (7-day-expiring candidate table, frozen at 2026-06-26).
+# Opt-in only: the table is provisional and may not exist — a query
+# against a missing/expired candidate fails loudly, never silently.
+# NULL first-hour values mean "no ticks in the first hour" (real
+# thinness for 84 % of such rows; ~0.5 % of the panel is capture gaps).
+_INTRADAY_COLUMNS = (
+    "first_hour_n_trades",
+    "first_hour_tick_volume",
+    "first_hour_ofi",
+    "first_hour_rel_spread",
+    "first_hour_realized_vol",
+    "first_hour_n_quotes",
+    "opening_auction_trade_share",
+    "prior_20d_first_hour_rel_spread",
+    "prior_20d_first_hour_tick_volume",
+    "first_hour_spread_shock",
+    "first_hour_liquidity_withdrawal",
 )
 
 # Curated IPO document/event features, one row per (stock, trading date),
@@ -158,8 +179,10 @@ class BigQueryEquitiesLoader:
         prices_table: str = DEFAULT_PRICES_TABLE,
         micro_table: str = DEFAULT_MICRO_TABLE,
         event_features_table: str = DEFAULT_EVENT_FEATURES_TABLE,
+        intraday_table: str = DEFAULT_INTRADAY_TABLE,
         with_micro_features: bool = True,
         with_event_features: bool = True,
+        with_intraday_features: bool = False,
         max_bytes_billed: int = DEFAULT_MAX_BYTES_BILLED,
         client: Any | None = None,
     ) -> None:
@@ -168,8 +191,10 @@ class BigQueryEquitiesLoader:
         self._table = prices_table
         self._micro_table = micro_table
         self._event_features_table = event_features_table
+        self._intraday_table = intraday_table
         self._with_micro = with_micro_features
         self._with_event_features = with_event_features
+        self._with_intraday = with_intraday_features
         self._max_bytes_billed = max_bytes_billed
         # Injectable for tests; lazily constructed in production so importing
         # this module never requires credentials.
@@ -238,6 +263,14 @@ class BigQueryEquitiesLoader:
                 f"LEFT JOIN {fq_events} ef "
                 "ON p.stock_code = ef.stock_code AND p.date = ef.date",
             )
+        if self._with_intraday:
+            fq_intraday = f"`{self._project}.{self._dataset}.{self._intraday_table}`"
+            intraday_cols = ", ".join(f"i.{c}" for c in _INTRADAY_COLUMNS)
+            select_cols.append(intraday_cols)
+            joins.append(
+                f"LEFT JOIN {fq_intraday} i "
+                "ON p.stock_code = i.stock_code AND p.date = i.trading_date",
+            )
         sql = (
             f"SELECT {', '.join(select_cols)} "
             f"FROM {fq_prices} p "
@@ -279,7 +312,8 @@ class BigQueryEquitiesLoader:
                      "volume", "vwap", "adjustment", "source", "frequency"]
         micro_present = [c for c in _MICRO_COLUMNS if c in raw.columns]
         event_present = [c for c in _EVENT_FEATURE_COLUMNS if c in raw.columns]
-        cols = base_cols + micro_present + event_present
+        intraday_present = [c for c in _INTRADAY_COLUMNS if c in raw.columns]
+        cols = base_cols + micro_present + event_present + intraday_present
         if raw.empty:
             return pd.DataFrame(columns=cols)
 
@@ -299,6 +333,7 @@ class BigQueryEquitiesLoader:
             "vwap",
             *micro_present,
             *event_present,
+            *intraday_present,
         ):
             df[c] = pd.to_numeric(df[c], errors="coerce")
         df["symbol"] = df["symbol"].astype(str)

@@ -345,3 +345,53 @@ def test_tick_loader_requires_tick_frequency() -> None:
         assert "frequency='tick'" in str(exc)
     else:
         raise AssertionError("expected ValueError for non-tick request")
+
+
+# ── Intraday v1 candidate features (opt-in) ─────────────────────────────────
+
+
+def _raw_rows_with_intraday() -> pd.DataFrame:
+    df = _raw_rows()
+    df["first_hour_ofi"] = [0.12, -0.30, None]
+    df["first_hour_rel_spread"] = [0.004, 0.006, None]
+    df["opening_auction_trade_share"] = [0.35, 0.10, None]
+    return df
+
+
+def test_intraday_features_off_by_default() -> None:
+    client = _FakeBQClient(_raw_rows())
+    loader = BigQueryEquitiesLoader(client=client)
+    df, _ = loader.load_bars(_request())
+    assert client.last_sql is not None
+    assert "micro_features_intraday_v1_candidate" not in client.last_sql
+    assert "first_hour_ofi" not in df.columns
+
+
+def test_intraday_query_joins_candidate_table_when_enabled() -> None:
+    client = _FakeBQClient(_raw_rows_with_intraday())
+    loader = BigQueryEquitiesLoader(
+        client=client,
+        with_micro_features=False,
+        with_event_features=False,
+        with_intraday_features=True,
+    )
+    loader.load_bars(_request())
+    assert client.last_sql is not None
+    assert "micro_features_intraday_v1_candidate" in client.last_sql
+    assert "i.first_hour_ofi" in client.last_sql
+    assert "p.date = i.trading_date" in client.last_sql
+
+
+def test_intraday_features_pass_through_as_dsl_fields() -> None:
+    client = _FakeBQClient(_raw_rows_with_intraday())
+    loader = BigQueryEquitiesLoader(
+        client=client,
+        with_micro_features=False,
+        with_event_features=False,
+        with_intraday_features=True,
+    )
+    df, _ = loader.load_bars(_request())
+    for col in ("first_hour_ofi", "first_hour_rel_spread", "opening_auction_trade_share"):
+        assert col in df.columns
+        assert df[col].dtype.kind == "f"  # numeric, NULL -> NaN
+    assert df["first_hour_ofi"].isna().sum() == 1

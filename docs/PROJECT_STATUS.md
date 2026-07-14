@@ -82,6 +82,20 @@ two LLMs over a shared out-of-sample window the baskets did not hold up.
   with atomic seven-day expiration. Post-write acceptance fails closed on row
   count, stock coverage, stock/date uniqueness, date bounds, target identity,
   and expiration metadata. The autonomous runner cannot invoke this write path.
+  **Exercised live 2026-07-14**: two under-capped attempts failed closed with
+  zero billing and zero residue (external Parquet scans bill on *uncompressed*
+  logical bytes, and BigQuery re-evaluates CTEs per reference — this query
+  scans the external table ~5×, so the GCS file size is not the bound); the
+  third attempt (40 GB cap, <$0.25) created the candidate and passed all six
+  acceptance checks. The "missing first-hour features" review item was
+  dispositioned: 84 % genuine first-hour thinness, ~0.5 % of the panel is
+  capture gaps (queued for source QA). **Empirical outcome (Stage 5 of the
+  case study): the intraday v1 features mostly add no OOS value over daily
+  features — the table is left to expire; the opt-in loader/DSL wiring stays;
+  one lead (`first_hour_n_trades − first_hour_avg_trade_size`, long-only net
+  +0.0261 vs daily analog's +0.0178) is flagged for the next re-run.**  A
+  follow-up for recurring materializations: restructure the SQL to a
+  single-scan conditional aggregation (formal contract change).
 - **Operator surface** — `validate_strict`, `combine_factors`,
   `refine_factor`, `inspect_composite`, `list_{factors,cycles,trails}`,
   `doctor`; memory + SQL registry backends behind protocols.

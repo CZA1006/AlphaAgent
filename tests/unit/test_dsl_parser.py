@@ -250,3 +250,19 @@ class TestValidator:
     def test_parse_error_in_validate(self) -> None:
         errors = validate_expression("eval(close)")
         assert len(errors) > 0
+
+
+class TestIntradayCandidateFields:
+    """Intraday v1 candidate fields are DSL-addressable (opt-in loader join)."""
+
+    def test_intraday_fields_parse(self) -> None:
+        for field in (
+            "first_hour_ofi",
+            "first_hour_rel_spread",
+            "opening_auction_trade_share",
+            "first_hour_spread_shock",
+            "first_hour_liquidity_withdrawal",
+            "prior_20d_first_hour_tick_volume",
+        ):
+            ast = parse_expression(f"rank({field})")
+            assert ast["args"][0] == {"type": "field", "name": field}

@@ -54,6 +54,14 @@ ALLOWED_FIELDS = frozenset({
     "is_near_cornerstone_lockup_5d", "is_pre_stabilization_end_5d",
     "is_near_stabilization_end_5d",
     "is_stabilization_window_active",
+    # Intraday v1 candidate features (opt-in loader join against the
+    # 7-day-expiring micro_features_intraday_v1_candidate table; only
+    # resolve when the loader was built with_intraday_features=True)
+    "first_hour_n_trades", "first_hour_tick_volume", "first_hour_ofi",
+    "first_hour_rel_spread", "first_hour_realized_vol", "first_hour_n_quotes",
+    "opening_auction_trade_share",
+    "prior_20d_first_hour_rel_spread", "prior_20d_first_hour_tick_volume",
+    "first_hour_spread_shock", "first_hour_liquidity_withdrawal",
 })
 
 ALLOWED_FUNCTIONS = frozenset({

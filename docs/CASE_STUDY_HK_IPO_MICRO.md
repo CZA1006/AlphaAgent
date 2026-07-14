@@ -132,6 +132,45 @@ where theory said to look (order flow, which OHLCV bars can't see).
 
 ---
 
+## Stage 5 — Intraday v1 candidate features (2026-07-14): mostly no incremental value
+
+The operator-approved raw-tick materialization produced
+`micro_features_intraday_v1_candidate` (7,118 stock-days, 11 first-hour
+/ auction features, 7-day expiring).  The features were wired into the
+loader and DSL **opt-in** (`BigQueryEquitiesLoader(with_intraday_features=True)`,
+`hk_ipo_micro_oos --with-intraday`) and 9 intraday candidate factors
+were run through the same disjoint train/test + 78 bps pipeline
+(`scripts/analysis/hk_ipo_intraday_factors.txt`), with the two daily
+winners as side-by-side baselines.
+
+**Result: first-hour features are mostly noisier versions of their
+daily counterparts, not new information.**
+
+- The intraday flagship analog `rank(first_hour_ofi) −
+  rank(first_hour_rel_spread)` **failed OOS** (train +0.125 → test
+  −0.004) while the daily flagship survived (+0.138 → +0.026) —
+  first-hour OFI alone is a worse estimator than full-day OFI.
+- Sign persistence ≈ 5/9 (coin flip), vs 10/12 for the daily factor
+  set on the same windows.  Most intraday factors had negative
+  long-only net OOS.
+- **The one exception:** `rank(first_hour_n_trades) −
+  rank(first_hour_avg_trade_size)` persisted (train +0.135 → test
+  +0.026) **and beat its daily analog on the implementable form**
+  (long-only hedged net +0.0261 vs +0.0178, hit 59 %).  Early
+  trade-count intensity may time the activity signal better than the
+  full-day version.  One factor out of nine on a 40-day window is
+  within multiple-comparison noise — recorded as a *lead*, not a
+  finding.
+
+**Disposition:** the candidate table is left to expire (2026-07-21);
+no permanent table is promoted.  The loader/DSL wiring stays (opt-in,
+inert when the table is absent — a query against an expired candidate
+fails loudly).  Re-materialize and re-run when the OOS window
+lengthens; the `first_hour_n_trades` lead is the specific thing to
+check first.
+
+---
+
 ## The real bottleneck: data quantity
 
 The signal isn't limited by the factors or the engine — it's limited
@@ -155,7 +194,9 @@ disjoint + cost + long-only pipeline is what turns "a real lead" into
   event dates and daily event features.
 - `scripts/analysis/hk_ipo_micro_oos.py` — the per-factor
   train/test persistence + cost-realism + long-only-hedged analysis
-  used here.
+  used here (`--with-intraday` joins the intraday v1 candidate table).
+- `scripts/analysis/hk_ipo_intraday_factors.txt` — the Stage-5
+  intraday candidate factors + daily baselines.
 - `scripts/analysis/lockup_event_study.py` — exact-event study over
   curated HKEX/prospectus event dates.
 - `configs/universes/hk_ipo.txt` — the 77-name universe.

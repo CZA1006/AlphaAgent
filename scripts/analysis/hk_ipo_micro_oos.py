@@ -154,11 +154,22 @@ def main(argv: list[str] | None = None) -> int:
         help="Override; default = measured mean rel_spread/2 on the test window.",
     )
     p.add_argument("--project", default=os.environ.get("GCP_PROJECT", "bloomberg-database-0629"))
+    p.add_argument(
+        "--with-intraday",
+        action="store_true",
+        help="Join the intraday v1 candidate table (opt-in; the 7-day "
+        "candidate table must exist or the query fails loudly).",
+    )
     args = p.parse_args(argv)
 
     syms = _load_universe(args.universe)
     exprs = _load_universe(args.factors_file)
-    loader = create_equities_loader(source="bigquery")
+    if args.with_intraday:
+        from alpha_harness.data.bigquery_loader import BigQueryEquitiesLoader
+
+        loader = BigQueryEquitiesLoader(with_intraday_features=True)
+    else:
+        loader = create_equities_loader(source="bigquery")
 
     def panel(win: str) -> pd.DataFrame:
         s, e = _win(win)
