@@ -73,6 +73,7 @@ ALLOWED_FUNCTIONS = frozenset({
     "ts_max",
     "ts_delta",
     "ts_lag",
+    "event_decay",
     "rank",
     "zscore",
 })
@@ -350,17 +351,18 @@ def validate_ast(node: dict[str, Any]) -> list[str]:
             errors.append(
                 f"Function {name!r} expects {expected} argument(s), got {len(args)}"
             )
-        # Check that window arguments (2nd arg for ts_* and lag) are positive integers
+        # Check that window / half-life arguments are positive numeric literals.
         if name in ("ts_mean", "ts_std", "ts_sum", "ts_min", "ts_max",
-                     "ts_delta", "ts_lag", "lag") and len(args) >= 2:
+                     "ts_delta", "ts_lag", "lag", "event_decay") and len(args) >= 2:
             window_arg = args[1]
             if window_arg.get("type") != "number":
                 errors.append(
-                    f"Function {name!r} requires a numeric window argument"
+                    f"Function {name!r} requires a numeric window/half-life argument"
                 )
             elif window_arg.get("value", 0) <= 0:
                 errors.append(
-                    f"Function {name!r} window must be positive, got {window_arg['value']}"
+                    f"Function {name!r} window/half-life must be positive, "
+                    f"got {window_arg['value']}"
                 )
         for arg in args:
             errors.extend(validate_ast(arg))
@@ -392,6 +394,7 @@ def _function_arity(name: str) -> int | None:
         "ts_max": 2,
         "ts_delta": 2,
         "ts_lag": 2,
+        "event_decay": 2,
         "rank": 1,
         "zscore": 1,
     }

@@ -80,7 +80,7 @@ class TestPrompts:
         prompt = build_system_prompt()
         # Every whitelisted function must appear so the model cannot claim
         # ignorance of what's permitted.
-        for name in ("ts_mean", "rank", "zscore", "ts_delta"):
+        for name in ("ts_mean", "rank", "zscore", "ts_delta", "event_decay"):
             assert name in prompt
         for field in ("close", "volume", "vwap"):
             assert field in prompt

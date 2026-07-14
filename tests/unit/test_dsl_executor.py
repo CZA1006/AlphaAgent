@@ -133,6 +133,17 @@ class TestHandCraftedDeterministic:
         expected = pd.Series([100.0, 300.0, 450.0, 650.0, 450.0])
         pd.testing.assert_series_equal(result, expected, check_names=False)
 
+    def test_event_decay_uses_half_life_and_fills_missing_events(self) -> None:
+        df = _make_tiny_df()
+        df["days_to_next_greenshoe_expiry"] = [0.0, 5.0, 10.0, np.nan, -5.0]
+
+        result = DslExecutor(df).execute(
+            parse_expression("event_decay(days_to_next_greenshoe_expiry, 5)")
+        )
+
+        expected = pd.Series([1.0, 0.5, 0.25, 0.0, 0.5])
+        pd.testing.assert_series_equal(result, expected, check_names=False)
+
     def test_ts_min_exact(self) -> None:
         """ts_min(close, 3) with min_periods=1:
         [10, 10, 10, 11, 11]

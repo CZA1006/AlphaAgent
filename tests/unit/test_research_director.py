@@ -49,6 +49,9 @@ def test_hk_ipo_director_selects_event_microstructure_topic(tmp_path) -> None:
     assert "--data-source" in plan.selected_topic.validation_args
     assert "bigquery" in plan.selected_topic.validation_args
     assert "ipo_event_features_daily" in plan.selected_topic.data_requirements
+    assert plan.selected_topic.theme == "HK IPO continuous event-decay microstructure signals"
+    assert "event_decay(days_to_next_*" in plan.selected_topic.extra_guidance
+    assert "Do not use first_hour_*" in plan.selected_topic.extra_guidance
     assert [topic.priority for topic in plan.topics] == sorted(
         [topic.priority for topic in plan.topics],
         reverse=True,

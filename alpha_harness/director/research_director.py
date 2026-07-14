@@ -355,13 +355,18 @@ class ResearchDirector:
         self,
         context: ResearchDirectorContext,
     ) -> list[ResearchTopicPlan]:
-        event_theme = "HK IPO event-conditioned microstructure signals"
+        event_theme = "HK IPO continuous event-decay microstructure signals"
         event_guidance = (
-            "Choose factors that interact OFI, relative spread, realized volatility, "
-            "stabilization windows, greenshoe expiry, greenshoe exercise/lapse, and "
-            "cornerstone lockup expiry. Prefer event-conditioned expressions over generic "
-            "price or volume factors; explicitly avoid using Bloomberg-only anomalous "
-            "lockup dates as truth."
+            "The previous hard-window search produced 18/18 rejections because Boolean "
+            "event gates collapsed the cross-section. Every proposal must retain a daily "
+            "base microstructure signal and add a continuous interaction using "
+            "event_decay(days_to_next_*, half_life), with half_life in {5, 10, 20}. "
+            "Use OFI, relative spread, realized volatility, trade count, quote count, or "
+            "average trade size. Do not multiply by is_pre_*, is_near_*, or "
+            "is_stabilization_window_active as the sole signal. Do not use first_hour_* "
+            "fields because this loader is daily-only. Avoid Bloomberg-only anomalous "
+            "lockup dates. Prefer forms such as base_rank + event_decay(distance, 10) * "
+            "interaction_rank so non-event stocks remain in the cross-section."
         )
         event_args = _hk_ipo_validation_args(theme=event_theme, extra_guidance=event_guidance)
 
@@ -397,8 +402,8 @@ class ResearchDirector:
                 priority=100 - history_penalty,
                 rationale=(
                     "The aligned daily, microstructure, and curated event tables can already "
-                    "support autonomous hypothesis generation over greenshoe/stabilization/"
-                    "cornerstone event regimes."
+                    "support continuous event-distance interactions without collapsing "
+                    "the daily cross-section to a narrow Boolean event window."
                 ),
                 extra_guidance=event_guidance,
                 validation_command=_hk_ipo_make_command(event_args),
@@ -411,8 +416,8 @@ class ResearchDirector:
                 ],
                 success_criteria=[
                     "At least one promoted factor survives lenient validation and holdout checks.",
-                    "Promoted factors depend on curated event features, not generic "
-                    "price-only signals.",
+                    "Promoted factors contain a continuous event-decay interaction while "
+                    "retaining a non-event daily base signal.",
                     "Failure breakdown identifies whether the next bottleneck is IC, "
                     "rank IC, holdout, or turnover.",
                 ],

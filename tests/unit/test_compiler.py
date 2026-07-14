@@ -76,6 +76,23 @@ class TestFactorDslCompiler:
         with pytest.raises(DslCompilationError, match="expects 2"):
             compiler.compile(h)
 
+    def test_compiles_event_decay_with_positive_half_life(self) -> None:
+        factor = FactorDslCompiler().compile(
+            Hypothesis(text="event_decay(days_to_next_greenshoe_expiry, 10)")
+        )
+
+        assert factor.operator_tree is not None
+        assert factor.operator_tree["name"] == "event_decay"
+
+    @pytest.mark.parametrize("half_life", ["0", "-5", "close"])
+    def test_rejects_invalid_event_decay_half_life(self, half_life: str) -> None:
+        with pytest.raises(DslCompilationError, match="half-life"):
+            FactorDslCompiler().compile(
+                Hypothesis(
+                    text=f"event_decay(days_to_next_greenshoe_expiry, {half_life})"
+                )
+            )
+
     def test_preserves_hypothesis_id(self) -> None:
         compiler = FactorDslCompiler()
         h = Hypothesis(text="rank(close)")

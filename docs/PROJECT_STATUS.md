@@ -38,6 +38,11 @@ two LLMs over a shared out-of-sample window the baskets did not hold up.
   fails the build on violation.
 - **Safe factor DSL** — whitelisted fields + functions, typed AST, no
   `eval`/arbitrary code.  Deterministic, test-covered execution.
+- **Continuous event proximity** — `event_decay(distance, half_life)` maps
+  missing events to zero and decays from 1.0 by event distance. The HK IPO
+  Director now requires a daily base signal plus this continuous interaction,
+  and explicitly rejects another hard-Boolean-window search or unavailable
+  `first_hour_*` fields on the daily loader.
 - **Deterministic evaluator stack** — IC, rank-IC, quantile spread,
   turnover, cost-adjusted spread, Sharpe; sector/beta neutralization;
   multi-horizon labels.

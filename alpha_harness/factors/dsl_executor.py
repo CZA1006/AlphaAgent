@@ -20,6 +20,10 @@ meaningful; without one the executor falls back to a time-series expanding
 variant (expanding percentile-rank or expanding z-score) — this is useful
 for single-symbol backtests but is *not* true cross-sectional ranking.
 
+**Event operators** (``event_decay``) turn a calendar-distance series into a
+continuous weight. Missing events receive zero weight, avoiding the sparse
+all-zero cross-sections created by hard event-window flags.
+
 **Arithmetic** (``+``, ``-``, ``*``, ``/``, unary ``-``) follows standard
 pandas broadcast rules.  Series-on-series division replaces ``inf`` / ``-inf``
 with ``NaN`` so downstream metrics see missing data rather than unbounded
@@ -176,8 +180,28 @@ class DslExecutor:
             return self._eval_rank(args)
         if name == "zscore":
             return self._eval_zscore(args)
+        if name == "event_decay":
+            return self._eval_event_decay(args)
 
         raise DslExecutionError(f"Unknown function: {name!r}")
+
+    def _eval_event_decay(self, args: list[dict[str, Any]]) -> pd.Series:
+        """Map absolute event distance to an exponential half-life weight."""
+        if len(args) != 2:
+            raise DslExecutionError(
+                f"Function 'event_decay' requires 2 arguments, got {len(args)}"
+            )
+        distance = _ensure_series(self._eval_node(args[0]))
+        half_life_value = self._eval_node(args[1])
+        if not isinstance(half_life_value, int | float) or half_life_value <= 0:
+            raise DslExecutionError(
+                "Function 'event_decay' half-life must be a positive number"
+            )
+        weight = pd.Series(
+            np.exp(-np.log(2.0) * distance.abs() / float(half_life_value)),
+            index=distance.index,
+        )
+        return weight.fillna(0.0)
 
     def _eval_ts_function(
         self, name: str, args: list[dict[str, Any]]

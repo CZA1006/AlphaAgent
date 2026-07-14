@@ -24,6 +24,7 @@ _FUNCTION_DOCS: dict[str, str] = {
     "ts_max":    "ts_max(series, window)     — rolling maximum",
     "ts_delta":  "ts_delta(series, window)   — series - lag(series, window)",
     "ts_lag":    "ts_lag(series, window)     — alias of lag",
+    "event_decay": "event_decay(distance, half_life) — proximity weight; missing event = 0",
     "rank":      "rank(series)               — cross-sectional rank in [0,1]",
     "zscore":    "zscore(series)             — cross-sectional z-score",
 }

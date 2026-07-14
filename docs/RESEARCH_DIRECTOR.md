@@ -112,6 +112,13 @@ rejected and policy selected event-truth review. That read-only follow-up found
 0 blocking issues and 280 review rows, then emitted `stop_completed`; no extra
 LLM cycle was warranted.
 
+The next discovery contract replaces hard five-day event flags with
+`event_decay(distance, half_life)`. Each proposal must retain a daily
+microstructure base signal and add a continuous event interaction, so stocks
+without an active event remain in the cross-section. The daily-only run also
+forbids `first_hour_*` proposals unless the intraday loader is explicitly
+enabled.
+
 Each iteration: `ResearchDirector.plan` → run the selected
 `validate_strict` command → read the new validation reports →
 `ResearchPostRunPolicy.decide` picks the next topic (or stops) → the next
