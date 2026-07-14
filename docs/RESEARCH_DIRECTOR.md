@@ -81,6 +81,13 @@ make autonomous-researcher-hk-ipo-run              # --execute: actually run val
 make autonomous-researcher-hk-ipo-run ARGS="--llm openrouter --iterations 3 --cost-budget-usd 2"
 ```
 
+**Region gotcha:** the default `OPENROUTER_MODEL`
+(`anthropic/claude-sonnet-4.6`) is refused with 403 "provider Terms of
+Service" from this environment — every live run must override it, e.g.
+`export OPENROUTER_MODEL=deepseek/deepseek-chat-v3.1` (the model the
+case studies used).  The 2026-07-14 first live bounded run cost
+$0.0036 end-to-end on DeepSeek.
+
 Each iteration: `ResearchDirector.plan` → run the selected
 `validate_strict` command → read the new validation reports →
 `ResearchPostRunPolicy.decide` picks the next topic (or stops) → the next

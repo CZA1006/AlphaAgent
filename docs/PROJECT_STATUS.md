@@ -140,6 +140,21 @@ two LLMs over a shared out-of-sample window the baskets did not hold up.
 
 - Full loop exercised against **DeepSeek-Chat-v3.1** and
   **Qwen-2.5-72B** via OpenRouter on **Polygon SP-50** daily bars.
+- **First live bounded autonomous run on HK IPO (2026-07-14,
+  $0.0036 total LLM cost)**: director selected event-conditioned
+  microstructure; DeepSeek proposed 36 event-conditioned candidates
+  over 3 cycles; the six-gate judge rejected 35 (weak IC, horizon
+  sign-flips, tail concentration up to 4.9, degenerate event-gated
+  cross-sections, and 4 candidates using intraday fields absent from
+  the panel — rejected at execution exactly as designed); 1 promoted
+  under the **lenient** regime and survived the automatic 15 bps
+  cost-stress replay (`ts_delta(vwap, 2) *
+  is_near_greenshoe_expiry_5d`, turnover 0.28, net spread +0.0122).
+  **Honest caveat:** its holdout rank-IC (+0.255) is 5× the in-sample
+  value and rests on ~43 flagged stock-days across 8 stocks in the
+  tail slice — a concentration signature, and the §10 event study
+  found no unconditional greenshoe-expiry effect.  Recorded as a
+  fragile lead to confirm or kill on the untouched July data window.
 - One out-of-sample-positive basket (case study v1, post-fix); two
   out-of-sample-negative baskets (v2, v3) — see the verdict table
   below.
