@@ -253,6 +253,32 @@ _HK_IPO_EVENT_DECAY_DECOMPOSITION_CANDIDATES: list[RawProposal] = [
     ),
 ]
 
+_HK_IPO_OFI_SMOOTHING_CANDIDATES: list[RawProposal] = [
+    RawProposal(
+        expression="rank(ofi)",
+        rationale="Unsmoothed daily OFI baseline.",
+        tags=["hk_ipo", "ofi", "smoothing_gauntlet", "baseline"],
+    ),
+    *[
+        RawProposal(
+            expression=f"rank(ts_mean(ofi, {window}))",
+            rationale=f"{window}-day OFI smoothing candidate.",
+            tags=["hk_ipo", "ofi", "smoothing_gauntlet", f"window_{window}"],
+        )
+        for window in (3, 5, 10, 20)
+    ],
+    RawProposal(
+        expression="rank(ts_mean(ofi, 5)) - rank(rel_spread)",
+        rationale="Five-day OFI persistence penalized by implementation cost.",
+        tags=["hk_ipo", "ofi", "smoothing_gauntlet", "spread_penalty"],
+    ),
+    RawProposal(
+        expression="rank(ts_mean(ofi, 10)) - rank(rel_spread)",
+        rationale="Ten-day OFI persistence penalized by implementation cost.",
+        tags=["hk_ipo", "ofi", "smoothing_gauntlet", "spread_penalty"],
+    ),
+]
+
 
 def _mock_candidates_for_preset(preset: str) -> list[RawProposal]:
     if preset == "default":
@@ -261,6 +287,8 @@ def _mock_candidates_for_preset(preset: str) -> list[RawProposal]:
         return _HK_IPO_EVENT_MOCK_CANDIDATES
     if preset == "hk_ipo_event_decay_decomposition":
         return _HK_IPO_EVENT_DECAY_DECOMPOSITION_CANDIDATES
+    if preset == "hk_ipo_ofi_smoothing_gauntlet":
+        return _HK_IPO_OFI_SMOOTHING_CANDIDATES
     raise ValueError(f"unknown mock preset: {preset}")
 
 
@@ -437,13 +465,19 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--mock-preset",
-        choices=["default", "hk_ipo_events", "hk_ipo_event_decay_decomposition"],
+        choices=[
+            "default",
+            "hk_ipo_events",
+            "hk_ipo_event_decay_decomposition",
+            "hk_ipo_ofi_smoothing_gauntlet",
+        ],
         default="default",
         help=(
             "Which offline mock candidate set to use when --llm mock. "
             "'hk_ipo_events' exercises BigQuery microstructure + curated "
             "HKEX event fields; 'hk_ipo_event_decay_decomposition' replays "
-            "base/event/full components of the strongest continuous leads."
+            "base/event/full components of the strongest continuous leads; "
+            "'hk_ipo_ofi_smoothing_gauntlet' tests turnover/tail robustness."
         ),
     )
     p.add_argument(

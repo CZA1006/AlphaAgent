@@ -60,6 +60,16 @@ def test_hk_ipo_event_decay_decomposition_candidates_compile() -> None:
         assert spec.operator_tree is not None
 
 
+def test_hk_ipo_ofi_smoothing_candidates_compile() -> None:
+    compiler = FactorDslCompiler()
+    candidates = _mock_candidates_for_preset("hk_ipo_ofi_smoothing_gauntlet")
+    assert len(candidates) == 7
+    assert any("ts_mean(ofi, 20)" in candidate.expression for candidate in candidates)
+    assert sum("rel_spread" in candidate.expression for candidate in candidates) == 2
+    for candidate in candidates:
+        assert compiler.compile(Hypothesis(text=candidate.expression)).operator_tree
+
+
 def test_proposer_prompt_documents_hk_ipo_event_fields() -> None:
     prompt = build_system_prompt()
     assert "days_to_next_cornerstone_lockup" in prompt
