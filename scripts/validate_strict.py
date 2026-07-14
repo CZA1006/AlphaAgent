@@ -207,12 +207,60 @@ _HK_IPO_EVENT_MOCK_CANDIDATES: list[RawProposal] = [
     ),
 ]
 
+_HK_IPO_EVENT_DECAY_DECOMPOSITION_CANDIDATES: list[RawProposal] = [
+    RawProposal(
+        expression="rank(ts_mean(ofi, 5))",
+        rationale="Base component for the strongest holdout-positive event-decay lead.",
+        tags=["hk_ipo", "decomposition", "base", "ofi"],
+    ),
+    RawProposal(
+        expression=(
+            "event_decay(days_to_next_greenshoe_expiry, 10) * "
+            "rank(ts_delta(rel_spread, 2))"
+        ),
+        rationale="Event-only component for the smoothed OFI greenshoe lead.",
+        tags=["hk_ipo", "decomposition", "event_only", "greenshoe"],
+    ),
+    RawProposal(
+        expression=(
+            "rank(ts_mean(ofi, 5)) + "
+            "event_decay(days_to_next_greenshoe_expiry, 10) * "
+            "rank(ts_delta(rel_spread, 2))"
+        ),
+        rationale="Full smoothed OFI plus greenshoe-decay interaction lead.",
+        tags=["hk_ipo", "decomposition", "composite", "greenshoe"],
+    ),
+    RawProposal(
+        expression="rank(ofi)",
+        rationale="Base component for the daily OFI event-decay lead.",
+        tags=["hk_ipo", "decomposition", "base", "ofi"],
+    ),
+    RawProposal(
+        expression=(
+            "event_decay(days_to_next_greenshoe_expiry, 10) * "
+            "rank(ts_delta(rel_spread, 3))"
+        ),
+        rationale="Event-only component for the daily OFI greenshoe lead.",
+        tags=["hk_ipo", "decomposition", "event_only", "greenshoe"],
+    ),
+    RawProposal(
+        expression=(
+            "rank(ofi) + event_decay(days_to_next_greenshoe_expiry, 10) * "
+            "rank(ts_delta(rel_spread, 3))"
+        ),
+        rationale="Full daily OFI plus greenshoe-decay interaction lead.",
+        tags=["hk_ipo", "decomposition", "composite", "greenshoe"],
+    ),
+]
+
 
 def _mock_candidates_for_preset(preset: str) -> list[RawProposal]:
     if preset == "default":
         return _MOCK_CANDIDATES
     if preset == "hk_ipo_events":
         return _HK_IPO_EVENT_MOCK_CANDIDATES
+    if preset == "hk_ipo_event_decay_decomposition":
+        return _HK_IPO_EVENT_DECAY_DECOMPOSITION_CANDIDATES
     raise ValueError(f"unknown mock preset: {preset}")
 
 
@@ -389,12 +437,13 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--mock-preset",
-        choices=["default", "hk_ipo_events"],
+        choices=["default", "hk_ipo_events", "hk_ipo_event_decay_decomposition"],
         default="default",
         help=(
             "Which offline mock candidate set to use when --llm mock. "
             "'hk_ipo_events' exercises BigQuery microstructure + curated "
-            "HKEX event fields without making an LLM call."
+            "HKEX event fields; 'hk_ipo_event_decay_decomposition' replays "
+            "base/event/full components of the strongest continuous leads."
         ),
     )
     p.add_argument(
