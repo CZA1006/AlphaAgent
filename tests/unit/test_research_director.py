@@ -29,8 +29,12 @@ def test_hk_ipo_context_reads_recent_validation_counts(tmp_path) -> None:
         "old-2: promoted=2, rejected=3",
     ]
     event_dates = next(ds for ds in context.dataset_status if ds.name == "ipo_event_dates_curated")
+    document_registry = next(
+        ds for ds in context.dataset_status if ds.name == "hkex_document_registry_curated"
+    )
     review_gap = next(gap for gap in context.data_gaps if gap.name == "event_terms_needs_review")
     assert event_dates.rows == 593
+    assert document_registry.stocks == 77
     assert "280 rows" in review_gap.evidence
 
 
@@ -52,6 +56,12 @@ def test_hk_ipo_director_selects_event_microstructure_topic(tmp_path) -> None:
     cost_topic = next(topic for topic in plan.topics if topic.topic_id == "hk_ipo_cost_realism_oos")
     assert cost_topic.executor is ResearchExecutorKind.REPLAY_PROMOTED
     assert cost_topic.validation_args[cost_topic.validation_args.index("--cost-bps") + 1] == "15.0"
+    event_review = next(
+        topic for topic in plan.topics if topic.topic_id == "hk_ipo_event_truth_review"
+    )
+    assert event_review.executor is ResearchExecutorKind.EVENT_TRUTH_AUDIT
+    assert event_review.validation_args == []
+    assert "scripts.audit_hk_ipo_event_truth" in event_review.validation_command
 
 
 def test_hk_ipo_director_surfaces_known_data_gaps(tmp_path) -> None:
@@ -60,7 +70,7 @@ def test_hk_ipo_director_surfaces_known_data_gaps(tmp_path) -> None:
 
     assert "nonpositive_tick_values" in gap_names
     assert "event_terms_needs_review" in gap_names
-    assert "prospectus_allotment_coverage" in gap_names
+    assert "prospectus_allotment_coverage" not in gap_names
     assert "bloomberg_lockup_anomalies" in gap_names
     assert "raw_tick_intraday_loop_gap" in gap_names
 

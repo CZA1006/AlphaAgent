@@ -34,6 +34,7 @@ class ResearchExecutorKind(StrEnum):
 
     PROPOSE = "propose"
     REPLAY_PROMOTED = "replay_promoted"
+    EVENT_TRUTH_AUDIT = "event_truth_audit"
 
 
 class DatasetStatus(BaseModel):
@@ -241,6 +242,16 @@ def build_hk_ipo_context(
                 aligned_to_daily=None,
                 notes="HKEX/prospectus-derived event dates with source evidence.",
             ),
+            DatasetStatus(
+                name="hkex_document_registry_curated",
+                rows=846,
+                stocks=77,
+                aligned_to_daily=None,
+                notes=(
+                    "Prospectus and allotment-results announcement coverage is 77/77 "
+                    "in the 2026-07-14 event-truth audit."
+                ),
+            ),
         ],
         data_gaps=[
             DataGap(
@@ -261,18 +272,6 @@ def build_hk_ipo_context(
                 recommended_action=(
                     "Prioritize rows that affect greenshoe, stabilization, cornerstone, "
                     "lockup, and tranche unlock dates; promote only source-backed terms."
-                ),
-            ),
-            DataGap(
-                name="prospectus_allotment_coverage",
-                severity=DataGapSeverity.WARNING,
-                evidence=(
-                    "HKEX prospectus and allotment-results coverage is 75 stocks "
-                    "versus 77-stock panel."
-                ),
-                recommended_action=(
-                    "Identify the two uncovered listing stocks and backfill prospectus/allotment "
-                    "documents or mark them explicitly unavailable."
                 ),
             ),
             DataGap(
@@ -391,11 +390,6 @@ class ResearchDirector:
             "Prioritize missing or ambiguous greenshoe, stabilization, cornerstone, and "
             "lockup terms that affect the validation window."
         )
-        data_review_args = _hk_ipo_validation_args(
-            theme=data_review_theme,
-            extra_guidance=data_review_guidance,
-        )
-
         history_penalty = 5 if context.promoted_factor_count + context.rejected_factor_count else 0
         return [
             ResearchTopicPlan(
@@ -432,18 +426,20 @@ class ResearchDirector:
             ),
             ResearchTopicPlan(
                 topic_id="hk_ipo_event_truth_review",
+                executor=ResearchExecutorKind.EVENT_TRUTH_AUDIT,
                 theme=data_review_theme,
                 priority=85,
                 rationale=(
-                    "The event tables are usable, but 280 needs-review rows and two missing "
-                    "document-coverage names can bias lockup and greenshoe event studies."
+                    "The event tables are usable and document coverage is complete, but 280 "
+                    "needs-review rows still require a deterministic backlog audit."
                 ),
                 extra_guidance=data_review_guidance,
-                validation_command=_hk_ipo_make_command(data_review_args),
-                validation_args=data_review_args,
+                validation_command=(
+                    "uv run --extra gcp python -m scripts.audit_hk_ipo_event_truth"
+                ),
+                validation_args=[],
                 data_requirements=[
                     "event_terms_needs_review",
-                    "prospectus_allotment_coverage",
                     "bloomberg_lockup_anomalies",
                 ],
                 success_criteria=[

@@ -107,6 +107,14 @@ panel fingerprint, skips the LLM and mutation paths, and evaluates once at
 the candidate source, source cycle ids, data fingerprint, and cost assumption.
 The bounded run stops after this replay for operator inspection.
 
+`hk_ipo_event_truth_review` uses the separate `event_truth_audit` executor.
+It runs five read-only BigQuery checks for the review backlog, curated source
+evidence, implausible curated dates, daily-feature alignment, and per-document
+type coverage. Results are written as typed research-task artifacts under
+`artifacts/research_tasks/`; query failures fail closed, while data-quality
+findings are reported as `blocked` or `review_required`. The post-run policy
+consumes the task index and stops the bounded run for inspection.
+
 ## What Is Not Fully Automated Yet
 
 - **No scheduler** — an operator starts each run; nothing re-invokes the
@@ -116,10 +124,9 @@ The bounded run stops after this replay for operator inspection.
 - **Event studies live outside the loop** — `scripts/analysis/*.py`
   (microstructure OOS, lockup/greenshoe/stabilization event studies) are
   operator-run analyses; the director does not schedule or read them.
-- **Two topics still share the proposer executor** — event-truth review and
-  raw-tick materialization currently change prompt guidance but do not yet
-  dispatch document-review or feature-build tools. Cost replay now has a
-  separate deterministic execution path.
+- **Raw-tick materialization is not dispatched yet** — it still changes prompt
+  guidance instead of invoking a typed feature-build tool. Cost replay and
+  event-truth audit now have separate deterministic execution paths.
 - **Persistence selection is experimental** — `combine_factors` exposes
   `--selection-strategy persistence --top-k K`, and records that choice in
   its report and promotion trail, including the scoring-formula version. The

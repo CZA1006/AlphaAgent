@@ -85,7 +85,7 @@ def test_dry_run_writes_structured_artifact(tmp_path) -> None:
     assert record.status == "planned"
     assert record.dry_run is True
     assert record.next_decision["action"] == "continue_topic"
-    assert payload["schema_version"] == 1
+    assert payload["schema_version"] == 2
     assert payload["run_id"] == "dry-run-artifact"
     assert payload["next_decision"]["action"] == "continue_topic"
     assert payload["iterations"][0]["status"] == "planned"
@@ -184,8 +184,72 @@ def test_execute_stops_when_validation_writes_no_new_rows(tmp_path) -> None:
     assert record.status == "no_progress"
     assert record.iterations[0].status == "no_progress"
     assert record.iterations[0].stop_reason == (
-        "validate_strict succeeded but wrote no new validation reports"
+        "research command succeeded but wrote no new typed reports"
     )
+
+
+def test_execute_dispatches_event_truth_task_and_stops(tmp_path) -> None:
+    validation_dir = tmp_path / "validations"
+    task_dir = tmp_path / "tasks"
+    validation_index = validation_dir / "_index.jsonl"
+    task_index = task_dir / "_index.jsonl"
+    commands: list[list[str]] = []
+
+    def runner(argv: Sequence[str], timeout_seconds: int) -> subprocess.CompletedProcess[str]:
+        commands.append(list(argv))
+        if "scripts.validate_strict" in argv:
+            validation_dir.mkdir(parents=True, exist_ok=True)
+            cycle_id = argv[argv.index("--cycle-id") + 1]
+            validation_index.write_text(
+                json.dumps(
+                    {
+                        "cycle_id": cycle_id,
+                        "n_promoted": 0,
+                        "n_rejected": 3,
+                        "n_rejected_by_gate": {"missing_metric": 3},
+                    },
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+        else:
+            task_dir.mkdir(parents=True, exist_ok=True)
+            task_id = argv[argv.index("--task-id") + 1]
+            task_index.write_text(
+                json.dumps(
+                    {
+                        "task_id": task_id,
+                        "executor": "event_truth_audit",
+                        "status": "review_required",
+                        "blocking_issue_count": 0,
+                        "review_issue_count": 12,
+                    },
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+        return subprocess.CompletedProcess(list(argv), 0, stdout="ok", stderr="")
+
+    record = run_autonomous_research(
+        AutonomousRunnerConfig(
+            execute=True,
+            iterations=2,
+            run_id="event-truth-switch",
+            validation_dir=validation_dir,
+            task_dir=task_dir,
+            stop_after_no_promote=3,
+            no_artifact=True,
+        ),
+        command_runner=runner,
+    )
+
+    assert record.status == "completed"
+    assert record.iterations[0].next_decision["action"] == "open_data_review"
+    assert record.iterations[1].selected_topic_id == "hk_ipo_event_truth_review"
+    assert record.iterations[1].task_reports[0]["review_issue_count"] == 12
+    assert record.next_decision["action"] == "stop_completed"
+    assert commands[1][0:3] == [sys.executable, "-m", "scripts.audit_hk_ipo_event_truth"]
+    assert commands[1][commands[1].index("--artifact-dir") + 1] == str(task_dir)
 
 
 def test_execute_records_failed_validation(tmp_path) -> None:

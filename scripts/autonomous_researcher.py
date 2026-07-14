@@ -30,11 +30,13 @@ from alpha_harness.director import (
     ResearchRunSummary,
     ResearchTopicPlan,
     build_hk_ipo_context,
+    research_task_report_summary_from_payload,
     validation_report_summary_from_payload,
 )
+from alpha_harness.reports import DEFAULT_RESEARCH_TASK_DIR, read_research_task_index
 
 DEFAULT_RUN_DIR = Path("artifacts/autonomous_runs")
-RUN_SCHEMA_VERSION = 1
+RUN_SCHEMA_VERSION = 2
 
 CommandRunner = Callable[[Sequence[str], int], subprocess.CompletedProcess[str]]
 
@@ -47,6 +49,7 @@ class AutonomousRunnerConfig(BaseModel):
     iterations: int = 1
     validation_dir: Path = DEFAULT_VALIDATION_DIR
     artifact_dir: Path = DEFAULT_RUN_DIR
+    task_dir: Path = DEFAULT_RESEARCH_TASK_DIR
     run_id: str | None = None
     llm: Literal["mock", "openrouter"] = "mock"
     n_candidates: int = 12
@@ -72,6 +75,7 @@ class AutonomousIterationRecord(BaseModel):
     finished_at: datetime
     returncode: int | None = None
     validation_reports: list[dict[str, Any]] = Field(default_factory=list)
+    task_reports: list[dict[str, Any]] = Field(default_factory=list)
     stdout_tail: str = ""
     stderr_tail: str = ""
     stop_reason: str = ""
@@ -127,6 +131,7 @@ def build_validation_argv(
     *,
     python_executable: str,
     validation_dir: Path,
+    task_dir: Path = DEFAULT_RESEARCH_TASK_DIR,
     cycle_id: str,
     llm: Literal["mock", "openrouter"],
     n_candidates: int,
@@ -137,6 +142,17 @@ def build_validation_argv(
     no_write: bool = False,
 ) -> list[str]:
     """Return the exact ``validate_strict`` argv for a selected topic."""
+    if topic.executor is ResearchExecutorKind.EVENT_TRUTH_AUDIT:
+        return [
+            python_executable,
+            "-m",
+            "scripts.audit_hk_ipo_event_truth",
+            "--task-id",
+            cycle_id,
+            "--artifact-dir",
+            str(task_dir),
+            "--json",
+        ]
     args = list(topic.validation_args)
     args = _replace_option(args, "--candidate-source", topic.executor.value)
     args = _replace_option(args, "--llm", llm)
@@ -201,9 +217,11 @@ def _read_validation_index(validation_dir: Path) -> list[dict[str, Any]]:
 def _new_validation_rows(
     before: list[dict[str, Any]],
     after: list[dict[str, Any]],
+    *,
+    id_key: str = "cycle_id",
 ) -> list[dict[str, Any]]:
-    seen = {str(row.get("cycle_id")) for row in before if row.get("cycle_id")}
-    return [row for row in after if str(row.get("cycle_id")) not in seen]
+    seen = {str(row.get(id_key)) for row in before if row.get(id_key)}
+    return [row for row in after if row.get(id_key) and str(row.get(id_key)) not in seen]
 
 
 def _read_validation_report(validation_dir: Path, cycle_id: str) -> dict[str, Any] | None:
@@ -222,11 +240,13 @@ def _build_research_run_summary(
     validation_dir: Path,
 ) -> ResearchRunSummary:
     report_payloads: list[dict[str, Any]] = []
+    task_payloads: list[dict[str, Any]] = []
     for iteration in record.iterations:
         for row in iteration.validation_reports:
             cycle_id = str(row.get("cycle_id", ""))
             full_report = _read_validation_report(validation_dir, cycle_id) if cycle_id else None
             report_payloads.append(full_report or row)
+        task_payloads.extend(iteration.task_reports)
     return ResearchRunSummary(
         market=record.market,
         selected_topic_id=(
@@ -237,6 +257,9 @@ def _build_research_run_summary(
         status=record.status,
         validation_reports=[
             validation_report_summary_from_payload(payload) for payload in report_payloads
+        ],
+        task_reports=[
+            research_task_report_summary_from_payload(payload) for payload in task_payloads
         ],
         data_gap_names=[str(gap.get("name")) for gap in record.data_gaps if gap.get("name")],
     )
@@ -325,6 +348,7 @@ def run_autonomous_research(
             selected,
             python_executable=python_executable,
             validation_dir=config.validation_dir,
+            task_dir=config.task_dir,
             cycle_id=cycle_id,
             llm=config.llm,
             n_candidates=config.n_candidates,
@@ -353,6 +377,7 @@ def run_autonomous_research(
             break
 
         before = _read_validation_index(config.validation_dir)
+        before_tasks = read_research_task_index(config.task_dir)
         try:
             completed = command_runner(command, config.timeout_seconds)
             returncode = completed.returncode
@@ -370,7 +395,10 @@ def run_autonomous_research(
                     command=command,
                     started_at=started,
                     finished_at=finished,
-                    stderr_tail=f"validation timed out after {config.timeout_seconds}s: {exc}",
+                    stderr_tail=(
+                        f"research command timed out after "
+                        f"{config.timeout_seconds}s: {exc}"
+                    ),
                     stop_reason="timeout",
                 )
             )
@@ -378,17 +406,30 @@ def run_autonomous_research(
             break
 
         after = _read_validation_index(config.validation_dir)
+        after_tasks = read_research_task_index(config.task_dir)
         new_rows = _new_validation_rows(before, after)
+        new_task_rows = _new_validation_rows(
+            before_tasks,
+            after_tasks,
+            id_key="task_id",
+        )
+        if selected.executor is ResearchExecutorKind.EVENT_TRUTH_AUDIT:
+            new_rows = []
+        else:
+            new_task_rows = []
         finished = datetime.now(UTC)
         if returncode != 0:
             status: Literal["planned", "executed", "failed", "no_progress", "stopped"] = "failed"
-            stop_reason = f"validate_strict exited with {returncode}"
-        elif config.validation_no_write:
+            stop_reason = f"research command exited with {returncode}"
+        elif (
+            config.validation_no_write
+            and selected.executor is not ResearchExecutorKind.EVENT_TRUTH_AUDIT
+        ):
             status = "executed"
             stop_reason = "validation_no_write enabled; validation index was not updated"
-        elif not new_rows:
+        elif not new_rows and not new_task_rows:
             status = "no_progress"
-            stop_reason = "validate_strict succeeded but wrote no new validation reports"
+            stop_reason = "research command succeeded but wrote no new typed reports"
         else:
             status = "executed"
             stop_reason = ""
@@ -405,6 +446,7 @@ def run_autonomous_research(
                 finished_at=finished,
                 returncode=returncode,
                 validation_reports=new_rows,
+                task_reports=new_task_rows,
                 stdout_tail=stdout_tail,
                 stderr_tail=stderr_tail,
                 stop_reason=stop_reason,
@@ -419,8 +461,12 @@ def run_autonomous_research(
             break
 
         promoted = sum(int(row.get("n_promoted") or 0) for row in new_rows)
-        consecutive_no_promote = 0 if promoted else consecutive_no_promote + 1
-        if consecutive_no_promote >= config.stop_after_no_promote:
+        if selected.executor is not ResearchExecutorKind.EVENT_TRUTH_AUDIT:
+            consecutive_no_promote = 0 if promoted else consecutive_no_promote + 1
+        if (
+            selected.executor is not ResearchExecutorKind.EVENT_TRUTH_AUDIT
+            and consecutive_no_promote >= config.stop_after_no_promote
+        ):
             latest_iteration = record.iterations[-1]
             record.status = "stopped"
             latest_iteration.status = "stopped"
@@ -460,6 +506,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--iterations", type=int, default=1)
     parser.add_argument("--validation-dir", default=str(DEFAULT_VALIDATION_DIR))
     parser.add_argument("--artifact-dir", default=str(DEFAULT_RUN_DIR))
+    parser.add_argument("--task-dir", default=str(DEFAULT_RESEARCH_TASK_DIR))
     parser.add_argument("--run-id", default=None)
     parser.add_argument("--llm", choices=["mock", "openrouter"], default="mock")
     parser.add_argument("--n-candidates", type=int, default=12)
@@ -498,6 +545,15 @@ def _print_text(record: AutonomousRunRecord) -> None:
                 promoted = row.get("n_promoted", 0)
                 rejected = row.get("n_rejected", 0)
                 print(f"  - {cycle_id}: promoted={promoted}, rejected={rejected}")
+        if latest.task_reports:
+            print("task reports:")
+            for row in latest.task_reports:
+                print(
+                    f"  - {row.get('task_id', 'unknown')}: "
+                    f"status={row.get('status', 'unknown')} "
+                    f"blocking={row.get('blocking_issue_count', 0)} "
+                    f"review={row.get('review_issue_count', 0)}",
+                )
     if record.next_decision:
         print("next decision    :")
         print(f"  action         : {record.next_decision.get('action')}")
@@ -515,6 +571,7 @@ def main(argv: list[str] | None = None) -> int:
         iterations=args.iterations,
         validation_dir=Path(args.validation_dir),
         artifact_dir=Path(args.artifact_dir),
+        task_dir=Path(args.task_dir),
         run_id=args.run_id,
         llm=args.llm,
         n_candidates=args.n_candidates,

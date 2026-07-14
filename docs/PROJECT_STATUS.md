@@ -61,12 +61,16 @@ two LLMs over a shared out-of-sample window the baskets did not hold up.
   no-LLM, no-mutation replay at 15 bps. Schema-v3 validation reports capture
   candidate source, source cycles, panel fingerprint, and cost provenance;
   snapshot mismatches fail closed.
+- **Typed event-truth audit executor** — a read-only five-check BigQuery task
+  writes generic research-task artifacts and feeds deterministic issue counts
+  back to the post-run policy. The 2026-07-14 live smoke found 280 review rows
+  but zero blocking evidence/date/alignment issues and full 77/77 prospectus
+  plus allotment-announcement registry coverage.
 - **Operator surface** — `validate_strict`, `combine_factors`,
   `refine_factor`, `inspect_composite`, `list_{factors,cycles,trails}`,
   `doctor`; memory + SQL registry backends behind protocols.
-- **Remaining autonomy gap** — event-truth review, raw-tick materialization,
-  event studies, and skill distillation are not yet wired into the typed task
-  loop.
+- **Remaining autonomy gap** — raw-tick materialization, event studies, and
+  skill distillation are not yet wired into the typed task loop.
 - **Persistence-first selection machinery**
   (`alpha_harness/evaluators/persistence.py`): factors can be ordered
   by sub-window rank-IC sign consistency + stability instead of

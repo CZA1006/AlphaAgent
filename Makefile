@@ -114,6 +114,9 @@ doctor-hk-ipo-data:
 doctor-hk-ipo-events:
 	uv run --extra gcp python -m scripts.doctor_hk_ipo_events
 
+audit-hk-ipo-event-truth:
+	uv run --extra gcp python -m scripts.audit_hk_ipo_event_truth $(ARGS)
+
 research-director-hk-ipo:
 	uv run python -m scripts.research_director --market hk_ipo $(ARGS)
 

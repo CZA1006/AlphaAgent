@@ -31,6 +31,18 @@ from alpha_harness.reports.cycle_report import (
     index_path,
     read_index,
 )
+from alpha_harness.reports.research_task import (
+    DEFAULT_RESEARCH_TASK_DIR,
+    RESEARCH_TASK_INDEX_NAME,
+    ResearchTaskIssue,
+    ResearchTaskIssueSeverity,
+    ResearchTaskReport,
+    ResearchTaskReportWriter,
+    ResearchTaskStatus,
+)
+from alpha_harness.reports.research_task import (
+    read_index as read_research_task_index,
+)
 from alpha_harness.reports.validation import (
     DEFAULT_VALIDATION_DIR,
     VALIDATION_INDEX_NAME,
@@ -50,8 +62,10 @@ __all__ = [
     "COMBINATION_INDEX_NAME",
     "DEFAULT_COMBINATION_DIR",
     "DEFAULT_REPORT_DIR",
+    "DEFAULT_RESEARCH_TASK_DIR",
     "DEFAULT_VALIDATION_DIR",
     "REPORT_INDEX_NAME",
+    "RESEARCH_TASK_INDEX_NAME",
     "VALIDATION_INDEX_NAME",
     "BudgetSnapshot",
     "CombinationRecipe",
@@ -61,6 +75,11 @@ __all__ = [
     "CycleReportWriter",
     "ExperimentThumbnail",
     "FactorThumbnail",
+    "ResearchTaskIssue",
+    "ResearchTaskIssueSeverity",
+    "ResearchTaskReport",
+    "ResearchTaskReportWriter",
+    "ResearchTaskStatus",
     "StrictValidationReport",
     "StrictValidationReportWriter",
     "build_combination_report",
@@ -72,6 +91,7 @@ __all__ = [
     "read_index",
     "read_report",
     "read_reports",
+    "read_research_task_index",
     "read_validation_index",
     "recipe_id_for",
 ]

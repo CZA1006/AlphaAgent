@@ -30,6 +30,16 @@ class ValidationReportSummary(BaseModel):
     rejected_by_gate: dict[str, int] = Field(default_factory=dict)
 
 
+class ResearchTaskReportSummary(BaseModel):
+    """Compact deterministic summary of a non-factor research task."""
+
+    task_id: str
+    executor: str
+    status: str
+    blocking_issue_count: int = 0
+    review_issue_count: int = 0
+
+
 class ResearchRunSummary(BaseModel):
     """Inputs the post-run policy needs, without depending on CLI models."""
 
@@ -37,6 +47,7 @@ class ResearchRunSummary(BaseModel):
     selected_topic_id: str
     status: Literal["planned", "completed", "failed", "no_progress", "stopped"]
     validation_reports: list[ValidationReportSummary] = Field(default_factory=list)
+    task_reports: list[ResearchTaskReportSummary] = Field(default_factory=list)
     data_gap_names: list[str] = Field(default_factory=list)
 
 
@@ -86,13 +97,29 @@ class ResearchPostRunPolicy:
                 total_rejected=total_rejected,
                 rejected_by_gate=rejected_by_gate,
             )
-        if summary.status == "no_progress" or not summary.validation_reports:
+        if summary.status == "no_progress" or (
+            not summary.validation_reports and not summary.task_reports
+        ):
             return PostRunDecision(
                 action=NextResearchAction.STOP_NO_PROGRESS,
                 rationale=(
                     "Validation wrote no usable reports; stop and inspect execution plumbing."
                 ),
                 evidence=evidence,
+                total_promoted=total_promoted,
+                total_rejected=total_rejected,
+                rejected_by_gate=rejected_by_gate,
+            )
+        if summary.selected_topic_id == "hk_ipo_event_truth_review" and summary.task_reports:
+            blocking = sum(report.blocking_issue_count for report in summary.task_reports)
+            review = sum(report.review_issue_count for report in summary.task_reports)
+            return PostRunDecision(
+                action=NextResearchAction.STOP_COMPLETED,
+                rationale=(
+                    "Event-truth audit completed; stop the bounded run for deterministic "
+                    "review of blocking and backlog findings."
+                ),
+                evidence=[*evidence, f"task_blocking={blocking}", f"task_review={review}"],
                 total_promoted=total_promoted,
                 total_rejected=total_rejected,
                 rejected_by_gate=rejected_by_gate,
@@ -189,4 +216,16 @@ def validation_report_summary_from_payload(payload: dict[str, Any]) -> Validatio
             str(gate): int(count)
             for gate, count in (payload.get("n_rejected_by_gate") or {}).items()
         },
+    )
+
+
+def research_task_report_summary_from_payload(
+    payload: dict[str, Any],
+) -> ResearchTaskReportSummary:
+    return ResearchTaskReportSummary(
+        task_id=str(payload.get("task_id", "unknown")),
+        executor=str(payload.get("executor", "unknown")),
+        status=str(payload.get("status", "unknown")),
+        blocking_issue_count=int(payload.get("blocking_issue_count") or 0),
+        review_issue_count=int(payload.get("review_issue_count") or 0),
     )

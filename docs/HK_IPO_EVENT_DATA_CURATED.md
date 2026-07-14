@@ -29,11 +29,16 @@ The reproducible SQL lives in:
 From the 2026-07-13 re-curation (after adding the implausible-date sanity filter):
 
 - HKEX PDF/text uploaded: 287 PDFs and 287 text files.
-- Prospectus coverage: 75 stocks.
-- Allotment-results coverage: 75 stocks.
+- Prospectus registry coverage: 77 stocks.
+- Allotment-results announcement registry coverage: 77 stocks.
 - Refill staging rows: 846 document registry rows, 2,070 event terms, 693 Bloomberg recheck rows.
 - Curated outputs: 846 document rows, 1,790 curated event terms, 267 needs-review terms + 13 implausible-date terms, 593 event dates.
 - Daily event features: 7,118 rows, aligned to the `ipo_daily_prices` panel.
+
+The 2026-07-14 read-only event-truth audit confirmed both document types at
+77/77 coverage, zero missing source evidence in curated dates, zero implausible
+dates leaking into the curated table, and exact daily-feature key alignment.
+The remaining review backlog is 280 terms and is non-blocking.
 
 ## Known Bloomberg Anomalies
 
