@@ -68,6 +68,16 @@ two LLMs over a shared out-of-sample window the baskets did not hold up.
   preserved through the typed response, call log, budget ledger, and validation
   report. Explicit token rates remain a fallback and reports distinguish actual
   cost calls from estimated calls.
+- **Corrected bounded-loop acceptance (2026-07-14)** — DeepSeek completed three
+  proposal cycles under the global-holdout evaluator and schema-v5 budget
+  ledger: 18 proposals, 18 deterministic rejections, 0 promotions, 6,806
+  tokens, and `$0.00296483` provider-reported cost across three actual-cost
+  calls (zero estimated calls). Rejections were `threshold_ic=9`,
+  `missing_metric=6`, `other=2`, and `threshold_quantile_spread=1`; policy
+  opened event-truth review rather than spending more LLM budget. The follow-up
+  five-check audit found 0 blocking issues and 280 review-backlog rows, then
+  stopped completed. This supports event-gated cross-sectional sparsity as the
+  immediate bottleneck, not a broken event-data alignment contract.
 - **Typed event-truth audit executor** — a read-only five-check BigQuery task
   writes generic research-task artifacts and feeds deterministic issue counts
   back to the post-run policy. The 2026-07-14 live smoke found 280 review rows

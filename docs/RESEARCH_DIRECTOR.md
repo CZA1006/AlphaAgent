@@ -105,6 +105,13 @@ the global-holdout fix and rejected: rank-IC fell from +0.0230 in training to
 -0.0030 on the trailing holdout, while tail concentration reached 11.76. It is
 not a promoted research lead.
 
+The corrected live acceptance run (`autonomous-hk_ipo-20260714T103615Z-9609039a`)
+used three DeepSeek calls and recorded 6,806 tokens / `$0.00296483`, with
+`actual_cost_calls=3` and `estimated_cost_calls=0`. All 18 candidates were
+rejected and policy selected event-truth review. That read-only follow-up found
+0 blocking issues and 280 review rows, then emitted `stop_completed`; no extra
+LLM cycle was warranted.
+
 Each iteration: `ResearchDirector.plan` → run the selected
 `validate_strict` command → read the new validation reports →
 `ResearchPostRunPolicy.decide` picks the next topic (or stops) → the next
