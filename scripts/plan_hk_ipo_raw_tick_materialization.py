@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import re
 import sys
 import uuid
 from datetime import UTC, date, datetime
@@ -14,6 +13,7 @@ from typing import Any
 from alpha_harness.data.tick_materialization import (
     BigQueryDryRunEstimate,
     build_raw_tick_materialization_report,
+    validate_bigquery_identifier,
 )
 from alpha_harness.reports.research_task import (
     DEFAULT_RESEARCH_TASK_DIR,
@@ -28,13 +28,6 @@ DEFAULT_END_DATE = date(2026, 6, 26)
 DEFAULT_MAX_BYTES_BILLED = 20 * 1024**3
 DEFAULT_SQL_PATH = Path("scripts/sql/micro_features_intraday_v1.sql")
 DEFAULT_QA_SQL_PATH = Path("scripts/sql/raw_tick_nonpositive_qa.sql")
-
-
-def _validate_identifier(value: str, *, project: bool = False) -> str:
-    pattern = r"[A-Za-z0-9_-]+" if project else r"[A-Za-z0-9_]+"
-    if re.fullmatch(pattern, value) is None:
-        raise ValueError(f"invalid BigQuery identifier: {value!r}")
-    return value
 
 
 def _bigquery_runners(*, project: str, max_bytes_billed: int) -> tuple[Any, Any]:
@@ -80,8 +73,8 @@ def main(argv: list[str] | None = None) -> int:
     task_id = args.task_id or f"raw-tick-plan-{uuid.uuid4().hex[:12]}"
     started_at = datetime.now(UTC)
     try:
-        project = _validate_identifier(args.project, project=True)
-        dataset = _validate_identifier(args.dataset)
+        project = validate_bigquery_identifier(args.project, project=True)
+        dataset = validate_bigquery_identifier(args.dataset)
         if args.max_bytes_billed <= 0:
             raise ValueError("--max-bytes-billed must be > 0")
         dry_run, query = _bigquery_runners(

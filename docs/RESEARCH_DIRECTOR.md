@@ -129,6 +129,26 @@ executes only the read-only nonpositive-tick QA query. The plan is frozen at
 created. Since BigQuery dry-run does not fully estimate scans of the external
 tick table, the artifact records `cost_estimate_complete=false`.
 
+The candidate write is intentionally a separate operator action. It is not a
+Director executor and requires all approval factors in one invocation:
+
+```bash
+make plan-hk-ipo-raw-tick-materialization \
+  ARGS="--task-id raw-tick-plan-v1"
+
+make materialize-hk-ipo-raw-tick ARGS="\
+  --execute \
+  --plan-artifact artifacts/research_tasks/raw-tick-plan-v1.json \
+  --approve-sql-sha256 <hash-from-plan> \
+  --acknowledge-external-scan-cost-unknown \
+  --max-bytes-billed <operator-limit>"
+```
+
+The execution SQL cannot replace an existing table and sets a seven-day
+expiration atomically. A completed write is not accepted until the typed task
+report confirms 7,118 rows, 77 stocks, unique stock/date keys, no dates after
+2026-06-26, the exact candidate target, and valid expiration metadata.
+
 ## What Is Not Fully Automated Yet
 
 - **No scheduler** — an operator starts each run; nothing re-invokes the
@@ -139,7 +159,8 @@ tick table, the artifact records `cost_estimate_complete=false`.
   (microstructure OOS, lockup/greenshoe/stabilization event studies) are
   operator-run analyses; the director does not schedule or read them.
 - **Raw-tick writes require an operator** — the typed planner and source QA are
-  dispatched, but there is intentionally no autonomous BigQuery write path.
+  dispatched, while the hash-bound, capped write command remains outside the
+  autonomous loop.
   Auction order-book imbalance and quote-recovery speed remain blocked until
   their source fields and deterministic definitions are reviewed.
 - **Persistence selection is experimental** — `combine_factors` exposes

@@ -75,11 +75,19 @@ two LLMs over a shared out-of-sample window the baskets did not hold up.
   table scan cost, so the report marks the planner byte count incomplete. The
   2026-07-14 live read-only smoke reproduced 364,768 excluded values across
   12,632 stock/date/event-type groups and compiled all nine v1 features.
+- **Guarded raw-tick write boundary** — materialization is available only through
+  a separate operator command bound to a prior plan artifact, the exact rendered
+  SQL SHA-256, explicit acknowledgement that external scan cost is unknown, and
+  a positive `maximum_bytes_billed`. The SQL uses non-replacing `CREATE TABLE`
+  with atomic seven-day expiration. Post-write acceptance fails closed on row
+  count, stock coverage, stock/date uniqueness, date bounds, target identity,
+  and expiration metadata. The autonomous runner cannot invoke this write path.
 - **Operator surface** — `validate_strict`, `combine_factors`,
   `refine_factor`, `inspect_composite`, `list_{factors,cycles,trails}`,
   `doctor`; memory + SQL registry backends behind protocols.
-- **Remaining autonomy gap** — operator-approved raw-tick writes, event studies,
-  and skill distillation are not yet wired into the typed task loop.
+- **Remaining autonomy gap** — event studies and skill distillation are not yet
+  wired into the typed task loop. Raw-tick writes deliberately remain outside
+  autonomous dispatch.
 - **Persistence-first selection machinery**
   (`alpha_harness/evaluators/persistence.py`): factors can be ordered
   by sub-window rank-IC sign consistency + stability instead of

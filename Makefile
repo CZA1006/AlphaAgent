@@ -2,7 +2,8 @@
        db-up db-down db-status db-bootstrap db-reset check check-full clean \
        doctor doctor-mock doctor-real doctor-sql audit smoke \
        doctor-hk-ipo-data doctor-hk-ipo-events audit-hk-ipo-event-truth \
-       plan-hk-ipo-raw-tick-materialization research-director-hk-ipo \
+       plan-hk-ipo-raw-tick-materialization materialize-hk-ipo-raw-tick \
+       research-director-hk-ipo \
        run-mock run-real run-real-data run-real-sql \
        autonomous-mock autonomous-real \
        autonomous-researcher-hk-ipo autonomous-researcher-hk-ipo-run \
@@ -120,6 +121,9 @@ audit-hk-ipo-event-truth:
 
 plan-hk-ipo-raw-tick-materialization:
 	uv run --extra gcp python -m scripts.plan_hk_ipo_raw_tick_materialization $(ARGS)
+
+materialize-hk-ipo-raw-tick:
+	uv run --extra gcp python -m scripts.materialize_hk_ipo_raw_tick $(ARGS)
 
 research-director-hk-ipo:
 	uv run python -m scripts.research_director --market hk_ipo $(ARGS)

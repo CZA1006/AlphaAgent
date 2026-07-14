@@ -2,7 +2,12 @@
 -- This template is dry-run by the autonomous task. It is not an execution entrypoint.
 -- The target is deliberately versioned and separate from micro_features_daily.
 
-CREATE OR REPLACE TABLE `{{PROJECT}}.{{DATASET}}.micro_features_intraday_v1_candidate` AS
+CREATE TABLE `{{PROJECT}}.{{DATASET}}.micro_features_intraday_v1_candidate`
+OPTIONS (
+  expiration_timestamp = TIMESTAMP_ADD(CURRENT_TIMESTAMP(), INTERVAL 7 DAY),
+  description = 'Operator-approved HK IPO intraday v1 candidate; auto-expires after 7 days'
+)
+AS
 WITH calendar AS (
   SELECT DISTINCT stock_code, date AS trading_date
   FROM `{{PROJECT}}.{{DATASET}}.ipo_daily_prices`
