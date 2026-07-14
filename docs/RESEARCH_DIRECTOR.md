@@ -119,6 +119,27 @@ without an active event remain in the cross-section. The daily-only run also
 forbids `first_hour_*` proposals unless the intraday loader is explicitly
 enabled.
 
+That contract has now been exercised and should not be repeated on the current
+snapshot. Two bounded runs produced 18 computable candidates: 10 failed IC and
+8 failed tail concentration, with no missing-field failures. Deterministic
+base/event/composite replay attributed the apparent strength to OFI rather than
+the event interaction. The follow-up seven-factor smoothing gauntlet left every
+candidate rejected, but identified 10-day and 20-day OFI means as the only
+leads worth deterministic attribution: they reduced turnover and improved both
+training and global-holdout rank-IC, while still failing the worst-fold tail
+gate. Do not spend another LLM cycle on event interactions until the data
+fingerprint changes or the fixed-snapshot attribution produces a predeclared
+regime hypothesis.
+
+The attribution is complete. It reproduced worst-fold tail ratios 0.775 and
+0.945 for 10-day and 20-day OFI and traced both to one March episode whose top
+dates are consecutive, overlapping five-day labels. The 31–90-day listing-age
+bucket was positive and the 91+ bucket negative, but this is post-hoc evidence,
+not a promotion rule. Keep both factors rejected and retain the age pattern for
+a future untouched-window test. The next evaluator change may add an
+episode-aware tail statistic as informational metadata only; it must not relax
+the current promotion gate on this evidence.
+
 Each iteration: `ResearchDirector.plan` → run the selected
 `validate_strict` command → read the new validation reports →
 `ResearchPostRunPolicy.decide` picks the next topic (or stops) → the next

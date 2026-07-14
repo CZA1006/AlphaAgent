@@ -2,8 +2,8 @@
 
 > Single source of truth for "where the project actually is": what is
 > built and proven, what is not, and what to do next.  Last refreshed
-> after the three honest case studies and the 2026-07-14 audit of the
-> first live bounded HK IPO run.
+> after the three honest case studies and the 2026-07-14 bounded HK IPO
+> loop, continuous-event, and OFI robustness audits.
 
 For *how* the system works, read [`../ARCHITECTURE.md`](../ARCHITECTURE.md)
 ("How the agent does quant research") and
@@ -83,6 +83,23 @@ two LLMs over a shared out-of-sample window the baskets did not hold up.
   five-check audit found 0 blocking issues and 280 review-backlog rows, then
   stopped completed. This supports event-gated cross-sectional sparsity as the
   immediate bottleneck, not a broken event-data alignment contract.
+- **Continuous-event search and deterministic OFI diagnosis (2026-07-14)** —
+  two bounded DeepSeek runs tested 18 computable `event_decay` candidates for
+  `$0.00445629` provider-reported cost: 0 promotions, 10 weak-IC rejects, and
+  8 tail-concentration rejects, with no missing-field or missing-metric
+  failures. A no-LLM base/event/composite decomposition showed that the event
+  terms did not add robust incremental value; the signal body was smoothed
+  OFI. A second no-LLM seven-factor gauntlet found monotone improvement from
+  raw to 20-day OFI smoothing: turnover fell from 0.846 to 0.155, training
+  rank-IC rose from +0.0528 to +0.0943, and global-holdout rank-IC rose from
+  +0.0796 to +0.1567. None promoted: the strict evaluator takes the worst
+  fold's tail concentration (0.95 for 20-day OFI), exposing subperiod
+  fragility. Over the aggregate training window, the same ratio was only 0.14
+  and became 0.21 after excluding each IPO's first five days, so debut spikes
+  do not explain the failure. Adding `- rank(rel_spread)` inflated training IC
+  but decayed sharply OOS. **Conclusion:** stop spending LLM budget on event
+  interactions; retain 10/20-day OFI as unpromoted leads for deterministic
+  regime and return-date attribution.
 - **Typed event-truth audit executor** — a read-only five-check BigQuery task
   writes generic research-task artifacts and feeds deterministic issue counts
   back to the post-run policy. The 2026-07-14 live smoke found 280 review rows
@@ -272,7 +289,23 @@ The architecture is done enough to *answer* the real question, which a
 single run cannot: **does this loop produce alpha on average, or only
 by chance?**  Ranked by leverage:
 
-### 0. Data scaling — the actual prerequisite (decided)
+### 0. Fixed-snapshot OFI attribution — completed, no promotion
+
+Without extending the panel past 2026-06-26, attribute the 10-day and 20-day
+OFI long-short returns by walk-forward fold, calendar date, listing age, and
+event proximity. The deterministic report reproduces the judge exactly: the
+2026-03-12 to 2026-05-04 fold has tail ratios 0.775/0.945, versus aggregate
+in-sample ratios 0.203/0.157. Its top returns are 2026-03-13, 16, and 17, three
+overlapping five-day labels from one March episode. IPO ages 31–90 days were
+positive while 91+ days were negative, but that partition was inspected after
+seeing the outcomes and is only a future hypothesis. **Decision:** both factors
+remain rejected; no event or age filter is promoted on this snapshot.
+
+The current engineering task is to add an informational episode-aware tail
+diagnostic for overlapping multi-day labels. It must not replace or relax the
+existing worst-fold gate until calibrated on independent datasets.
+
+### 1. Data scaling — the actual prerequisite (decided)
 
 The fragility in v2/v3 is most likely **starved-for-data**: 50
 survivorship-biased names × ~2y of daily bars gives the LLM almost no
@@ -289,7 +322,7 @@ autonomous research-director loop (Round 10) is **robustness-first** —
 every self-generated candidate basket auto-confirmed on a held-out
 window before it counts as alpha.
 
-### 1. Planned multi-run robustness study (highest leverage once data lands)
+### 2. Planned multi-run robustness study (highest leverage once data lands)
 
 Turn the ad-hoc case studies into a designed experiment:
 
@@ -307,21 +340,21 @@ This is mostly orchestration (a harness around `validate_strict` +
 `combine_factors` that sweeps windows/LLMs/universes and tallies), not
 new core code.
 
-### 2. Close the remaining audit findings (medium)
+### 3. Close the remaining audit findings (medium)
 
 - Add the holdout embargo gap (Finding 3, ~15 lines).
 - Record `n_proposals_in_session` in reports and let the judge tighten
   thresholds under multiple-hypothesis pressure (Finding 6).
 - Optional: rolling/out-of-sample beta (Finding 4).
 
-### 3. Round 10 — proposer prompt-engineering for composites
+### 4. Round 10 — proposer prompt-engineering for composites
 
 Teach the proposer to propose *complements* to promoted composites
 (low-correlation additions), then measure whether composed baskets
 generalize better than singleton baskets.  Depends on having several
-promotions to chain, so it's downstream of (1).
+promotions to chain, so it's downstream of (2).
 
-### 4. Broaden data realism (lower priority)
+### 5. Broaden data realism (lower priority)
 
 Point-in-time universe loader (kill survivorship bias), liquidity-aware
 cost model, longer history via a paid data tier.

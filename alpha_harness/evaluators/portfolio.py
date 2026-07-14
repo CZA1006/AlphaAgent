@@ -90,7 +90,7 @@ def compute_portfolio_metrics(
     * ``hit_rate`` — fraction of strictly-positive periods.
     * ``tail_concentration`` — ``sum(top-3 returns) / sum(returns)``
       when the total is positive; otherwise ``None``.  > 0.5 means
-      three days carry the majority of the gross return.
+      three days carry the majority of the total long-short return.
     * ``n_periods`` — sample size used.
     """
     if returns is None or len(returns) == 0:

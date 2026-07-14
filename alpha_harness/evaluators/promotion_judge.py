@@ -241,8 +241,8 @@ class PromotionJudge:
     def _check_tail_concentration(self, evaluation: EvaluationBundle) -> FailureRecord | None:
         """Reject when the long-short return is concentrated in a few days.
 
-        Looks for ``metadata.portfolio.tail_concentration`` (the share of
-        gross return earned by the top three days).  When that share
+        Looks for ``metadata.portfolio.tail_concentration`` (the top-three-day
+        return divided by total long-short return).  When that ratio
         exceeds ``max_tail_concentration``, the spread is fragile —
         a single regime change wipes it out.  Bundles without portfolio
         metadata bypass the gate so legacy callers stay unaffected.
@@ -259,7 +259,7 @@ class PromotionJudge:
                 detail=(
                     f"tail_concentration={tail:.2f} > "
                     f"{self._max_tail_concentration:.2f}; top-3 days carry "
-                    f"the majority of the gross long-short return."
+                    f"the majority of the total long-short return."
                 ),
             )
         return None

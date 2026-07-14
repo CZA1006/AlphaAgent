@@ -1,0 +1,7 @@
+rank(ofi)
+rank(ts_mean(ofi, 3))
+rank(ts_mean(ofi, 5))
+rank(ts_mean(ofi, 10))
+rank(ts_mean(ofi, 20))
+rank(ts_mean(ofi, 5)) - rank(rel_spread)
+rank(ts_mean(ofi, 10)) - rank(rel_spread)
