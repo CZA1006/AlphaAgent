@@ -35,6 +35,7 @@ class ResearchExecutorKind(StrEnum):
     PROPOSE = "propose"
     REPLAY_PROMOTED = "replay_promoted"
     EVENT_TRUTH_AUDIT = "event_truth_audit"
+    RAW_TICK_MATERIALIZATION_PLAN = "raw_tick_materialization_plan"
 
 
 class DatasetStatus(BaseModel):
@@ -370,8 +371,6 @@ class ResearchDirector:
             "first-hour OFI, opening-auction imbalance, quote-recovery speed, spread shock "
             "persistence, and event-window liquidity withdrawal."
         )
-        tick_args = _hk_ipo_validation_args(theme=tick_theme, extra_guidance=tick_guidance)
-
         cost_theme = "HK IPO implementability and cost realism"
         cost_guidance = (
             "Stress previously promoted event-conditioned factors for turnover, spread, "
@@ -480,6 +479,7 @@ class ResearchDirector:
             ),
             ResearchTopicPlan(
                 topic_id="hk_ipo_raw_tick_intraday_features",
+                executor=ResearchExecutorKind.RAW_TICK_MATERIALIZATION_PLAN,
                 theme=tick_theme,
                 priority=65,
                 rationale=(
@@ -488,8 +488,11 @@ class ResearchDirector:
                     "materialization is the next data-extension topic."
                 ),
                 extra_guidance=tick_guidance,
-                validation_command=_hk_ipo_make_command(tick_args),
-                validation_args=tick_args,
+                validation_command=(
+                    "uv run --extra gcp python -m "
+                    "scripts.plan_hk_ipo_raw_tick_materialization"
+                ),
+                validation_args=[],
                 data_requirements=[
                     "tick_manifest_target",
                     "raw_tick_intraday_loop_gap",

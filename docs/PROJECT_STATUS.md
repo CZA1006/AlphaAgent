@@ -66,11 +66,20 @@ two LLMs over a shared out-of-sample window the baskets did not hold up.
   back to the post-run policy. The 2026-07-14 live smoke found 280 review rows
   but zero blocking evidence/date/alignment issues and full 77/77 prospectus
   plus allotment-announcement registry coverage.
+- **Typed raw-tick materialization planner** — the Director can explicitly
+  dispatch a versioned intraday-feature SQL contract frozen at 2026-06-26.
+  The executor validates target/source/session/point-in-time rules, dry-runs
+  only the SELECT body, and runs read-only nonpositive-tick QA by
+  stock/date/event type. It has no write path: the candidate table is never
+  created or replaced autonomously. BigQuery does not fully estimate external
+  table scan cost, so the report marks the planner byte count incomplete. The
+  2026-07-14 live read-only smoke reproduced 364,768 excluded values across
+  12,632 stock/date/event-type groups and compiled all nine v1 features.
 - **Operator surface** — `validate_strict`, `combine_factors`,
   `refine_factor`, `inspect_composite`, `list_{factors,cycles,trails}`,
   `doctor`; memory + SQL registry backends behind protocols.
-- **Remaining autonomy gap** — raw-tick materialization, event studies, and
-  skill distillation are not yet wired into the typed task loop.
+- **Remaining autonomy gap** — operator-approved raw-tick writes, event studies,
+  and skill distillation are not yet wired into the typed task loop.
 - **Persistence-first selection machinery**
   (`alpha_harness/evaluators/persistence.py`): factors can be ordered
   by sub-window rank-IC sign consistency + stability instead of

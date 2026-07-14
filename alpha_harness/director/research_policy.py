@@ -125,6 +125,23 @@ class ResearchPostRunPolicy:
                 rejected_by_gate=rejected_by_gate,
             )
         if (
+            summary.selected_topic_id == "hk_ipo_raw_tick_intraday_features"
+            and summary.task_reports
+        ):
+            blocking = sum(report.blocking_issue_count for report in summary.task_reports)
+            review = sum(report.review_issue_count for report in summary.task_reports)
+            return PostRunDecision(
+                action=NextResearchAction.STOP_COMPLETED,
+                rationale=(
+                    "Raw-tick SQL was validated and dry-run with read-only QA; stop before "
+                    "any operator-approved BigQuery materialization."
+                ),
+                evidence=[*evidence, f"task_blocking={blocking}", f"task_review={review}"],
+                total_promoted=total_promoted,
+                total_rejected=total_rejected,
+                rejected_by_gate=rejected_by_gate,
+            )
+        if (
             total_promoted > 0
             and summary.selected_topic_id == "hk_ipo_event_conditioned_microstructure"
         ):

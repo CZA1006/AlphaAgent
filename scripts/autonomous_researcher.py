@@ -45,6 +45,7 @@ class AutonomousRunnerConfig(BaseModel):
     """Operator guardrails for the autonomous researcher executor."""
 
     market: str = "hk_ipo"
+    topic_id: str | None = None
     execute: bool = False
     iterations: int = 1
     validation_dir: Path = DEFAULT_VALIDATION_DIR
@@ -147,6 +148,17 @@ def build_validation_argv(
             python_executable,
             "-m",
             "scripts.audit_hk_ipo_event_truth",
+            "--task-id",
+            cycle_id,
+            "--artifact-dir",
+            str(task_dir),
+            "--json",
+        ]
+    if topic.executor is ResearchExecutorKind.RAW_TICK_MATERIALIZATION_PLAN:
+        return [
+            python_executable,
+            "-m",
+            "scripts.plan_hk_ipo_raw_tick_materialization",
             "--task-id",
             cycle_id,
             "--artifact-dir",
@@ -322,7 +334,7 @@ def run_autonomous_research(
     run_started = datetime.now(UTC)
     context = build_hk_ipo_context(validation_dir=config.validation_dir)
     plan = ResearchDirector().plan(context)
-    selected = plan.selected_topic
+    selected = _select_topic(plan, config.topic_id) if config.topic_id else plan.selected_topic
     record = AutonomousRunRecord(
         run_id=run_id,
         market=config.market,
@@ -413,7 +425,10 @@ def run_autonomous_research(
             after_tasks,
             id_key="task_id",
         )
-        if selected.executor is ResearchExecutorKind.EVENT_TRUTH_AUDIT:
+        if selected.executor in {
+            ResearchExecutorKind.EVENT_TRUTH_AUDIT,
+            ResearchExecutorKind.RAW_TICK_MATERIALIZATION_PLAN,
+        }:
             new_rows = []
         else:
             new_task_rows = []
@@ -423,7 +438,11 @@ def run_autonomous_research(
             stop_reason = f"research command exited with {returncode}"
         elif (
             config.validation_no_write
-            and selected.executor is not ResearchExecutorKind.EVENT_TRUTH_AUDIT
+            and selected.executor
+            not in {
+                ResearchExecutorKind.EVENT_TRUTH_AUDIT,
+                ResearchExecutorKind.RAW_TICK_MATERIALIZATION_PLAN,
+            }
         ):
             status = "executed"
             stop_reason = "validation_no_write enabled; validation index was not updated"
@@ -461,10 +480,17 @@ def run_autonomous_research(
             break
 
         promoted = sum(int(row.get("n_promoted") or 0) for row in new_rows)
-        if selected.executor is not ResearchExecutorKind.EVENT_TRUTH_AUDIT:
+        if selected.executor not in {
+            ResearchExecutorKind.EVENT_TRUTH_AUDIT,
+            ResearchExecutorKind.RAW_TICK_MATERIALIZATION_PLAN,
+        }:
             consecutive_no_promote = 0 if promoted else consecutive_no_promote + 1
         if (
-            selected.executor is not ResearchExecutorKind.EVENT_TRUTH_AUDIT
+            selected.executor
+            not in {
+                ResearchExecutorKind.EVENT_TRUTH_AUDIT,
+                ResearchExecutorKind.RAW_TICK_MATERIALIZATION_PLAN,
+            }
             and consecutive_no_promote >= config.stop_after_no_promote
         ):
             latest_iteration = record.iterations[-1]
@@ -502,6 +528,7 @@ def run_autonomous_research(
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--market", choices=["hk_ipo"], default="hk_ipo")
+    parser.add_argument("--topic-id", default=None)
     parser.add_argument("--execute", action="store_true", help="Run the selected validation loop.")
     parser.add_argument("--iterations", type=int, default=1)
     parser.add_argument("--validation-dir", default=str(DEFAULT_VALIDATION_DIR))
@@ -567,6 +594,7 @@ def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     config = AutonomousRunnerConfig(
         market=args.market,
+        topic_id=args.topic_id,
         execute=args.execute,
         iterations=args.iterations,
         validation_dir=Path(args.validation_dir),

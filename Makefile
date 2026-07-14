@@ -1,7 +1,8 @@
 .PHONY: install dev lint format typecheck test test-unit test-integration \
        db-up db-down db-status db-bootstrap db-reset check check-full clean \
        doctor doctor-mock doctor-real doctor-sql audit smoke \
-       doctor-hk-ipo-data doctor-hk-ipo-events research-director-hk-ipo \
+       doctor-hk-ipo-data doctor-hk-ipo-events audit-hk-ipo-event-truth \
+       plan-hk-ipo-raw-tick-materialization research-director-hk-ipo \
        run-mock run-real run-real-data run-real-sql \
        autonomous-mock autonomous-real \
        autonomous-researcher-hk-ipo autonomous-researcher-hk-ipo-run \
@@ -116,6 +117,9 @@ doctor-hk-ipo-events:
 
 audit-hk-ipo-event-truth:
 	uv run --extra gcp python -m scripts.audit_hk_ipo_event_truth $(ARGS)
+
+plan-hk-ipo-raw-tick-materialization:
+	uv run --extra gcp python -m scripts.plan_hk_ipo_raw_tick_materialization $(ARGS)
 
 research-director-hk-ipo:
 	uv run python -m scripts.research_director --market hk_ipo $(ARGS)

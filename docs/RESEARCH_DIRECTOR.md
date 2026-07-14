@@ -115,6 +115,20 @@ type coverage. Results are written as typed research-task artifacts under
 findings are reported as `blocked` or `review_required`. The post-run policy
 consumes the task index and stops the bounded run for inspection.
 
+`hk_ipo_raw_tick_intraday_features` uses the
+`raw_tick_materialization_plan` executor. Select it explicitly with:
+
+```bash
+make autonomous-researcher-hk-ipo-run \
+  ARGS="--topic-id hk_ipo_raw_tick_intraday_features"
+```
+
+The task validates the committed SQL contract, dry-runs its SELECT body, and
+executes only the read-only nonpositive-tick QA query. The plan is frozen at
+2026-06-26 and targets `micro_features_intraday_v1_candidate`, but no table is
+created. Since BigQuery dry-run does not fully estimate scans of the external
+tick table, the artifact records `cost_estimate_complete=false`.
+
 ## What Is Not Fully Automated Yet
 
 - **No scheduler** — an operator starts each run; nothing re-invokes the
@@ -124,9 +138,10 @@ consumes the task index and stops the bounded run for inspection.
 - **Event studies live outside the loop** — `scripts/analysis/*.py`
   (microstructure OOS, lockup/greenshoe/stabilization event studies) are
   operator-run analyses; the director does not schedule or read them.
-- **Raw-tick materialization is not dispatched yet** — it still changes prompt
-  guidance instead of invoking a typed feature-build tool. Cost replay and
-  event-truth audit now have separate deterministic execution paths.
+- **Raw-tick writes require an operator** — the typed planner and source QA are
+  dispatched, but there is intentionally no autonomous BigQuery write path.
+  Auction order-book imbalance and quote-recovery speed remain blocked until
+  their source fields and deterministic definitions are reviewed.
 - **Persistence selection is experimental** — `combine_factors` exposes
   `--selection-strategy persistence --top-k K`, and records that choice in
   its report and promotion trail, including the scoring-formula version. The

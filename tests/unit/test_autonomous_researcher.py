@@ -252,6 +252,53 @@ def test_execute_dispatches_event_truth_task_and_stops(tmp_path) -> None:
     assert commands[1][commands[1].index("--artifact-dir") + 1] == str(task_dir)
 
 
+def test_execute_dispatches_raw_tick_plan_and_stops(tmp_path) -> None:
+    task_dir = tmp_path / "tasks"
+    task_index = task_dir / "_index.jsonl"
+    commands: list[list[str]] = []
+
+    def runner(argv: Sequence[str], timeout_seconds: int) -> subprocess.CompletedProcess[str]:
+        commands.append(list(argv))
+        task_dir.mkdir(parents=True, exist_ok=True)
+        task_id = argv[argv.index("--task-id") + 1]
+        task_index.write_text(
+            json.dumps(
+                {
+                    "task_id": task_id,
+                    "executor": "raw_tick_materialization_plan",
+                    "status": "review_required",
+                    "blocking_issue_count": 0,
+                    "review_issue_count": 4,
+                },
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        return subprocess.CompletedProcess(list(argv), 0, stdout="ok", stderr="")
+
+    record = run_autonomous_research(
+        AutonomousRunnerConfig(
+            execute=True,
+            topic_id="hk_ipo_raw_tick_intraday_features",
+            run_id="raw-tick-plan",
+            task_dir=task_dir,
+            validation_dir=tmp_path / "validations",
+            no_artifact=True,
+        ),
+        command_runner=runner,
+    )
+
+    assert record.status == "completed"
+    assert record.selected_topic_id == "hk_ipo_raw_tick_intraday_features"
+    assert record.iterations[0].task_reports[0]["review_issue_count"] == 4
+    assert record.next_decision["action"] == "stop_completed"
+    assert commands[0][0:3] == [
+        sys.executable,
+        "-m",
+        "scripts.plan_hk_ipo_raw_tick_materialization",
+    ]
+
+
 def test_execute_records_failed_validation(tmp_path) -> None:
     def runner(argv: Sequence[str], timeout_seconds: int) -> subprocess.CompletedProcess[str]:
         return subprocess.CompletedProcess(list(argv), 7, stdout="partial", stderr="boom")

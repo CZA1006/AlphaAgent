@@ -62,6 +62,12 @@ def test_hk_ipo_director_selects_event_microstructure_topic(tmp_path) -> None:
     assert event_review.executor is ResearchExecutorKind.EVENT_TRUTH_AUDIT
     assert event_review.validation_args == []
     assert "scripts.audit_hk_ipo_event_truth" in event_review.validation_command
+    raw_tick = next(
+        topic for topic in plan.topics if topic.topic_id == "hk_ipo_raw_tick_intraday_features"
+    )
+    assert raw_tick.executor is ResearchExecutorKind.RAW_TICK_MATERIALIZATION_PLAN
+    assert raw_tick.validation_args == []
+    assert "scripts.plan_hk_ipo_raw_tick_materialization" in raw_tick.validation_command
 
 
 def test_hk_ipo_director_surfaces_known_data_gaps(tmp_path) -> None:

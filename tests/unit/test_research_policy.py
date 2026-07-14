@@ -124,6 +124,30 @@ def test_policy_stops_after_event_truth_task_report() -> None:
     assert "task_review=12" in decision.evidence
 
 
+def test_policy_stops_after_raw_tick_materialization_plan() -> None:
+    decision = ResearchPostRunPolicy().decide(
+        ResearchRunSummary(
+            market="hk_ipo",
+            selected_topic_id="hk_ipo_raw_tick_intraday_features",
+            status="completed",
+            task_reports=[
+                ResearchTaskReportSummary(
+                    task_id="tick-plan",
+                    executor="raw_tick_materialization_plan",
+                    status="review_required",
+                    blocking_issue_count=0,
+                    review_issue_count=364770,
+                ),
+            ],
+        ),
+    )
+
+    assert decision.action == NextResearchAction.STOP_COMPLETED
+    assert decision.next_topic_id is None
+    assert "task_blocking=0" in decision.evidence
+    assert "task_review=364770" in decision.evidence
+
+
 def test_policy_treats_dry_run_as_planned_not_no_progress() -> None:
     decision = ResearchPostRunPolicy().decide(
         ResearchRunSummary(
