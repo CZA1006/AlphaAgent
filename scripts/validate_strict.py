@@ -30,6 +30,7 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import logging
 import sys
@@ -72,8 +73,10 @@ from alpha_harness.registries.experiment import ExperimentRegistry
 from alpha_harness.registries.hypothesis import HypothesisRegistry
 from alpha_harness.reports.validation import (
     DEFAULT_VALIDATION_DIR,
+    StrictValidationReport,
     StrictValidationReportWriter,
     build_validation_report,
+    read_reports,
 )
 from alpha_harness.schemas.evaluation import EvaluationRequest
 from alpha_harness.schemas.experiment import PromotionTrail
@@ -84,6 +87,46 @@ logging.basicConfig(
     format="%(asctime)s  %(levelname)-8s  %(name)s  %(message)s",
 )
 logger = logging.getLogger("validate_strict")
+
+
+def _dataframe_fingerprint(df: pd.DataFrame) -> str:
+    """Return an order-invariant hash of columns, dtypes, and row contents."""
+    columns = sorted(str(column) for column in df.columns)
+    canonical = df.loc[:, columns]
+    row_hashes = pd.util.hash_pandas_object(
+        canonical,
+        index=False,
+        categorize=True,
+    ).to_numpy(dtype="uint64")
+    row_hashes.sort()
+    metadata = {
+        "columns": columns,
+        "dtypes": [str(canonical[column].dtype) for column in columns],
+        "rows": len(canonical),
+    }
+    digest = hashlib.sha256(json.dumps(metadata, sort_keys=True).encode("utf-8"))
+    digest.update(row_hashes.tobytes())
+    return digest.hexdigest()
+
+
+def _validation_memory_scope_id(
+    eval_request: EvaluationRequest,
+    *,
+    regime_trail_id: str,
+    data_fingerprint: str,
+) -> str:
+    """Hash every deterministic input that bounds reusable proposer feedback."""
+    request_payload = eval_request.model_dump(mode="json", exclude={"factor_id"})
+    canonical = json.dumps(
+        {
+            "data_fingerprint": data_fingerprint,
+            "evaluation_request": request_payload,
+            "regime_trail_id": regime_trail_id,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
 
 
 # ── Default mock candidates (synthetic-data path) ───────────────────────────
@@ -482,7 +525,10 @@ def main(argv: list[str] | None = None) -> int:
     regime = get_regime(args.regime)
     logger.info(
         "Regime=%s ic>=%.4f rank_ic>=%.4f cost_bps=%.2f",
-        args.regime, regime.ic_threshold, regime.rank_ic_threshold, regime.cost_bps,
+        args.regime,
+        regime.ic_threshold,
+        regime.rank_ic_threshold,
+        regime.cost_bps,
     )
     judge_thresholds = regime.judge_thresholds()
     inner_evaluator = SignalQualityEvaluator(price_data)
@@ -491,7 +537,12 @@ def main(argv: list[str] | None = None) -> int:
     service = AlphaHarnessService(
         compiler=FactorDslCompiler(),
         evaluator=evaluator,
-        judge=PromotionJudge(**judge_thresholds),
+        judge=PromotionJudge(
+            refine_margin=judge_thresholds["refine_margin"],
+            min_fraction_positive_folds=judge_thresholds["min_fraction_positive_folds"],
+            max_tail_concentration=judge_thresholds["max_tail_concentration"],
+            min_holdout_decay_ratio=judge_thresholds["min_holdout_decay_ratio"],
+        ),
     )
 
     trail_registry: TrailRegistryWriter | None = None
@@ -545,9 +596,41 @@ def main(argv: list[str] | None = None) -> int:
         proposer=proposer,
         refinement_runner=runner,
     )
+    regime_trail = PromotionTrail.from_inputs(
+        evaluation_request=eval_request,
+        judge_thresholds=judge_thresholds,
+        walk_forward={
+            "n_folds": regime.n_folds,
+            "fold_size_days": regime.fold_size_days,
+            "step_days": regime.step_days,
+            "embargo_days": regime.embargo_days,
+        },
+    )
+    memory_scope_id = _validation_memory_scope_id(
+        eval_request,
+        regime_trail_id=regime_trail.trail_id,
+        data_fingerprint=_dataframe_fingerprint(price_data),
+    )
+    prior_reports = (
+        []
+        if args.no_memory
+        else read_reports(
+            args.validation_dir,
+            regime_trail_id=regime_trail.trail_id,
+            memory_scope_id=memory_scope_id,
+            exclude_cycle_prefix=cycle_id,
+            limit=args.memory_depth,
+        )
+    )
+    if prior_reports:
+        logger.info(
+            "Loaded %d prior validation report(s) for trail %s",
+            len(prior_reports),
+            regime_trail.trail_id,
+        )
     # ── Multi-cycle loop with proposer memory (Round 4A.4) ──────────────
     n_cycles = max(1, args.n_cycles)
-    reports: list = []
+    reports: list[StrictValidationReport] = []
     for i in range(n_cycles):
         sub_cycle_id = cycle_id if n_cycles == 1 else f"{cycle_id}-c{i + 1:02d}"
         sub_started = datetime.now(UTC)
@@ -565,6 +648,7 @@ def main(argv: list[str] | None = None) -> int:
                 # promoted by previous `combine_factors --promote` runs
                 # even when this cycle starts with a fresh registry.
                 promoted_index_path=Path(args.promoted_dir) / "_index.jsonl",
+                validation_reports=prior_reports,
             )
             if prior_memory:
                 logger.info(
@@ -597,16 +681,6 @@ def main(argv: list[str] | None = None) -> int:
                 return 4
             raise
 
-        regime_trail = PromotionTrail.from_inputs(
-            evaluation_request=eval_request,
-            judge_thresholds=judge_thresholds,
-            walk_forward={
-                "n_folds": regime.n_folds,
-                "fold_size_days": regime.fold_size_days,
-                "step_days": regime.step_days,
-                "embargo_days": regime.embargo_days,
-            },
-        )
         # Report only the records produced *in this sub-cycle* — the
         # registry accumulates, so we slice off everything that existed
         # before we entered the cycle.
@@ -616,6 +690,7 @@ def main(argv: list[str] | None = None) -> int:
             cycle_id=sub_cycle_id,
             regime_trail_id=regime_trail.trail_id,
             universe_id=eval_request.universe_id,
+            memory_scope_id=memory_scope_id,
             started_at=sub_started,
             records=records_this_cycle,
         )
@@ -633,7 +708,7 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-def _print_multi_summary(reports: list) -> None:
+def _print_multi_summary(reports: list[StrictValidationReport]) -> None:
     """Compact one-line-per-cycle summary for ``--n-cycles N``."""
     border = "=" * 72
     print(f"\n{border}")

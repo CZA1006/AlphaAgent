@@ -51,12 +51,18 @@ two LLMs over a shared out-of-sample window the baskets did not hold up.
 - **Multi-factor combination + composites** — baskets are first-class
   `FactorSpec`s (`composite_recipe`), promotable, refinable, auditable,
   with order-invariant `recipe_id`s.
-- **Closed agent loop** — promoted composites surface in the next
-  cycle's proposer memory digest (verified end-to-end on real LLM
-  output).
+- **Durable proposer feedback loop** — in-process experiments and prior
+  validation reports from the same point-in-time memory scope feed the next
+  proposer cycle. The scope hashes the evaluation contract and input-panel
+  contents; promoted composites also surface from their artifact index. A
+  two-invocation CLI integration test verifies the cross-process path.
 - **Operator surface** — `validate_strict`, `combine_factors`,
   `refine_factor`, `inspect_composite`, `list_{factors,cycles,trails}`,
   `doctor`; memory + SQL registry backends behind protocols.
+- **Remaining autonomy gap** — Director topics still share the
+  `validate_strict` executor. Cost replay, event-truth review, raw-tick
+  materialization, event studies, and skill distillation are not yet wired
+  into one typed task loop.
 - **Persistence-first selection machinery**
   (`alpha_harness/evaluators/persistence.py`): factors can be ordered
   by sub-window rank-IC sign consistency + stability instead of

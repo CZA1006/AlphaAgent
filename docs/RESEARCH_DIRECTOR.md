@@ -89,6 +89,15 @@ default, iteration cap, per-run timeout, token/cost budgets, and stop
 after N consecutive no-promote iterations.  Every run writes a
 machine-readable record to `artifacts/autonomous_runs/`.
 
+`validate_strict` also reloads full validation reports from earlier processes
+when their `memory_scope_id` matches the current run. The scope hashes the full
+evaluation request, promotion trail, and actual input-panel contents. Their
+factor expressions, decisions, rejection gates, and headline IC values are
+merged into proposer memory before the first cycle. Current-cycle records take
+precedence, and reports from another data snapshot or evaluation contract are
+excluded. This makes feedback durable across autonomous iterations without
+requiring Postgres for local runs.
+
 ## What Is Not Fully Automated Yet
 
 - **No scheduler** — an operator starts each run; nothing re-invokes the
@@ -98,6 +107,10 @@ machine-readable record to `artifacts/autonomous_runs/`.
 - **Event studies live outside the loop** — `scripts/analysis/*.py`
   (microstructure OOS, lockup/greenshoe/stabilization event studies) are
   operator-run analyses; the director does not schedule or read them.
+- **Topics share one executor** — topic switches currently change the theme
+  and guidance passed to `validate_strict`; cost replay, event-truth review,
+  and raw-tick materialization do not yet dispatch distinct deterministic
+  tools.
 - **Persistence selection is experimental** — `combine_factors` exposes
   `--selection-strategy persistence --top-k K`, and records that choice in
   its report and promotion trail, including the scoring-formula version. The

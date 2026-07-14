@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from alpha_harness.hermes_boundary.contracts import ThemeCycleRequest
 from alpha_harness.proposer.memory import build_memory_digest
 from alpha_harness.proposer.prompts import build_user_prompt
 from alpha_harness.proposer.schemas import ProposalRequest
+from alpha_harness.reports.validation import FactorThumbnail, StrictValidationReport
 from alpha_harness.schemas.evaluation import EvaluationBundle
 from alpha_harness.schemas.experiment import (
     ExperimentDecision,
@@ -30,9 +33,7 @@ def _record(
         evaluation=EvaluationBundle(ic=ic),
         decision=decision,
         failure=(
-            FailureRecord(category=failure_category)
-            if failure_category is not None
-            else None
+            FailureRecord(category=failure_category) if failure_category is not None else None
         ),
     )
 
@@ -47,8 +48,11 @@ def test_empty_records_return_empty_string() -> None:
 def test_digest_includes_header_counts() -> None:
     records = [
         _record(expression="rank(close)", decision=ExperimentDecision.PROMOTE_CANDIDATE),
-        _record(expression="zscore(close)", decision=ExperimentDecision.REJECT,
-                failure_category=FailureCategory.WEAK_SIGNAL),
+        _record(
+            expression="zscore(close)",
+            decision=ExperimentDecision.REJECT,
+            failure_category=FailureCategory.WEAK_SIGNAL,
+        ),
         _record(expression="ts_mean(close, 5)", decision=ExperimentDecision.REFINE),
     ]
     digest = build_memory_digest(records)
@@ -70,12 +74,18 @@ def test_digest_lists_promoted_expressions() -> None:
 
 def test_digest_lists_rejection_categories() -> None:
     records = [
-        _record(expression=f"expr_{i}", decision=ExperimentDecision.REJECT,
-                failure_category=FailureCategory.WEAK_SIGNAL)
+        _record(
+            expression=f"expr_{i}",
+            decision=ExperimentDecision.REJECT,
+            failure_category=FailureCategory.WEAK_SIGNAL,
+        )
         for i in range(3)
     ] + [
-        _record(expression="bad", decision=ExperimentDecision.REJECT,
-                failure_category=FailureCategory.DUPLICATE),
+        _record(
+            expression="bad",
+            decision=ExperimentDecision.REJECT,
+            failure_category=FailureCategory.DUPLICATE,
+        ),
     ]
     digest = build_memory_digest(records)
     assert "Recent rejection modes" in digest
@@ -97,8 +107,10 @@ def test_digest_respects_depth() -> None:
 
 def test_digest_truncates_to_max_chars() -> None:
     records = [
-        _record(expression=f"long_expression_{i}_" + "x" * 50,
-                decision=ExperimentDecision.PROMOTE_CANDIDATE)
+        _record(
+            expression=f"long_expression_{i}_" + "x" * 50,
+            decision=ExperimentDecision.PROMOTE_CANDIDATE,
+        )
         for i in range(20)
     ]
     digest = build_memory_digest(records, max_chars=300)
@@ -115,6 +127,72 @@ def test_digest_dedupes_repeated_expressions() -> None:
     # The same expression should appear at most once in the promoted list
     # and once in the fingerprints section.
     assert digest.count("`rank(close)`") <= 2
+
+
+def test_digest_consumes_durable_validation_reports() -> None:
+    now = datetime.now(UTC)
+    report = StrictValidationReport(
+        cycle_id="prior-cycle",
+        regime_trail_id="trail-1",
+        started_at=now,
+        finished_at=now,
+        n_proposals=2,
+        n_promoted=1,
+        n_refined=0,
+        n_rejected=1,
+        factors=[
+            FactorThumbnail(
+                factor_id="promoted-1",
+                expression="rank(ts_mean(close, 20))",
+                decision=ExperimentDecision.PROMOTE_CANDIDATE.value,
+                ic=0.04,
+            ),
+            FactorThumbnail(
+                factor_id="rejected-1",
+                expression="rank(ts_std(close, 5))",
+                decision=ExperimentDecision.REJECT.value,
+                gate="tail_concentration",
+            ),
+        ],
+    )
+
+    digest = build_memory_digest([], validation_reports=[report])
+
+    assert "promoted=1" in digest
+    assert "rejected=1" in digest
+    assert "`rank(ts_mean(close, 20))` ic=0.040" in digest
+    assert "tail_concentration: 1" in digest
+    assert "`rank(ts_std(close, 5))`" in digest
+
+
+def test_live_records_precede_durable_history_at_depth_limit() -> None:
+    now = datetime.now(UTC)
+    report = StrictValidationReport(
+        cycle_id="prior-cycle",
+        regime_trail_id="trail-1",
+        started_at=now,
+        finished_at=now,
+        n_proposals=1,
+        n_promoted=1,
+        n_refined=0,
+        n_rejected=0,
+        factors=[
+            FactorThumbnail(
+                factor_id="old",
+                expression="rank(volume)",
+                decision=ExperimentDecision.PROMOTE_CANDIDATE.value,
+            ),
+        ],
+    )
+    live = _record(
+        expression="rank(close)",
+        decision=ExperimentDecision.PROMOTE_CANDIDATE,
+    )
+
+    digest = build_memory_digest([live], depth=1, validation_reports=[report])
+
+    assert "`rank(close)`" in digest
+    assert "`rank(volume)`" not in digest
 
 
 # ── Prompt assembly integration ─────────────────────────────────────────────
@@ -184,6 +262,7 @@ def _write_promoted_index(
     """
     import hashlib as _hashlib
     import json as _json
+
     components = components or ["rank(close)", "rank(volume)"]
     # Derive a stable per-(method, components) recipe_id so dedupe
     # tests can distinguish "same recipe" from "different recipe".

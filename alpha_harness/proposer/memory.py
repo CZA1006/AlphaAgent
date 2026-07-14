@@ -19,9 +19,12 @@ from __future__ import annotations
 import json
 import logging
 from collections import Counter
+from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from alpha_harness.reports.validation import StrictValidationReport
 from alpha_harness.schemas.experiment import ExperimentDecision, ExperimentRecord
 
 logger = logging.getLogger(__name__)
@@ -35,6 +38,16 @@ DEFAULT_TOP_REJECTED = 3
 DEFAULT_TOP_COMPOSITES = 2
 
 
+@dataclass(frozen=True)
+class _MemoryRecord:
+    """Backend-neutral experiment facts used to build proposer memory."""
+
+    expression: str
+    decision: ExperimentDecision
+    ic: float | None = None
+    failure_category: str | None = None
+
+
 def build_memory_digest(
     records: list[ExperimentRecord],
     *,
@@ -44,13 +57,18 @@ def build_memory_digest(
     top_rejected: int = DEFAULT_TOP_REJECTED,
     promoted_index_path: Path | str | None = None,
     top_composites: int = DEFAULT_TOP_COMPOSITES,
+    validation_reports: Sequence[StrictValidationReport] = (),
 ) -> str:
     """Return a short prose digest of the most recent experiments.
 
     Ordering contract: callers should pass records in recency order (newest
     first) — the canonical way is ``registry.list_recent(limit=depth)``.
-    When ``records`` is empty, returns the empty string (caller can use
-    this to decide whether to emit the memory section at all).
+    When both ``records`` and ``validation_reports`` are empty, returns the
+    empty string unless a promoted-composite index contributes context.
+
+    ``validation_reports`` supplies durable facts from earlier processes.
+    Callers must scope those reports to the current evaluation trail before
+    passing them here; current in-process records always take precedence.
 
     The digest contains up to five sections:
         1. Rolling counts (n, promoted, refined, rejected).
@@ -69,12 +87,14 @@ def build_memory_digest(
     when the registry is huge.
     """
     composites_section = _build_composites_section(
-        promoted_index_path, top_composites,
+        promoted_index_path,
+        top_composites,
     )
-    if not records:
+    memory_records = _to_memory_records(records, validation_reports)
+    if not memory_records:
         return composites_section  # may itself be empty
 
-    trimmed = records[:depth]
+    trimmed = memory_records[:depth]
 
     # ── 1. Rolling counts ────────────────────────────────────────────
     counts: Counter[ExperimentDecision] = Counter(r.decision for r in trimmed)
@@ -89,19 +109,16 @@ def build_memory_digest(
     sections: list[str] = [header]
 
     # ── 2. Promoted expressions ──────────────────────────────────────
-    promoted = [
-        r for r in trimmed
-        if r.decision == ExperimentDecision.PROMOTE_CANDIDATE
-    ]
+    promoted = [r for r in trimmed if r.decision == ExperimentDecision.PROMOTE_CANDIDATE]
     if promoted:
         lines = ["Already promoted (do not re-propose near-duplicates):"]
         seen: set[str] = set()
         for r in promoted[:top_promoted]:
-            expr = r.factor.expression
+            expr = r.expression
             if expr in seen:
                 continue
             seen.add(expr)
-            ic = r.evaluation.ic
+            ic = r.ic
             ic_str = f" ic={ic:.3f}" if ic is not None else ""
             lines.append(f"  - `{expr}`{ic_str}")
         sections.append("\n".join(lines))
@@ -109,8 +126,8 @@ def build_memory_digest(
     # ── 3. Rejection categories ──────────────────────────────────────
     rejected_categories: Counter[str] = Counter()
     for r in trimmed:
-        if r.decision == ExperimentDecision.REJECT and r.failure is not None:
-            rejected_categories[r.failure.category.value] += 1
+        if r.decision == ExperimentDecision.REJECT and r.failure_category is not None:
+            rejected_categories[r.failure_category] += 1
     if rejected_categories:
         lines = ["Recent rejection modes (counts):"]
         for cat, n in rejected_categories.most_common(top_rejected):
@@ -121,7 +138,7 @@ def build_memory_digest(
     recent_exprs: list[str] = []
     seen2: set[str] = set()
     for r in trimmed:
-        expr = r.factor.expression
+        expr = r.expression
         if expr in seen2:
             continue
         seen2.add(expr)
@@ -138,6 +155,44 @@ def build_memory_digest(
     if len(digest) > max_chars:
         digest = digest[: max_chars - len(" …[truncated]")] + " …[truncated]"
     return digest
+
+
+def _to_memory_records(
+    records: Sequence[ExperimentRecord],
+    validation_reports: Sequence[StrictValidationReport],
+) -> list[_MemoryRecord]:
+    """Combine live records with durable report thumbnails in recency order."""
+    combined = [
+        _MemoryRecord(
+            expression=record.factor.expression,
+            decision=record.decision,
+            ic=record.evaluation.ic,
+            failure_category=(
+                record.failure.category.value if record.failure is not None else None
+            ),
+        )
+        for record in records
+    ]
+    for report in validation_reports:
+        for factor in report.factors:
+            try:
+                decision = ExperimentDecision(factor.decision)
+            except ValueError:
+                logger.warning(
+                    "Skipping validation-memory factor %s with unknown decision %r",
+                    factor.factor_id,
+                    factor.decision,
+                )
+                continue
+            combined.append(
+                _MemoryRecord(
+                    expression=factor.expression,
+                    decision=decision,
+                    ic=factor.ic,
+                    failure_category=factor.gate,
+                ),
+            )
+    return combined
 
 
 # ── Composite section (Round 9 A.1) ─────────────────────────────────────────
@@ -203,8 +258,7 @@ def _build_composites_section(
         metrics_str = f"  ({', '.join(metrics)})" if metrics else ""
         components_str = ", ".join(components) if components else ""
         lines.append(
-            f"  - combine.{method}([{components_str}])  "
-            f"recipe_id={recipe_id}{metrics_str}",
+            f"  - combine.{method}([{components_str}])  recipe_id={recipe_id}{metrics_str}",
         )
         emitted += 1
     if emitted == 0:

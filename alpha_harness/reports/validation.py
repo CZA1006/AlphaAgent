@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_VALIDATION_DIR = Path("artifacts/validations")
 VALIDATION_INDEX_NAME = "_index.jsonl"
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 # ── Schema ──────────────────────────────────────────────────────────────────
@@ -80,6 +80,10 @@ class StrictValidationReport(BaseModel):
     cycle_id: str
     regime_trail_id: str
     universe_id: str = ""
+    # Hash of the full evaluation request plus the actual input panel. Unlike
+    # PromotionTrail, this changes when dates, thresholds, universe, or data
+    # contents change, so proposer feedback cannot cross research samples.
+    memory_scope_id: str = ""
     started_at: datetime
     finished_at: datetime
     n_proposals: int
@@ -140,6 +144,7 @@ def build_validation_report(
     cycle_id: str,
     regime_trail_id: str,
     universe_id: str,
+    memory_scope_id: str = "",
     started_at: datetime,
     records: list[ExperimentRecord],
     finished_at: datetime | None = None,
@@ -203,6 +208,7 @@ def build_validation_report(
         cycle_id=cycle_id,
         regime_trail_id=regime_trail_id,
         universe_id=universe_id,
+        memory_scope_id=memory_scope_id,
         started_at=started_at,
         finished_at=finished,
         n_proposals=len(records),
@@ -246,6 +252,55 @@ def read_index(
                     exc,
                 )
     return rows
+
+
+def read_reports(
+    base_dir: Path | str = DEFAULT_VALIDATION_DIR,
+    *,
+    regime_trail_id: str | None = None,
+    memory_scope_id: str | None = None,
+    exclude_cycle_prefix: str | None = None,
+    limit: int | None = None,
+) -> list[StrictValidationReport]:
+    """Load full validation reports newest first.
+
+    ``memory_scope_id`` is the point-in-time boundary for reusable feedback;
+    callers should normally provide it. ``regime_trail_id`` remains available
+    for narrower tooling queries. ``exclude_cycle_prefix`` prevents a rerun
+    from learning from an older artifact with the same cycle id before that
+    artifact is replaced.
+    """
+    if limit is not None and limit < 0:
+        raise ValueError("limit must be >= 0")
+    if limit == 0:
+        return []
+
+    root = Path(base_dir)
+    reports: list[StrictValidationReport] = []
+    for row in read_index(root):
+        cycle_id = str(row.get("cycle_id", ""))
+        if not cycle_id:
+            continue
+        if exclude_cycle_prefix and (
+            cycle_id == exclude_cycle_prefix or cycle_id.startswith(f"{exclude_cycle_prefix}-c")
+        ):
+            continue
+        path = root / f"{cycle_id}.json"
+        try:
+            report = StrictValidationReport.model_validate_json(
+                path.read_text(encoding="utf-8"),
+            )
+        except (OSError, ValueError) as exc:
+            logger.warning("Skipping unreadable validation report %s: %s", path, exc)
+            continue
+        if regime_trail_id is not None and report.regime_trail_id != regime_trail_id:
+            continue
+        if memory_scope_id is not None and report.memory_scope_id != memory_scope_id:
+            continue
+        reports.append(report)
+
+    reports.sort(key=lambda report: report.finished_at, reverse=True)
+    return reports if limit is None else reports[:limit]
 
 
 # ── Writer (mirrors PromotedArtifactWriter's atomic shape) ──────────────────
@@ -328,6 +383,7 @@ class StrictValidationReportWriter:
                 "cycle_id": report.cycle_id,
                 "regime_trail_id": report.regime_trail_id,
                 "universe_id": report.universe_id,
+                "memory_scope_id": report.memory_scope_id,
                 "started_at": report.started_at.isoformat(),
                 "finished_at": report.finished_at.isoformat(),
                 "n_proposals": report.n_proposals,

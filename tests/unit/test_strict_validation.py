@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 from alpha_harness.regimes import STRICT_REGIME, StrictRegime, get_regime
@@ -14,6 +15,7 @@ from alpha_harness.reports.validation import (
     StrictValidationReportWriter,
     build_validation_report,
     classify_failure,
+    read_reports,
 )
 from alpha_harness.reports.validation import (
     read_index as read_validation_index,
@@ -33,6 +35,10 @@ from alpha_harness.schemas.experiment import (
 )
 from alpha_harness.schemas.factor import FactorSpec
 from alpha_harness.schemas.hypothesis import Hypothesis
+from scripts.validate_strict import (
+    _dataframe_fingerprint,
+    _validation_memory_scope_id,
+)
 
 # ── StrictRegime ────────────────────────────────────────────────────────────
 
@@ -194,6 +200,7 @@ def _minimal_report(cycle_id: str = "c1") -> StrictValidationReport:
     return StrictValidationReport(
         cycle_id=cycle_id,
         regime_trail_id="t1",
+        memory_scope_id="scope-1",
         started_at=now,
         finished_at=now,
         n_proposals=2,
@@ -212,6 +219,8 @@ def test_writer_round_trips_payload(tmp_path: Path) -> None:
     assert path is not None and path.is_file()
     payload = json.loads(path.read_text())
     assert payload["cycle_id"] == "c-rt"
+    assert payload["schema_version"] == 2
+    assert payload["memory_scope_id"] == "scope-1"
     assert payload["n_promoted"] == 1
     rows = read_validation_index(tmp_path)
     assert len(rows) == 1
@@ -231,6 +240,85 @@ def test_writer_appends_distinct_cycles(tmp_path: Path) -> None:
     writer.write(_minimal_report("c-2"))
     rows = read_validation_index(tmp_path)
     assert {r["cycle_id"] for r in rows} == {"c-1", "c-2"}
+
+
+def test_read_reports_filters_trail_excludes_current_and_sorts(tmp_path: Path) -> None:
+    now = datetime.now(UTC)
+    writer = StrictValidationReportWriter(tmp_path)
+    older = _minimal_report("older").model_copy(
+        update={"finished_at": now - timedelta(days=2)},
+    )
+    newer = _minimal_report("newer").model_copy(
+        update={"finished_at": now - timedelta(days=1)},
+    )
+    other_trail = _minimal_report("other-trail").model_copy(
+        update={"regime_trail_id": "t2", "finished_at": now},
+    )
+    other_scope = _minimal_report("other-scope").model_copy(
+        update={"memory_scope_id": "scope-2", "finished_at": now},
+    )
+    current = _minimal_report("current-c01").model_copy(
+        update={"finished_at": now + timedelta(days=1)},
+    )
+    for report in (older, newer, other_trail, other_scope, current):
+        writer.write(report)
+
+    reports = read_reports(
+        tmp_path,
+        regime_trail_id="t1",
+        memory_scope_id="scope-1",
+        exclude_cycle_prefix="current",
+        limit=2,
+    )
+
+    assert [report.cycle_id for report in reports] == ["newer", "older"]
+
+
+def test_read_reports_rejects_negative_limit(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="limit must be >= 0"):
+        read_reports(tmp_path, limit=-1)
+
+
+def test_dataframe_fingerprint_is_row_order_invariant_and_content_sensitive() -> None:
+    frame = pd.DataFrame(
+        {
+            "symbol": ["A", "B"],
+            "timestamp": pd.to_datetime(["2026-01-01", "2026-01-02"]),
+            "close": [10.0, 20.0],
+        },
+    )
+    reordered = frame.iloc[::-1].reset_index(drop=True)
+    changed = frame.copy()
+    changed.loc[0, "close"] = 10.1
+
+    assert _dataframe_fingerprint(frame) == _dataframe_fingerprint(reordered)
+    assert _dataframe_fingerprint(frame) != _dataframe_fingerprint(changed)
+
+
+def test_validation_memory_scope_changes_with_evaluation_contract() -> None:
+    request = EvaluationRequest(
+        factor_id="ignored",
+        universe_id="u",
+        eval_start=date(2026, 1, 1),
+        eval_end=date(2026, 1, 31),
+    )
+    changed = request.model_copy(update={"eval_end": date(2026, 2, 1)})
+
+    baseline = _validation_memory_scope_id(
+        request,
+        regime_trail_id="trail",
+        data_fingerprint="data",
+    )
+    assert baseline == _validation_memory_scope_id(
+        request.model_copy(update={"factor_id": "another"}),
+        regime_trail_id="trail",
+        data_fingerprint="data",
+    )
+    assert baseline != _validation_memory_scope_id(
+        changed,
+        regime_trail_id="trail",
+        data_fingerprint="data",
+    )
 
 
 # ── Doctor probe ───────────────────────────────────────────────────────────

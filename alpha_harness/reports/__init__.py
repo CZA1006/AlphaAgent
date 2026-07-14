@@ -39,6 +39,7 @@ from alpha_harness.reports.validation import (
     StrictValidationReportWriter,
     build_validation_report,
     classify_failure,
+    read_reports,
 )
 from alpha_harness.reports.validation import (
     read_index as read_validation_index,
@@ -68,6 +69,7 @@ __all__ = [
     "index_path",
     "read_combination_index",
     "read_index",
+    "read_reports",
     "read_validation_index",
     "recipe_id_for",
 ]
