@@ -148,7 +148,9 @@ def _drop_implausible_events(events: pd.DataFrame, event_type: str) -> pd.DataFr
 
 def _sign_test(x: pd.Series) -> tuple[int, int, float]:
     """Two-sided binomial sign test — robust to the fat right tail of IPO returns."""
+    # Exact zeroes are ties, not negative outcomes.
     x = x.dropna()
+    x = x[x != 0]
     n = len(x)
     if n == 0:
         return 0, 0, float("nan")

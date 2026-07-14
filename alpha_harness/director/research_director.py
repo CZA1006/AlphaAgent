@@ -220,7 +220,7 @@ def build_hk_ipo_context(
             ),
             DatasetStatus(
                 name="ipo_event_dates_curated",
-                rows=606,
+                rows=593,
                 stocks=75,
                 aligned_to_daily=None,
                 notes="HKEX/prospectus-derived event dates with source evidence.",
@@ -241,7 +241,7 @@ def build_hk_ipo_context(
             DataGap(
                 name="event_terms_needs_review",
                 severity=DataGapSeverity.WARNING,
-                evidence="ipo_event_terms_needs_review has 267 rows across 75 stocks.",
+                evidence="ipo_event_terms_needs_review has 280 rows across 75 stocks.",
                 recommended_action=(
                     "Prioritize rows that affect greenshoe, stabilization, cornerstone, "
                     "lockup, and tranche unlock dates; promote only source-backed terms."
@@ -415,7 +415,7 @@ class ResearchDirector:
                 theme=data_review_theme,
                 priority=85,
                 rationale=(
-                    "The event tables are usable, but 267 needs-review rows and two missing "
+                    "The event tables are usable, but 280 needs-review rows and two missing "
                     "document-coverage names can bias lockup and greenshoe event studies."
                 ),
                 extra_guidance=data_review_guidance,

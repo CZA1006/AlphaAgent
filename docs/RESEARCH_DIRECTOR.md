@@ -98,6 +98,8 @@ machine-readable record to `artifacts/autonomous_runs/`.
 - **Event studies live outside the loop** — `scripts/analysis/*.py`
   (microstructure OOS, lockup/greenshoe/stabilization event studies) are
   operator-run analyses; the director does not schedule or read them.
-- **Promotion still selects on train-IC** — the persistence-based
-  selection fix (see the microstructure case study) is designed but not
-  built.
+- **Persistence selection is experimental** — `combine_factors` exposes
+  `--selection-strategy persistence --top-k K`, and records that choice in
+  its report and promotion trail, including the scoring-formula version. The
+  default remains `input_order` until a
+  fresh, untouched OOS window validates the policy.

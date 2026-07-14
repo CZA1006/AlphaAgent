@@ -34,13 +34,14 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from alpha_harness.combination import CombinationMethod, CombinationRecipe, recipe_id_for
+from alpha_harness.evaluators.persistence import FactorSelectionStrategy
 from alpha_harness.reports.validation import FactorThumbnail
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_COMBINATION_DIR = Path("artifacts/combinations")
 COMBINATION_INDEX_NAME = "_index.jsonl"
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 # Re-export so existing callers can keep importing from
@@ -67,6 +68,10 @@ class CombinationReport(BaseModel):
     component_metrics: list[FactorThumbnail] = Field(default_factory=list)
     avg_pairwise_rank_corr: float | None = None
     passes_regime: bool = False
+    selection_strategy: FactorSelectionStrategy = FactorSelectionStrategy.INPUT_ORDER
+    selection_score_version: str = ""
+    selection_top_k: int | None = None
+    selection_candidate_count: int = 0
     notes: str = ""
 
 
@@ -86,6 +91,10 @@ def build_combination_report(
     component_metrics: list[FactorThumbnail],
     avg_pairwise_rank_corr: float | None,
     passes_regime: bool,
+    selection_strategy: FactorSelectionStrategy = FactorSelectionStrategy.INPUT_ORDER,
+    selection_score_version: str = "",
+    selection_top_k: int | None = None,
+    selection_candidate_count: int = 0,
     finished_at: datetime | None = None,
     notes: str = "",
 ) -> CombinationReport:
@@ -108,6 +117,10 @@ def build_combination_report(
         component_metrics=list(component_metrics),
         avg_pairwise_rank_corr=avg_pairwise_rank_corr,
         passes_regime=passes_regime,
+        selection_strategy=selection_strategy,
+        selection_score_version=selection_score_version,
+        selection_top_k=selection_top_k,
+        selection_candidate_count=selection_candidate_count,
         notes=notes,
     )
 
@@ -217,9 +230,7 @@ class CombinationReportWriter:
 
     def _upsert_index(self, report: CombinationReport) -> None:
         idx = index_path(self._base_dir)
-        rows = [
-            r for r in _iter_index_entries(idx) if r.get("cycle_id") != report.cycle_id
-        ]
+        rows = [r for r in _iter_index_entries(idx) if r.get("cycle_id") != report.cycle_id]
         rows.append(
             {
                 "cycle_id": report.cycle_id,
@@ -230,6 +241,10 @@ class CombinationReportWriter:
                 "method": report.recipe.method.value,
                 "recipe_id": report.recipe.recipe_id,
                 "n_components": len(report.recipe.components),
+                "selection_strategy": report.selection_strategy.value,
+                "selection_score_version": report.selection_score_version,
+                "selection_top_k": report.selection_top_k,
+                "selection_candidate_count": report.selection_candidate_count,
                 "basket_ic": report.basket_metrics.ic,
                 "basket_rank_ic": report.basket_metrics.rank_ic,
                 "passes_regime": report.passes_regime,

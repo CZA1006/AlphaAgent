@@ -29,9 +29,19 @@ from __future__ import annotations
 import math
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import TypeVar
 
 T = TypeVar("T")
+PERSISTENCE_SCORE_VERSION = "rank_ic_sign_stability_v1"
+
+
+class FactorSelectionStrategy(StrEnum):
+    """Deterministic ordering used before a factor basket is assembled."""
+
+    INPUT_ORDER = "input_order"
+    TRAIN_RANK_IC = "train_rank_ic"
+    PERSISTENCE = "persistence"
 
 
 @dataclass(frozen=True)

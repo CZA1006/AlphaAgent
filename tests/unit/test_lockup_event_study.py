@@ -64,6 +64,12 @@ def test_sign_test_one_sided_sample_is_significant() -> None:
     assert p < 0.01
 
 
+def test_sign_test_excludes_zero_ties() -> None:
+    pos, n, p = _sign_test(pd.Series([1.0, -1.0, 0.0, 0.0]))
+    assert (pos, n) == (1, 2)
+    assert p == 1.0
+
+
 def test_sign_test_robust_to_fat_tail() -> None:
     # One +244% outlier cannot rescue a coin-flip sample — unlike the mean.
     x = pd.Series([-1.0, -0.5, -0.2, 0.1, 0.2, 244.0])

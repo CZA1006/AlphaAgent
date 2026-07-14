@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import os
+from datetime import date
 
 import numpy as np
 import pandas as pd
@@ -128,7 +129,7 @@ def _report_basket(
     exprs: list[str],
     train: pd.DataFrame,
     test: pd.DataFrame,
-    hsi_fwd: dict,
+    hsi_fwd: dict[date, float],
     full_spread: float,
 ) -> None:
     print(f"\n--- basket: {label} (k={len(exprs)}) ---")
@@ -256,7 +257,10 @@ def main(argv: list[str] | None = None) -> int:
         key=lambda r: float(r["train_ric"]),  # type: ignore[arg-type]
         reverse=True,
     )[: args.top_k]
-    by_pers = rank_by_persistence([(r, r["score"]) for r in rows])[: args.top_k]
+    scored_rows = [
+        (r, r["score"] if isinstance(r["score"], PersistenceScore) else None) for r in rows
+    ]
+    by_pers = rank_by_persistence(scored_rows)[: args.top_k]
 
     _report_basket(
         "by-trainIC (old selector)",

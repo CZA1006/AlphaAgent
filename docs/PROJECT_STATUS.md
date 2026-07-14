@@ -66,7 +66,12 @@ two LLMs over a shared out-of-sample window the baskets did not hold up.
   the trap factor by construction and doubles the basket's OOS
   rank-IC (+0.0156 → +0.0329), but on one 40-day window neither
   ordering predicts per-factor OOS rank (Spearman ≈ −0.5 for both) —
-  so it stays **opt-in** until a longer OOS window arbitrates.  The
+  so it stays **opt-in** (`combine_factors --selection-strategy
+  persistence --top-k K`) until a longer OOS window arbitrates. The
+  selection policy and candidate counts are persisted in combination
+  reports and promotion trails. The original 2026-05-01 to 2026-06-26
+  OOS window is now a consumed selector-development answer key; only
+  later data qualifies as a fresh validation window. The
   companion tail-concentration audit refuted the "IPO debut spike"
   hypothesis (0/12 gate flips) and instead showed the gate criterion
   itself mispredicting OOS on this panel (4/5 gate-firing factors

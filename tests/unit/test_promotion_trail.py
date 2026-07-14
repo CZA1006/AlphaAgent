@@ -47,9 +47,14 @@ def _bundle(walk_forward: dict[str, object] | None = None) -> EvaluationBundle:
     if walk_forward is not None:
         metadata["walk_forward"] = walk_forward
     return EvaluationBundle(
-        ic=0.05, rank_ic=0.06, quantile_spread=0.01,
-        net_quantile_spread=0.009, turnover=0.4,
-        n_periods=400, n_assets=10, metadata=metadata,
+        ic=0.05,
+        rank_ic=0.06,
+        quantile_spread=0.01,
+        net_quantile_spread=0.009,
+        turnover=0.4,
+        n_periods=400,
+        n_assets=10,
+        metadata=metadata,
     )
 
 
@@ -94,12 +99,28 @@ def test_trail_id_differs_when_holdout_policy_changes() -> None:
     b = PromotionTrail.from_inputs(
         evaluation_request=_request(
             holdout=HoldoutPolicy(
-                strategy=HoldoutStrategy.TAIL, holdout_fraction=0.2,
+                strategy=HoldoutStrategy.TAIL,
+                holdout_fraction=0.2,
             ),
         ),
         judge_thresholds={},
     )
     assert a.trail_id != b.trail_id
+
+
+def test_optional_selection_provenance_changes_trail_id() -> None:
+    baseline = PromotionTrail.from_inputs(
+        evaluation_request=_request(),
+        judge_thresholds={},
+    )
+    selected = PromotionTrail.from_inputs(
+        evaluation_request=_request(),
+        judge_thresholds={},
+        selection={"strategy": "persistence", "top_k": 4},
+    )
+    assert baseline.trail_id != selected.trail_id
+    assert baseline.selection == {}
+    assert selected.selection == {"strategy": "persistence", "top_k": 4}
 
 
 def test_trail_captures_walk_forward_immutables() -> None:
@@ -144,7 +165,10 @@ def test_sector_map_changes_trail_id() -> None:
 
 def test_judge_embeds_trail_on_promote() -> None:
     detail = PromotionJudge().judge(
-        Hypothesis(text="x"), _factor(), _bundle(), _request(),
+        Hypothesis(text="x"),
+        _factor(),
+        _bundle(),
+        _request(),
     )
     assert detail.decision == ExperimentDecision.PROMOTE_CANDIDATE
     assert detail.promotion_trail is not None
@@ -153,11 +177,17 @@ def test_judge_embeds_trail_on_promote() -> None:
 
 def test_judge_omits_trail_on_reject() -> None:
     bad = EvaluationBundle(
-        ic=-0.5, rank_ic=-0.5, quantile_spread=-0.5,
-        n_periods=400, n_assets=10,
+        ic=-0.5,
+        rank_ic=-0.5,
+        quantile_spread=-0.5,
+        n_periods=400,
+        n_assets=10,
     )
     detail = PromotionJudge().judge(
-        Hypothesis(text="x"), _factor(), bad, _request(),
+        Hypothesis(text="x"),
+        _factor(),
+        bad,
+        _request(),
     )
     assert detail.decision == ExperimentDecision.REJECT
     assert detail.promotion_trail is None
@@ -204,7 +234,8 @@ def test_index_carries_trail_id(tmp_path: Path) -> None:
 
 
 def test_list_factors_filters_by_trail_id(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     a = _record_with_trail(2)
     b = _record_with_trail(5)
@@ -219,7 +250,8 @@ def test_list_factors_filters_by_trail_id(
 
 
 def test_show_trail_dumps_block(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     record = _record_with_trail(3)
     PromotedArtifactWriter(tmp_path).maybe_write(record)
@@ -239,10 +271,7 @@ def test_legacy_v2_rows_without_trail_still_load(tmp_path: Path) -> None:
 
     p = index_path(tmp_path)
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(
-        '{"factor_id":"old","factor_name":"o","rank_ic":0.04,'
-        '"refinement_round":0}\n'
-    )
+    p.write_text('{"factor_id":"old","factor_name":"o","rank_ic":0.04,"refinement_round":0}\n')
     rc = list_main(["--promoted-dir", str(tmp_path)])
     assert rc == 0
 
@@ -251,7 +280,8 @@ def test_legacy_v2_rows_without_trail_still_load(tmp_path: Path) -> None:
 
 
 def test_doctor_passes_when_trail_ids_well_formed(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.chdir(tmp_path)
     art = tmp_path / "artifacts" / "promoted"
@@ -268,14 +298,13 @@ def test_doctor_passes_when_trail_ids_well_formed(
 
 
 def test_doctor_flags_empty_trail_id(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.chdir(tmp_path)
     art = tmp_path / "artifacts" / "promoted"
     art.mkdir(parents=True, exist_ok=True)
-    (art / "_index.jsonl").write_text(
-        '{"factor_id":"a","trail_id":""}\n'
-    )
+    (art / "_index.jsonl").write_text('{"factor_id":"a","trail_id":""}\n')
     from scripts.doctor import _check_promoted_artifacts_dir
 
     res = _check_promoted_artifacts_dir()

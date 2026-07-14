@@ -27,6 +27,10 @@ def test_hk_ipo_context_reads_recent_validation_counts(tmp_path) -> None:
         "old-1: promoted=1, rejected=4",
         "old-2: promoted=2, rejected=3",
     ]
+    event_dates = next(ds for ds in context.dataset_status if ds.name == "ipo_event_dates_curated")
+    review_gap = next(gap for gap in context.data_gaps if gap.name == "event_terms_needs_review")
+    assert event_dates.rows == 593
+    assert "280 rows" in review_gap.evidence
 
 
 def test_hk_ipo_director_selects_event_microstructure_topic(tmp_path) -> None:

@@ -80,6 +80,9 @@ class PromotionTrail(BaseModel):
     min_fraction_positive_folds: float = 0.6
     max_tail_concentration: float = 0.5
     min_holdout_decay_ratio: float = 0.5
+    # Optional upstream candidate-selection provenance. Empty for normal
+    # single-factor promotion, preserving historical trail hashes.
+    selection: dict[str, str | int | float] = Field(default_factory=dict)
 
     @classmethod
     def from_inputs(
@@ -88,6 +91,7 @@ class PromotionTrail(BaseModel):
         evaluation_request: Any,
         judge_thresholds: dict[str, float],
         walk_forward: dict[str, int | float | str] | None = None,
+        selection: dict[str, str | int | float] | None = None,
     ) -> PromotionTrail:
         """Construct a trail and compute its ``trail_id`` hash.
 
@@ -130,6 +134,8 @@ class PromotionTrail(BaseModel):
                 judge_thresholds.get("min_holdout_decay_ratio", 0.5),
             ),
         }
+        if selection:
+            body["selection"] = dict(selection)
         canonical = _json.dumps(body, sort_keys=True, default=str)
         trail_id = hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
         return cls.model_validate({"trail_id": trail_id, **body})

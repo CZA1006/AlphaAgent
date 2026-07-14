@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from alpha_harness.combination import CombinationMethod
+from alpha_harness.evaluators.persistence import FactorSelectionStrategy
 from alpha_harness.reports.combination import (
     CombinationReportWriter,
     build_combination_report,
@@ -48,10 +49,12 @@ def test_recipe_id_changes_with_method() -> None:
 
 def test_recipe_id_changes_with_components() -> None:
     a = recipe_id_for(
-        CombinationMethod.EQUAL_WEIGHT, ["rank(close)", "rank(volume)"],
+        CombinationMethod.EQUAL_WEIGHT,
+        ["rank(close)", "rank(volume)"],
     )
     b = recipe_id_for(
-        CombinationMethod.EQUAL_WEIGHT, ["rank(close)", "rank(high)"],
+        CombinationMethod.EQUAL_WEIGHT,
+        ["rank(close)", "rank(high)"],
     )
     assert a != b
 
@@ -59,10 +62,12 @@ def test_recipe_id_changes_with_components() -> None:
 def test_recipe_id_collapses_commutative_trivia() -> None:
     """``a + b`` and ``b + a`` share a canonical AST, so the recipe id matches."""
     a = recipe_id_for(
-        CombinationMethod.EQUAL_WEIGHT, ["rank(close + volume)"],
+        CombinationMethod.EQUAL_WEIGHT,
+        ["rank(close + volume)"],
     )
     b = recipe_id_for(
-        CombinationMethod.EQUAL_WEIGHT, ["rank(volume + close)"],
+        CombinationMethod.EQUAL_WEIGHT,
+        ["rank(volume + close)"],
     )
     assert a == b
 
@@ -70,7 +75,8 @@ def test_recipe_id_collapses_commutative_trivia() -> None:
 def test_recipe_id_rejects_unparseable_expression() -> None:
     with pytest.raises(ValueError):
         recipe_id_for(
-            CombinationMethod.EQUAL_WEIGHT, ["this is not a valid expression !!"],
+            CombinationMethod.EQUAL_WEIGHT,
+            ["this is not a valid expression !!"],
         )
 
 
@@ -105,6 +111,10 @@ def test_build_and_write_round_trip(tmp_path: Path) -> None:
         component_metrics=[_thumb("f1", 0.01, 0.02), _thumb("f2", 0.015, 0.025)],
         avg_pairwise_rank_corr=0.25,
         passes_regime=True,
+        selection_strategy=FactorSelectionStrategy.PERSISTENCE,
+        selection_score_version="rank_ic_sign_stability_v1",
+        selection_top_k=2,
+        selection_candidate_count=4,
     )
 
     writer = CombinationReportWriter(tmp_path)
@@ -118,12 +128,17 @@ def test_build_and_write_round_trip(tmp_path: Path) -> None:
     assert on_disk["recipe"]["recipe_id"] == report.recipe.recipe_id
     assert len(on_disk["component_metrics"]) == 2
     assert on_disk["passes_regime"] is True
+    assert on_disk["selection_strategy"] == "persistence"
+    assert on_disk["selection_score_version"] == "rank_ic_sign_stability_v1"
+    assert on_disk["selection_top_k"] == 2
+    assert on_disk["selection_candidate_count"] == 4
 
     rows = read_combination_index(tmp_path)
     assert len(rows) == 1
     assert rows[0]["cycle_id"] == "cycle-abc"
     assert rows[0]["recipe_id"] == report.recipe.recipe_id
     assert rows[0]["passes_regime"] is True
+    assert rows[0]["selection_strategy"] == "persistence"
 
 
 def test_writer_upserts_same_cycle_id(tmp_path: Path) -> None:

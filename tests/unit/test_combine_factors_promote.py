@@ -6,10 +6,13 @@ import json
 from datetime import date
 from pathlib import Path
 
+import pytest
+
 from alpha_harness.combination import CombinationMethod, CombinationRecipe
+from alpha_harness.evaluators.persistence import FactorSelectionStrategy
 from alpha_harness.schemas.evaluation import EvaluationBundle, EvaluationProfile, EvaluationRequest
 from alpha_harness.schemas.experiment import ExperimentDecision, PromotionTrail
-from scripts.combine_factors import _judge_basket, _promote_basket
+from scripts.combine_factors import _judge_basket, _promote_basket, _select_component_indices
 
 
 class _Args:
@@ -42,6 +45,45 @@ def _make_trail(*, neutralize: str = "none") -> PromotionTrail:
 
 def _make_bundle() -> EvaluationBundle:
     return EvaluationBundle(ic=0.04, rank_ic=0.05, n_periods=200, n_assets=50)
+
+
+def _selection_bundle(rank_ic: float, folds: list[float]) -> EvaluationBundle:
+    return EvaluationBundle(
+        rank_ic=rank_ic,
+        metadata={"per_fold": [{"rank_ic": value} for value in folds]},
+    )
+
+
+def test_persistence_selection_is_opt_in_and_top_k() -> None:
+    bundles = [
+        _selection_bundle(0.20, [0.30, -0.05, 0.25, 0.06]),
+        _selection_bundle(0.04, [0.04, 0.03, 0.05, 0.02]),
+        _selection_bundle(0.03, [0.03, 0.02, 0.01, 0.02]),
+    ]
+    assert _select_component_indices(
+        strategy=FactorSelectionStrategy.INPUT_ORDER,
+        top_k=2,
+        bundles=bundles,
+    ) == [0, 1]
+    assert _select_component_indices(
+        strategy=FactorSelectionStrategy.TRAIN_RANK_IC,
+        top_k=2,
+        bundles=bundles,
+    ) == [0, 1]
+    assert _select_component_indices(
+        strategy=FactorSelectionStrategy.PERSISTENCE,
+        top_k=2,
+        bundles=bundles,
+    ) == [1, 2]
+
+
+def test_nondefault_selection_requires_top_k() -> None:
+    with pytest.raises(ValueError, match="--top-k is required"):
+        _select_component_indices(
+            strategy=FactorSelectionStrategy.PERSISTENCE,
+            top_k=None,
+            bundles=[_selection_bundle(0.02, [0.01, 0.02])],
+        )
 
 
 def _request() -> EvaluationRequest:
