@@ -60,6 +60,49 @@ def test_policy_opens_data_review_when_no_promotions_and_data_sensitive_failures
     assert decision.next_topic_id == "hk_ipo_event_truth_review"
 
 
+def test_policy_does_not_treat_weak_ic_as_broken_event_truth() -> None:
+    decision = ResearchPostRunPolicy().decide(
+        ResearchRunSummary(
+            market="hk_ipo",
+            selected_topic_id="hk_ipo_event_conditioned_microstructure",
+            status="completed",
+            validation_reports=[
+                ValidationReportSummary(
+                    cycle_id="weak-signal",
+                    n_proposals=6,
+                    n_promoted=0,
+                    n_rejected=6,
+                    rejected_by_gate={"threshold_ic": 3, "tail_concentration": 3},
+                )
+            ],
+        )
+    )
+
+    assert decision.action == NextResearchAction.CONTINUE_TOPIC
+    assert decision.next_topic_id == "hk_ipo_event_conditioned_microstructure"
+
+
+def test_policy_opens_data_review_for_data_insufficient_gate() -> None:
+    decision = ResearchPostRunPolicy().decide(
+        ResearchRunSummary(
+            market="hk_ipo",
+            selected_topic_id="hk_ipo_event_conditioned_microstructure",
+            status="completed",
+            validation_reports=[
+                ValidationReportSummary(
+                    cycle_id="insufficient",
+                    n_proposals=1,
+                    n_promoted=0,
+                    n_rejected=1,
+                    rejected_by_gate={"data_insufficient": 1},
+                )
+            ],
+        )
+    )
+
+    assert decision.action == NextResearchAction.OPEN_DATA_REVIEW
+
+
 def test_policy_stops_failed_or_no_progress_runs() -> None:
     failed = ResearchPostRunPolicy().decide(
         ResearchRunSummary(

@@ -241,11 +241,12 @@ class ResearchPostRunPolicy:
         return evidence
 
     def _event_truth_blocked(self, rejected_by_gate: dict[str, int]) -> bool:
+        # Weak IC is a research result, not evidence that event truth is broken.
+        # Open the data-review path only for failures that directly indicate
+        # unusable cross-sections or insufficient observations.
         data_sensitive_failures = {
             "missing_metric",
-            "insufficient_data",
-            "threshold_ic",
-            "threshold_rank_ic",
+            "data_insufficient",
         }
         return bool(data_sensitive_failures.intersection(rejected_by_gate))
 
