@@ -2,8 +2,8 @@
 
 > Single source of truth for "where the project actually is": what is
 > built and proven, what is not, and what to do next.  Last refreshed
-> after the three honest case studies (v1 positive / v2 + v3 negative)
-> and the look-ahead audit (3 CRITICAL bugs fixed).
+> after the three honest case studies and the 2026-07-14 audit of the
+> first live bounded HK IPO run.
 
 For *how* the system works, read [`../ARCHITECTURE.md`](../ARCHITECTURE.md)
 ("How the agent does quant research") and
@@ -41,8 +41,10 @@ two LLMs over a shared out-of-sample window the baskets did not hold up.
 - **Deterministic evaluator stack** — IC, rank-IC, quantile spread,
   turnover, cost-adjusted spread, Sharpe; sector/beta neutralization;
   multi-horizon labels.
-- **Walk-forward + embargo + purge + TAIL holdout** — calendar folds,
-  embargo of `lag + horizon` days, out-of-sample reservation.
+- **Walk-forward + embargo + purge + global TAIL holdout** — calendar folds,
+  embargo of `lag + horizon` days, then one trailing out-of-sample
+  reservation. Judge-facing horizon and portfolio metadata is aggregated
+  across folds rather than inherited from the first fold.
 - **Six-gate promotion judge** — data sufficiency, profile thresholds,
   multi-horizon sign consistency, walk-forward stability, tail
   concentration, holdout decay.
@@ -58,9 +60,10 @@ two LLMs over a shared out-of-sample window the baskets did not hold up.
   two-invocation CLI integration test verifies the cross-process path.
 - **Typed cost-replay executor** — after event-conditioned discovery promotes
   candidates, the Director passes their exact validation cycle ids into a
-  no-LLM, no-mutation replay at 15 bps. Schema-v3 validation reports capture
+  no-LLM, no-mutation replay at 15 bps. Schema-v4 validation reports capture
   candidate source, source cycles, panel fingerprint, and cost provenance;
-  snapshot mismatches fail closed.
+  snapshot mismatches fail closed. Discovery promotions and replay survivors
+  are counted separately.
 - **Typed event-truth audit executor** — a read-only five-check BigQuery task
   writes generic research-task artifacts and feeds deterministic issue counts
   back to the post-run policy. The 2026-07-14 live smoke found 280 review rows
@@ -140,8 +143,7 @@ two LLMs over a shared out-of-sample window the baskets did not hold up.
 
 - Full loop exercised against **DeepSeek-Chat-v3.1** and
   **Qwen-2.5-72B** via OpenRouter on **Polygon SP-50** daily bars.
-- **First live bounded autonomous run on HK IPO (2026-07-14,
-  $0.0036 total LLM cost)**: director selected event-conditioned
+- **First live bounded autonomous run on HK IPO (2026-07-14)**: director selected event-conditioned
   microstructure; DeepSeek proposed 36 event-conditioned candidates
   over 3 cycles; the six-gate judge rejected 35 (weak IC, horizon
   sign-flips, tail concentration up to 4.9, degenerate event-gated
@@ -150,11 +152,16 @@ two LLMs over a shared out-of-sample window the baskets did not hold up.
   under the **lenient** regime and survived the automatic 15 bps
   cost-stress replay (`ts_delta(vwap, 2) *
   is_near_greenshoe_expiry_5d`, turnover 0.28, net spread +0.0122).
-  **Honest caveat:** its holdout rank-IC (+0.255) is 5× the in-sample
-  value and rests on ~43 flagged stock-days across 8 stocks in the
-  tail slice — a concentration signature, and the §10 event study
-  found no unconditional greenshoe-expiry effect.  Recorded as a
-  fragile lead to confirm or kill on the untouched July data window.
+  **Audit correction:** this proves the autonomous control flow, not the
+  factor. The old wrapper copied first-fold metadata, so +0.255 was the first
+  fold's internal tail rather than a global holdout; the documented 5× ratio
+  and ~43/8 coverage therefore do not share a reproducible window. The run
+  also supplied no token pricing rates, so its USD ledger stayed at zero and
+  the separate `$0.0036` estimate was not artifact-reproducible. Both defects
+  are fixed. A deterministic replay on the identical data fingerprint
+  (`6bf7ac...`) **rejected the factor**: training rank-IC +0.0230, global
+  holdout rank-IC -0.0030, tail concentration 11.76, and Sharpe -2.12. The
+  control loop succeeded; this candidate did not.
 - One out-of-sample-positive basket (case study v1, post-fix); two
   out-of-sample-negative baskets (v2, v3) — see the verdict table
   below.

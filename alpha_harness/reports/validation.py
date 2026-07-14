@@ -31,13 +31,14 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from alpha_harness.reports.cycle_report import BudgetSnapshot, snapshot_budget
 from alpha_harness.schemas.experiment import ExperimentDecision, ExperimentRecord
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_VALIDATION_DIR = Path("artifacts/validations")
 VALIDATION_INDEX_NAME = "_index.jsonl"
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 # ── Schema ──────────────────────────────────────────────────────────────────
@@ -101,6 +102,7 @@ class StrictValidationReport(BaseModel):
     # every factor (promoted + rejected) survives with its expression +
     # headline metrics, no need to keep the in-memory registry around.
     factors: list[FactorThumbnail] = Field(default_factory=list)
+    budget: BudgetSnapshot | None = None
     notes: str = ""
 
 
@@ -157,6 +159,7 @@ def build_validation_report(
     records: list[ExperimentRecord],
     finished_at: datetime | None = None,
     notes: str = "",
+    budget: Any | None = None,
 ) -> StrictValidationReport:
     """Aggregate ``records`` into a :class:`StrictValidationReport`."""
     finished = finished_at or datetime.now(UTC)
@@ -231,6 +234,7 @@ def build_validation_report(
         promoted_factor_ids=promoted_ids,
         promoted_trail_ids=promoted_trail_ids,
         factors=thumbnails,
+        budget=snapshot_budget(budget),
         notes=notes,
     )
 

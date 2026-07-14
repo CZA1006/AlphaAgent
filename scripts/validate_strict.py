@@ -63,6 +63,7 @@ from alpha_harness.llm import (
     MockLLMClient,
     TokenBudget,
     default_log_path,
+    token_budget_from_env,
 )
 from alpha_harness.orchestrator.refinement import RefinementConfig, RefinementRunner
 from alpha_harness.orchestrator.research_loop import ResearchOrchestrator
@@ -242,17 +243,17 @@ def _resolve_token_budget(args: argparse.Namespace) -> TokenBudget | None:
     if token_cap is None and cost_cap is None:
         return None
 
-    prompt_rate = float(_os.environ.get("ALPHA_AGENT_PROMPT_COST_PER_1K", "0") or "0")
-    completion_rate = float(_os.environ.get("ALPHA_AGENT_COMPLETION_COST_PER_1K", "0") or "0")
-    return TokenBudget(
+    return token_budget_from_env(
         max_total_tokens=token_cap,
         max_cost_usd=cost_cap,
-        prompt_cost_per_1k=prompt_rate,
-        completion_cost_per_1k=completion_rate,
     )
 
 
-def _build_llm_client(args: argparse.Namespace, *, cycle_id: str) -> LLMClient:
+def _build_llm_client(
+    args: argparse.Namespace,
+    *,
+    cycle_id: str,
+) -> tuple[LLMClient, TokenBudget | None]:
     """Construct the proposer's LLM stack: backend → log → budget.
 
     The mock path needs no keys; the openrouter path requires
@@ -293,7 +294,7 @@ def _build_llm_client(args: argparse.Namespace, *, cycle_id: str) -> LLMClient:
             budget.max_cost_usd,
         )
         wrapped = BudgetedLLMClient(wrapped, budget)
-    return wrapped
+    return wrapped, budget
 
 
 # ── Data loading ────────────────────────────────────────────────────────────
@@ -682,8 +683,8 @@ def main(argv: list[str] | None = None) -> int:
     replay_hypotheses: list[Hypothesis] = []
     if candidate_source is ResearchExecutorKind.PROPOSE:
         try:
-            llm_client = _build_llm_client(args, cycle_id=cycle_id)
-        except RuntimeError as exc:
+            llm_client, llm_budget = _build_llm_client(args, cycle_id=cycle_id)
+        except (RuntimeError, ValueError) as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 2
         proposer = HypothesisProposer(
@@ -698,6 +699,7 @@ def main(argv: list[str] | None = None) -> int:
             refinement_runner=runner,
         )
     else:
+        llm_budget = None
         try:
             replay_hypotheses = _load_replay_hypotheses(
                 validation_dir=args.validation_dir,
@@ -804,6 +806,7 @@ def main(argv: list[str] | None = None) -> int:
             cost_bps=eval_request.cost_bps,
             started_at=sub_started,
             records=records_this_cycle,
+            budget=llm_budget,
         )
         if not args.no_write:
             StrictValidationReportWriter(args.validation_dir).write(report)

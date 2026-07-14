@@ -29,7 +29,12 @@ import statistics
 from dataclasses import dataclass
 from datetime import date, timedelta
 
-from alpha_harness.schemas.evaluation import EvaluationBundle, EvaluationRequest
+from alpha_harness.schemas.evaluation import (
+    EvaluationBundle,
+    EvaluationRequest,
+    HoldoutPolicy,
+    HoldoutStrategy,
+)
 from alpha_harness.schemas.factor import FactorSpec
 from alpha_harness.service import FactorEvaluator
 
@@ -170,6 +175,12 @@ class WalkForwardEvaluator:
         factor: FactorSpec,
         request: EvaluationRequest,
     ) -> EvaluationBundle:
+        if (
+            request.holdout.strategy is HoldoutStrategy.TAIL
+            and request.holdout.holdout_fraction > 0
+        ):
+            return self._evaluate_with_global_holdout(factor, request)
+
         embargo_days = _derive_embargo_days(self._config, request)
         spans = fold_windows(
             request.eval_start,
@@ -212,6 +223,71 @@ class WalkForwardEvaluator:
             self._config,
             embargo_days=embargo_days,
             purged_folds=purged,
+        )
+
+    def _evaluate_with_global_holdout(
+        self,
+        factor: FactorSpec,
+        request: EvaluationRequest,
+    ) -> EvaluationBundle:
+        """Reserve one trailing holdout after walk-forward aggregation."""
+        total_days = (request.eval_end - request.eval_start).days + 1
+        holdout_days = max(1, round(total_days * request.holdout.holdout_fraction))
+        holdout_days = min(holdout_days, total_days - 1)
+        disabled = HoldoutPolicy(strategy=HoldoutStrategy.NONE)
+        if holdout_days < 1:
+            return self.evaluate(
+                factor,
+                request.model_copy(update={"holdout": disabled}),
+            )
+
+        split_start = request.eval_end - timedelta(days=holdout_days - 1)
+        in_sample = self.evaluate(
+            factor,
+            request.model_copy(
+                update={
+                    "eval_end": split_start - timedelta(days=1),
+                    "holdout": disabled,
+                },
+            ),
+        )
+        held_out = self._inner.evaluate(
+            factor,
+            request.model_copy(
+                update={
+                    "eval_start": split_start,
+                    "holdout": disabled,
+                },
+            ),
+        )
+
+        decay_ratio: float | None = None
+        if (
+            in_sample.rank_ic is not None
+            and held_out.rank_ic is not None
+            and in_sample.rank_ic != 0
+        ):
+            decay_ratio = held_out.rank_ic / in_sample.rank_ic
+
+        metadata = dict(in_sample.metadata)
+        metadata["holdout"] = {
+            "holdout_start": str(split_start),
+            "holdout_end": str(request.eval_end),
+            "holdout_days": holdout_days,
+            "ic": held_out.ic,
+            "rank_ic": held_out.rank_ic,
+            "quantile_spread": held_out.quantile_spread,
+            "net_quantile_spread": held_out.net_quantile_spread,
+            "turnover": held_out.turnover,
+            "n_periods": held_out.n_periods,
+            "decay_ratio": decay_ratio,
+        }
+        return in_sample.model_copy(
+            update={
+                "eval_start": request.eval_start,
+                "eval_end": request.eval_end,
+                "metadata": metadata,
+            },
         )
 
 
@@ -276,9 +352,7 @@ def _aggregate(
         "fraction_positive_rank_ic": _frac_positive("rank_ic"),
     }
 
-    # Pull through any non-walk-forward metadata from the first fold so
-    # things like ``ic_by_horizon`` survive the wrapping.
-    base_meta = dict(folds[0].metadata) if folds else {}
+    base_meta = _aggregate_metadata(folds, request)
     base_meta["walk_forward"] = walk_forward_meta
     base_meta["per_fold"] = per_fold_payload
 
@@ -299,3 +373,65 @@ def _aggregate(
         forecast_horizon_bars=folds[0].forecast_horizon_bars if folds else None,
         metadata=base_meta,
     )
+
+
+def _aggregate_metadata(
+    folds: list[EvaluationBundle],
+    request: EvaluationRequest,
+) -> dict[str, object]:
+    """Aggregate judge-relevant metadata without leaking the first fold."""
+    metadata: dict[str, object] = {}
+    for key in ("evaluator", "mode", "neutralize", "cost_bps"):
+        stable_values = [fold.metadata.get(key) for fold in folds if key in fold.metadata]
+        if stable_values and all(value == stable_values[0] for value in stable_values):
+            metadata[key] = stable_values[0]
+
+    for key in ("ic_by_horizon", "rank_ic_by_horizon"):
+        horizons: dict[str, list[float]] = {}
+        for fold in folds:
+            payload = fold.metadata.get(key)
+            if not isinstance(payload, dict):
+                continue
+            for horizon, value in payload.items():
+                if isinstance(value, int | float):
+                    horizons.setdefault(str(horizon), []).append(float(value))
+        if horizons:
+            metadata[key] = {
+                horizon: statistics.fmean(horizon_values)
+                for horizon, horizon_values in sorted(
+                    horizons.items(), key=lambda item: int(item[0])
+                )
+            }
+
+    ic_by_horizon = metadata.get("ic_by_horizon")
+    if isinstance(ic_by_horizon, dict):
+        primary = ic_by_horizon.get(str(request.label.forecast_horizon_bars))
+        if isinstance(primary, int | float) and primary != 0:
+            metadata["ic_sign_consistent_horizons"] = sum(
+                1
+                for value in ic_by_horizon.values()
+                if isinstance(value, int | float) and value != 0 and (value > 0) == (primary > 0)
+            )
+
+    portfolios: list[dict[str, object]] = []
+    for fold in folds:
+        payload = fold.metadata.get("portfolio")
+        if isinstance(payload, dict):
+            portfolios.append({str(key): value for key, value in payload.items()})
+    if portfolios:
+        portfolio: dict[str, float] = {}
+        keys = set().union(*(payload.keys() for payload in portfolios))
+        for key in keys:
+            portfolio_values: list[float] = []
+            for payload in portfolios:
+                value = payload.get(key)
+                if isinstance(value, int | float):
+                    portfolio_values.append(float(value))
+            if portfolio_values:
+                portfolio[key] = (
+                    max(portfolio_values)
+                    if key == "tail_concentration"
+                    else statistics.fmean(portfolio_values)
+                )
+        metadata["portfolio"] = portfolio
+    return metadata

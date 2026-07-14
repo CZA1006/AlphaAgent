@@ -40,6 +40,9 @@ class BudgetSnapshot(BaseModel):
     cost_usd_spent: float = 0.0
     max_total_tokens: int | None = None
     max_cost_usd: float | None = None
+    calls: int = 0
+    prompt_cost_per_1k: float = 0.0
+    completion_cost_per_1k: float = 0.0
 
 
 class ExperimentThumbnail(BaseModel):
@@ -354,4 +357,7 @@ def snapshot_budget(budget: Any | None) -> BudgetSnapshot | None:
         cost_usd_spent=float(getattr(budget, "cost_usd_spent", 0.0)),
         max_total_tokens=getattr(budget, "max_total_tokens", None),
         max_cost_usd=getattr(budget, "max_cost_usd", None),
+        calls=int(getattr(budget, "calls", 0)),
+        prompt_cost_per_1k=float(getattr(budget, "prompt_cost_per_1k", 0.0)),
+        completion_cost_per_1k=float(getattr(budget, "completion_cost_per_1k", 0.0)),
     )

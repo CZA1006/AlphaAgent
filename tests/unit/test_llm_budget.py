@@ -13,6 +13,7 @@ from alpha_harness.llm import (
     LLMResponse,
     MockLLMClient,
     TokenBudget,
+    token_budget_from_env,
 )
 
 
@@ -133,3 +134,22 @@ def test_missing_usage_defaults_to_zero() -> None:
 
     assert budget.total_tokens_spent == 0
     assert budget.calls == 1
+
+
+def test_cost_cap_requires_explicit_pricing_rates(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("ALPHA_AGENT_PROMPT_COST_PER_1K", raising=False)
+    monkeypatch.delenv("ALPHA_AGENT_COMPLETION_COST_PER_1K", raising=False)
+
+    with pytest.raises(ValueError, match="USD cost budget requires"):
+        token_budget_from_env(max_total_tokens=None, max_cost_usd=2.0)
+
+
+def test_cost_cap_uses_explicit_pricing_rates(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ALPHA_AGENT_PROMPT_COST_PER_1K", "0.001")
+    monkeypatch.setenv("ALPHA_AGENT_COMPLETION_COST_PER_1K", "0.002")
+
+    budget = token_budget_from_env(max_total_tokens=10_000, max_cost_usd=2.0)
+
+    assert budget is not None
+    assert budget.prompt_cost_per_1k == pytest.approx(0.001)
+    assert budget.completion_cost_per_1k == pytest.approx(0.002)

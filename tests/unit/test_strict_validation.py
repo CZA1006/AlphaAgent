@@ -9,6 +9,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+from alpha_harness.llm import TokenBudget
 from alpha_harness.regimes import STRICT_REGIME, StrictRegime, get_regime
 from alpha_harness.reports.validation import (
     FactorThumbnail,
@@ -194,6 +195,32 @@ def test_build_report_aggregates_counts_and_gates() -> None:
     assert report.promoted_trail_ids == ["abc123"]
 
 
+def test_build_report_persists_budget_pricing_and_spend() -> None:
+    budget = TokenBudget(
+        max_total_tokens=10_000,
+        max_cost_usd=2.0,
+        prompt_cost_per_1k=0.001,
+        completion_cost_per_1k=0.002,
+    )
+    budget.debit(prompt_tokens=100, completion_tokens=50, total_tokens=150)
+
+    report = build_validation_report(
+        cycle_id="budgeted",
+        regime_trail_id="trail-x",
+        universe_id="strict",
+        started_at=datetime.now(UTC),
+        records=[],
+        budget=budget,
+    )
+
+    assert report.budget is not None
+    assert report.budget.calls == 1
+    assert report.budget.total_tokens_spent == 150
+    assert report.budget.cost_usd_spent == pytest.approx(0.0002)
+    assert report.budget.prompt_cost_per_1k == pytest.approx(0.001)
+    assert report.budget.completion_cost_per_1k == pytest.approx(0.002)
+
+
 # ── Writer round-trip ──────────────────────────────────────────────────────
 
 
@@ -222,7 +249,7 @@ def test_writer_round_trips_payload(tmp_path: Path) -> None:
     assert path is not None and path.is_file()
     payload = json.loads(path.read_text())
     assert payload["cycle_id"] == "c-rt"
-    assert payload["schema_version"] == 3
+    assert payload["schema_version"] == 4
     assert payload["memory_scope_id"] == "scope-1"
     assert payload["data_fingerprint"] == "data-1"
     assert payload["n_promoted"] == 1

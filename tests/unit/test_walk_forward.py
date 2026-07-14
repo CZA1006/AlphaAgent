@@ -16,6 +16,8 @@ from alpha_harness.schemas.evaluation import (
     EvaluationBundle,
     EvaluationProfile,
     EvaluationRequest,
+    HoldoutPolicy,
+    HoldoutStrategy,
 )
 from alpha_harness.schemas.experiment import ExperimentDecision, FailureCategory
 from alpha_harness.schemas.factor import FactorSpec
@@ -80,12 +82,14 @@ class _ScriptedEvaluator:
     ) -> None:
         self._per_fold = per_fold
         self._default = default
+        self.requests: list[EvaluationRequest] = []
 
     def evaluate(
         self,
         factor: FactorSpec,
         request: EvaluationRequest,
     ) -> EvaluationBundle:
+        self.requests.append(request)
         key = (request.eval_start, request.eval_end)
         b = self._per_fold.get(key)
         if b is not None:
@@ -145,6 +149,104 @@ def test_aggregate_means_match_per_fold() -> None:
     assert wf_meta["fraction_positive_ic"] == pytest.approx(2 / 3)
     assert wf_meta["fraction_positive_rank_ic"] == pytest.approx(1.0)
     assert len(out.metadata["per_fold"]) == 3
+
+
+def test_walk_forward_reserves_one_global_tail_holdout() -> None:
+    cfg = WalkForwardConfig(
+        n_folds=2,
+        fold_size_days=20,
+        step_days=20,
+        embargo_days=0,
+        min_fold_days=1,
+    )
+    start = date(2024, 1, 1)
+    end = date(2024, 4, 9)
+    training_end = date(2024, 3, 20)
+    spans = fold_windows(start, training_end, cfg)
+    holdout_span = (date(2024, 3, 21), end)
+    inner = _ScriptedEvaluator(
+        {
+            spans[0]: _bundle(0.04, 0.04),
+            spans[1]: _bundle(0.06, 0.06),
+            holdout_span: _bundle(0.02, 0.025),
+        }
+    )
+    request = _request(start, end).model_copy(
+        update={
+            "holdout": HoldoutPolicy(
+                strategy=HoldoutStrategy.TAIL,
+                holdout_fraction=0.2,
+            )
+        }
+    )
+
+    out = WalkForwardEvaluator(inner, cfg).evaluate(
+        FactorSpec(name="f", expression="rank(close)"),
+        request,
+    )
+
+    assert [(r.eval_start, r.eval_end) for r in inner.requests] == [*spans, holdout_span]
+    assert all(r.holdout.strategy is HoldoutStrategy.NONE for r in inner.requests)
+    assert out.rank_ic == pytest.approx(0.05)
+    assert out.metadata["holdout"] == {
+        "holdout_start": "2024-03-21",
+        "holdout_end": "2024-04-09",
+        "holdout_days": 20,
+        "ic": 0.02,
+        "rank_ic": 0.025,
+        "quantile_spread": 0.01,
+        "net_quantile_spread": 0.009,
+        "turnover": 0.4,
+        "n_periods": 20,
+        "decay_ratio": pytest.approx(0.5),
+    }
+
+
+def test_aggregate_metadata_uses_all_folds_not_first_fold() -> None:
+    cfg = WalkForwardConfig(
+        n_folds=2,
+        fold_size_days=10,
+        step_days=10,
+        embargo_days=0,
+        min_fold_days=1,
+    )
+    start = date(2024, 1, 1)
+    spans = fold_windows(start, date(2024, 12, 31), cfg)
+    first = _bundle(0.04, 0.05).model_copy(
+        update={
+            "metadata": {
+                "ic_by_horizon": {"5": 0.04, "10": -0.02},
+                "rank_ic_by_horizon": {"5": 0.05, "10": 0.01},
+                "ic_sign_consistent_horizons": 1,
+                "portfolio": {"tail_concentration": 0.2, "hit_rate": 0.4},
+            }
+        }
+    )
+    second = _bundle(0.08, 0.07).model_copy(
+        update={
+            "metadata": {
+                "ic_by_horizon": {"5": 0.08, "10": 0.06},
+                "rank_ic_by_horizon": {"5": 0.07, "10": 0.03},
+                "ic_sign_consistent_horizons": 2,
+                "portfolio": {"tail_concentration": 0.7, "hit_rate": 0.8},
+            }
+        }
+    )
+    out = WalkForwardEvaluator(
+        _ScriptedEvaluator({spans[0]: first, spans[1]: second}),
+        cfg,
+    ).evaluate(
+        FactorSpec(name="f", expression="rank(close)"),
+        _request(start, date(2024, 12, 31)),
+    )
+
+    assert out.metadata["ic_by_horizon"] == pytest.approx({"5": 0.06, "10": 0.02})
+    assert out.metadata["rank_ic_by_horizon"] == pytest.approx(
+        {"5": 0.06, "10": 0.02}
+    )
+    assert out.metadata["ic_sign_consistent_horizons"] == 2
+    assert out.metadata["portfolio"]["tail_concentration"] == pytest.approx(0.7)
+    assert out.metadata["portfolio"]["hit_rate"] == pytest.approx(0.6)
 
 
 def test_aggregate_passes_through_when_one_fold() -> None:

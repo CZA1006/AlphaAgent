@@ -24,6 +24,7 @@ class ValidationReportSummary(BaseModel):
     """Compact deterministic summary of one validation report."""
 
     cycle_id: str
+    candidate_source: str = "propose"
     n_proposals: int = 0
     n_promoted: int = 0
     n_rejected: int = 0
@@ -59,6 +60,7 @@ class PostRunDecision(BaseModel):
     rationale: str
     evidence: list[str] = Field(default_factory=list)
     total_promoted: int = 0
+    replay_survived: int = 0
     total_rejected: int = 0
     rejected_by_gate: dict[str, int] = Field(default_factory=dict)
 
@@ -70,13 +72,28 @@ class ResearchPostRunPolicy:
         if summary.market != "hk_ipo":
             raise ValueError(f"unsupported research market: {summary.market}")
 
-        total_promoted = sum(report.n_promoted for report in summary.validation_reports)
+        total_promoted = sum(
+            report.n_promoted
+            for report in summary.validation_reports
+            if report.candidate_source != "replay_promoted"
+        )
+        replay_survived = sum(
+            report.n_promoted
+            for report in summary.validation_reports
+            if report.candidate_source == "replay_promoted"
+        )
         total_rejected = sum(report.n_rejected for report in summary.validation_reports)
         gates = Counter[str]()
         for report in summary.validation_reports:
             gates.update(report.rejected_by_gate)
         rejected_by_gate = dict(sorted(gates.items()))
-        evidence = self._evidence(summary, total_promoted, total_rejected, rejected_by_gate)
+        evidence = self._evidence(
+            summary,
+            total_promoted,
+            replay_survived,
+            total_rejected,
+            rejected_by_gate,
+        )
 
         if summary.status == "failed":
             return PostRunDecision(
@@ -84,6 +101,7 @@ class ResearchPostRunPolicy:
                 rationale="Validation execution failed; stop before spending more budget.",
                 evidence=evidence,
                 total_promoted=total_promoted,
+                replay_survived=replay_survived,
                 total_rejected=total_rejected,
                 rejected_by_gate=rejected_by_gate,
             )
@@ -94,6 +112,7 @@ class ResearchPostRunPolicy:
                 rationale="Dry-run planned the next validation command but did not execute it.",
                 evidence=evidence,
                 total_promoted=total_promoted,
+                replay_survived=replay_survived,
                 total_rejected=total_rejected,
                 rejected_by_gate=rejected_by_gate,
             )
@@ -107,6 +126,7 @@ class ResearchPostRunPolicy:
                 ),
                 evidence=evidence,
                 total_promoted=total_promoted,
+                replay_survived=replay_survived,
                 total_rejected=total_rejected,
                 rejected_by_gate=rejected_by_gate,
             )
@@ -121,6 +141,7 @@ class ResearchPostRunPolicy:
                 ),
                 evidence=[*evidence, f"task_blocking={blocking}", f"task_review={review}"],
                 total_promoted=total_promoted,
+                replay_survived=replay_survived,
                 total_rejected=total_rejected,
                 rejected_by_gate=rejected_by_gate,
             )
@@ -138,6 +159,7 @@ class ResearchPostRunPolicy:
                 ),
                 evidence=[*evidence, f"task_blocking={blocking}", f"task_review={review}"],
                 total_promoted=total_promoted,
+                replay_survived=replay_survived,
                 total_rejected=total_rejected,
                 rejected_by_gate=rejected_by_gate,
             )
@@ -155,6 +177,7 @@ class ResearchPostRunPolicy:
                 ),
                 evidence=evidence,
                 total_promoted=total_promoted,
+                replay_survived=replay_survived,
                 total_rejected=total_rejected,
                 rejected_by_gate=rejected_by_gate,
             )
@@ -167,6 +190,7 @@ class ResearchPostRunPolicy:
                 ),
                 evidence=evidence,
                 total_promoted=total_promoted,
+                replay_survived=replay_survived,
                 total_rejected=total_rejected,
                 rejected_by_gate=rejected_by_gate,
             )
@@ -180,6 +204,7 @@ class ResearchPostRunPolicy:
                 ),
                 evidence=evidence,
                 total_promoted=total_promoted,
+                replay_survived=replay_survived,
                 total_rejected=total_rejected,
                 rejected_by_gate=rejected_by_gate,
             )
@@ -189,6 +214,7 @@ class ResearchPostRunPolicy:
             rationale="Validation remains productive enough to continue the selected topic.",
             evidence=evidence,
             total_promoted=total_promoted,
+            replay_survived=replay_survived,
             total_rejected=total_rejected,
             rejected_by_gate=rejected_by_gate,
         )
@@ -197,12 +223,14 @@ class ResearchPostRunPolicy:
         self,
         summary: ResearchRunSummary,
         total_promoted: int,
+        replay_survived: int,
         total_rejected: int,
         rejected_by_gate: dict[str, int],
     ) -> list[str]:
         evidence = [
             f"reports={len(summary.validation_reports)}",
             f"promoted={total_promoted}",
+            f"replay_survived={replay_survived}",
             f"rejected={total_rejected}",
         ]
         if rejected_by_gate:
@@ -226,6 +254,7 @@ def validation_report_summary_from_payload(payload: dict[str, Any]) -> Validatio
     """Build a compact policy summary from a validation report or index row."""
     return ValidationReportSummary(
         cycle_id=str(payload.get("cycle_id", "unknown")),
+        candidate_source=str(payload.get("candidate_source", "propose")),
         n_proposals=int(payload.get("n_proposals") or 0),
         n_promoted=int(payload.get("n_promoted") or 0),
         n_rejected=int(payload.get("n_rejected") or 0),

@@ -89,6 +89,7 @@ def test_policy_stops_after_bounded_cost_replay() -> None:
             validation_reports=[
                 ValidationReportSummary(
                     cycle_id="cost-1",
+                    candidate_source="replay_promoted",
                     n_proposals=3,
                     n_promoted=1,
                     n_rejected=2,
@@ -99,6 +100,9 @@ def test_policy_stops_after_bounded_cost_replay() -> None:
 
     assert decision.action == NextResearchAction.STOP_COMPLETED
     assert decision.next_topic_id is None
+    assert decision.total_promoted == 0
+    assert decision.replay_survived == 1
+    assert "replay_survived=1" in decision.evidence
 
 
 def test_policy_stops_after_event_truth_task_report() -> None:
@@ -165,6 +169,7 @@ def test_validation_report_summary_accepts_report_payload_or_index_row() -> None
     summary = validation_report_summary_from_payload(
         {
             "cycle_id": "cycle-1",
+            "candidate_source": "replay_promoted",
             "n_proposals": 5,
             "n_promoted": 2,
             "n_rejected": 3,
@@ -180,6 +185,7 @@ def test_validation_report_summary_accepts_report_payload_or_index_row() -> None
     )
 
     assert summary.rejected_by_gate == {"threshold_ic": 2}
+    assert summary.candidate_source == "replay_promoted"
     assert fallback.n_proposals == 0
     assert fallback.n_promoted == 1
 

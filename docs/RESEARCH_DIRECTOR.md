@@ -85,8 +85,24 @@ make autonomous-researcher-hk-ipo-run ARGS="--llm openrouter --iterations 3 --co
 (`anthropic/claude-sonnet-4.6`) is refused with 403 "provider Terms of
 Service" from this environment — every live run must override it, e.g.
 `export OPENROUTER_MODEL=deepseek/deepseek-chat-v3.1` (the model the
-case studies used).  The 2026-07-14 first live bounded run cost
-$0.0036 end-to-end on DeepSeek.
+case studies used).
+
+A USD cap now fails closed unless both pricing rates are explicit. Set them
+from the provider's current model pricing before using `--cost-budget-usd`:
+
+```bash
+export ALPHA_AGENT_PROMPT_COST_PER_1K=<prompt-rate>
+export ALPHA_AGENT_COMPLETION_COST_PER_1K=<completion-rate>
+```
+
+Validation schema v4 records those rates, cumulative tokens, calls, and USD
+spend. The 2026-07-14 first run predated this guard: its `$0.0036` figure was
+an external estimate, not a reproducible artifact value.
+
+The first run's sole candidate was replayed on the same panel fingerprint after
+the global-holdout fix and rejected: rank-IC fell from +0.0230 in training to
+-0.0030 on the trailing holdout, while tail concentration reached 11.76. It is
+not a promoted research lead.
 
 Each iteration: `ResearchDirector.plan` → run the selected
 `validate_strict` command → read the new validation reports →
@@ -112,7 +128,9 @@ autonomous runner passes the exact promoted source cycle ids to
 panel fingerprint, skips the LLM and mutation paths, and evaluates once at
 15 bps instead of the 5 bps discovery baseline. The validation report records
 the candidate source, source cycle ids, data fingerprint, and cost assumption.
-The bounded run stops after this replay for operator inspection.
+The bounded run stops after this replay for operator inspection. Policy output
+separates discovery promotions from replay survivors, so one factor is not
+counted twice.
 
 `hk_ipo_event_truth_review` uses the separate `event_truth_audit` executor.
 It runs five read-only BigQuery checks for the review backlog, curated source

@@ -204,11 +204,17 @@ def test_snapshot_budget_reads_duck_typed_object() -> None:
         cost_usd_spent = 0.0567
         max_total_tokens = 5000
         max_cost_usd = 0.5
+        calls = 3
+        prompt_cost_per_1k = 0.001
+        completion_cost_per_1k = 0.002
 
     snap = snapshot_budget(_B())
     assert isinstance(snap, BudgetSnapshot)
     assert snap.total_tokens_spent == 1234
     assert snap.max_cost_usd == pytest.approx(0.5)
+    assert snap.calls == 3
+    assert snap.prompt_cost_per_1k == pytest.approx(0.001)
+    assert snap.completion_cost_per_1k == pytest.approx(0.002)
 
 
 # ── list_cycles CLI ─────────────────────────────────────────────────────────

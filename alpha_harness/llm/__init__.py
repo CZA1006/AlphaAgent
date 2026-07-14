@@ -23,6 +23,7 @@ from alpha_harness.llm.budget import (
     BudgetedLLMClient,
     BudgetExceededError,
     TokenBudget,
+    token_budget_from_env,
 )
 from alpha_harness.llm.call_log import (
     DEFAULT_CALL_LOG_DIR,
@@ -65,4 +66,5 @@ __all__ = [
     "TokenBudget",
     "default_log_path",
     "request_structured",
+    "token_budget_from_env",
 ]

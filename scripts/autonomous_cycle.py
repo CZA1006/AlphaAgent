@@ -452,13 +452,11 @@ def _resolve_token_budget(args: argparse.Namespace) -> TokenBudget | None:
     if token_cap is None and cost_cap is None:
         return None
 
-    prompt_rate = float(os.environ.get("ALPHA_AGENT_PROMPT_COST_PER_1K", "0") or "0")
-    completion_rate = float(os.environ.get("ALPHA_AGENT_COMPLETION_COST_PER_1K", "0") or "0")
-    return TokenBudget(
+    from alpha_harness.llm import token_budget_from_env
+
+    return token_budget_from_env(
         max_total_tokens=token_cap,
         max_cost_usd=cost_cap,
-        prompt_cost_per_1k=prompt_rate,
-        completion_cost_per_1k=completion_rate,
     )
 
 
@@ -633,7 +631,11 @@ def main(argv: list[str] | None = None) -> int:
         call_logger,
         purpose="autonomous_cycle",
     )
-    budget = _resolve_token_budget(args)
+    try:
+        budget = _resolve_token_budget(args)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
     if budget is not None:
         logger.info(
             "Token budget: max_tokens=%s max_cost_usd=%s",
