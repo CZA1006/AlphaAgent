@@ -371,23 +371,30 @@ autonomous research-director loop (Round 10) is **robustness-first** —
 every self-generated candidate basket auto-confirmed on a held-out
 window before it counts as alpha.
 
-### 2. Planned multi-run robustness study (highest leverage once data lands)
+### 2. Multi-run robustness study — orchestrator built (2026-07-15), awaiting data backfill
 
-Turn the ad-hoc case studies into a designed experiment:
+The designed experiment now exists as `scripts/robustness_study.py`
+(`make robustness-study`):
 
-- **Rolling windows** — many disjoint Y1/Y2 splits (e.g. quarterly
-  re-selection), not one annual split.
-- **≥3 LLMs** — DeepSeek, Qwen, + one more (Mistral/Llama) to
-  confirm the window-not-LLM diagnosis at scale.
-- **≥2 universes** — SP-50 plus a broader, less survivorship-biased
-  set (NDX-100 / Russell midcap) once backfilled.
-- **The number that matters:** fraction of basket runs that clear
-  strict on Y2, compared to a no-edge null.  *That* settles whether
-  the loop produces alpha.
+- **Rolling Y1→Y2 splits** with an embargo gap between selection and
+  validation (stricter than the adjacent windows the case studies
+  used), **× LLMs × selection strategies** (`input_order` vs
+  `persistence` — so the selector arbitration rides the same grid).
+- **Predeclared by construction**: the full cell grid is written to
+  the run record before the first cell executes; `no_basket`/`failed`
+  cells stay in the denominator.
+- **Primary statistic (predeclared)**: two-sided binomial sign test on
+  basket Y2 rank-IC against the no-edge 0.5, per arm and pooled;
+  strict-regime clears reported alongside.
+- **Smoke-verified on a synthetic no-edge panel** (mock LLM, 4 cells):
+  Y2 rank-ICs ≈ 0, zero strict clears, sign p = 1.0 — the study
+  correctly reports "no edge" when there is none.
 
-This is mostly orchestration (a harness around `validate_strict` +
-`combine_factors` that sweeps windows/LLMs/universes and tallies), not
-new core code.
+**Blocked on data only:** the SP-50 parquet store is empty on this
+machine — `make backfill-sp50` needs `POLYGON_API_KEY` (free tier
+reaches back ~2 years, enough for 2 twelve-month or 4 nine-month
+rolling splits).  Once backfilled, the real run is one command with
+DeepSeek + Qwen.
 
 ### 3. Round 10 — activate composite complements when an anchor qualifies
 

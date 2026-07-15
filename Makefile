@@ -3,7 +3,7 @@
        doctor doctor-mock doctor-real doctor-sql audit smoke \
        doctor-hk-ipo-data doctor-hk-ipo-events audit-hk-ipo-event-truth \
        plan-hk-ipo-raw-tick-materialization materialize-hk-ipo-raw-tick \
-       research-director-hk-ipo \
+       research-director-hk-ipo robustness-study \
        run-mock run-real run-real-data run-real-sql \
        autonomous-mock autonomous-real \
        autonomous-researcher-hk-ipo autonomous-researcher-hk-ipo-run \
@@ -127,6 +127,11 @@ materialize-hk-ipo-raw-tick:
 
 research-director-hk-ipo:
 	uv run python -m scripts.research_director --market hk_ipo $(ARGS)
+
+# Multi-window robustness study: rolling Y1->Y2 splits x LLMs x selection
+# strategies; pass ARGS="--dry-run ..." to predeclare without executing.
+robustness-study:
+	uv run python -m scripts.robustness_study $(ARGS)
 
 autonomous-researcher-hk-ipo:
 	uv run --extra gcp python -m scripts.autonomous_researcher --market hk_ipo $(ARGS)
