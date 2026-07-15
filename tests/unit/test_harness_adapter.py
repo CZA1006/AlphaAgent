@@ -12,6 +12,7 @@ from datetime import date
 
 import pytest
 
+from alpha_harness.combination import CombinationMethod, CombinationRecipe
 from alpha_harness.evaluators.promotion_judge import PromotionJudge
 from alpha_harness.factors.compiler import FactorDslCompiler
 from alpha_harness.hermes_boundary.contracts import (
@@ -24,7 +25,7 @@ from alpha_harness.hermes_boundary.harness_adapter import HarnessAgentAdapter
 from alpha_harness.llm import MockLLMClient
 from alpha_harness.orchestrator.refinement import RefinementConfig, RefinementRunner
 from alpha_harness.orchestrator.research_loop import ResearchOrchestrator
-from alpha_harness.proposer import HypothesisProposer
+from alpha_harness.proposer import CompositeAnchor, HypothesisProposer
 from alpha_harness.proposer.schemas import RawProposal, RawProposalBatch
 from alpha_harness.registries.experiment import ExperimentRegistry
 from alpha_harness.registries.hypothesis import HypothesisRegistry
@@ -71,6 +72,7 @@ def _build_stack(
     with_refinement: bool = True,
     with_proposer: bool = False,
     mock_proposals: list[RawProposal] | None = None,
+    composite_anchors: list[CompositeAnchor] | None = None,
 ) -> tuple[HarnessAgentAdapter, ExperimentRegistry]:
     compiler = FactorDslCompiler()
     judge = PromotionJudge()
@@ -105,6 +107,7 @@ def _build_stack(
         experiment_registry=experiments,
         proposer=proposer,
         refinement_runner=refinement,
+        composite_anchors=composite_anchors,
     )
     return adapter, experiments
 
@@ -297,3 +300,34 @@ class TestRunTheme:
         assert resp.roots[0].outcome == CycleOutcome.REJECTED
         [record] = experiments.list_all()
         assert record.decision == ExperimentDecision.REJECT
+
+    def test_complement_candidate_evaluates_augmented_composite(self) -> None:
+        anchor = CompositeAnchor(
+            factor_id="base_factor",
+            recipe=CombinationRecipe.build(
+                method=CombinationMethod.RANK_AGGREGATE,
+                components=["rank(close)", "rank(volume)"],
+            ),
+        )
+        augmented = CombinationRecipe.build(
+            method=anchor.recipe.method,
+            components=[*anchor.recipe.components, "rank(realized_vol)"],
+        )
+        placeholder = f"<composite:{augmented.recipe_id}>"
+        adapter, experiments = _build_stack(
+            _ScriptedEvaluator({placeholder: (0.10, 0.12, 0.02)}),
+            with_proposer=True,
+            mock_proposals=[RawProposal(
+                expression="rank(realized_vol)",
+                base_recipe_id=anchor.recipe.recipe_id,
+            )],
+            composite_anchors=[anchor],
+        )
+        response = adapter.run_theme(
+            ThemeCycleRequest(theme="complements", n_candidates=1),
+        )
+        assert response.roots[0].outcome is CycleOutcome.PROMOTED
+        [record] = experiments.list_all()
+        assert record.factor.composite_recipe == augmented
+        assert record.factor.params["complement_base_recipe_id"] == anchor.recipe.recipe_id
+        assert record.factor.params["complement_base_size"] == 2

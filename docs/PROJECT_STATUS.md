@@ -73,7 +73,7 @@ two LLMs over a shared out-of-sample window the baskets did not hold up.
   two-invocation CLI integration test verifies the cross-process path.
 - **Typed cost-replay executor** — after event-conditioned discovery promotes
   candidates, the Director passes their exact validation cycle ids into a
-  no-LLM, no-mutation replay at 15 bps. Schema-v6 validation reports capture
+  no-LLM, no-mutation replay at 15 bps. Schema-v7 validation reports capture
   candidate source, source cycles, panel fingerprint, and cost provenance;
   snapshot mismatches fail closed. Discovery promotions and replay survivors
   are counted separately.
@@ -92,6 +92,16 @@ two LLMs over a shared out-of-sample window the baskets did not hold up.
   five-check audit found 0 blocking issues and 280 review-backlog rows, then
   stopped completed. This supports event-gated cross-sectional sparsity as the
   immediate bottleneck, not a broken event-data alignment contract.
+- **Round 10 composite-complement loop (2026-07-15)** — an explicit
+  `--composite-complements` mode now asks the proposer for one scalar addition
+  to an exact promoted basket, evaluates the augmented basket rather than the
+  singleton, and rejects additions whose maximum absolute fold rank correlation
+  exceeds 0.50,
+  whose rank-IC lift is positive in fewer than 60% of walk-forward folds, or
+  whose global-holdout lift is non-positive. Validation schema v7 persists the
+  base recipe, component expression, incremental diagnostics, and exact
+  composite recipe so 15 bps replay reconstructs the same factor. The mode
+  fails closed when no eligible promoted composite exists.
 - **Continuous-event search and deterministic OFI diagnosis (2026-07-14)** —
   two bounded DeepSeek runs tested 18 computable `event_decay` candidates for
   `$0.00445629` provider-reported cost: 0 promotions, 10 weak-IC rejects, and
@@ -297,9 +307,10 @@ real-but-fragile.
 - **Flat 5 bps cost model** — real execution cost is trade-size and
   liquidity dependent.
 - **No live execution, no intraday, no broader asset classes.**
-- **LLM doesn't yet *compose* with promoted composites** — they appear
-  in its prompt (loop closure works) but it proposes fresh singletons;
-  making it actively build on baskets is unstarted prompt-engineering.
+- **No currently valid composite anchor** — the complement architecture is
+  implemented and synthetic-tested, but the canonical promoted zoo has no
+  basket eligible under the current global-holdout contract. Pre-fix or stale
+  promotions are intentionally not treated as anchors.
 
 ---
 
@@ -368,12 +379,13 @@ This is mostly orchestration (a harness around `validate_strict` +
 `combine_factors` that sweeps windows/LLMs/universes and tallies), not
 new core code.
 
-### 3. Round 10 — proposer prompt-engineering for composites
+### 3. Round 10 — activate composite complements when an anchor qualifies
 
-Teach the proposer to propose *complements* to promoted composites
-(low-correlation additions), then measure whether composed baskets
-generalize better than singleton baskets.  Depends on having several
-promotions to chain, so it's downstream of (2).
+The typed proposer contract, deterministic augmented-basket evaluation,
+incremental gates, schema-v7 audit trail, and exact replay path are complete.
+The next empirical step is to run `--composite-complements` once a basket has
+survived the current promotion and global-holdout rules. Until then the mode
+correctly fails closed rather than manufacturing an anchor from stale results.
 
 ### 4. Broaden data realism (lower priority)
 

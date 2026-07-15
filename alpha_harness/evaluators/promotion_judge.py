@@ -51,6 +51,8 @@ class PromotionJudge:
         max_tail_concentration: float = 0.5,
         min_holdout_decay_ratio: float = 0.5,
         multiple_testing_familywise_alpha: float = DEFAULT_FAMILYWISE_ALPHA,
+        max_complement_rank_correlation: float = 0.5,
+        min_complement_improvement_fraction: float = 0.6,
     ) -> None:
         self._novelty = novelty_evaluator or NoveltyEvaluator()
         self._refine_margin = refine_margin
@@ -58,6 +60,12 @@ class PromotionJudge:
         self._max_tail_concentration = max_tail_concentration
         self._min_holdout_decay = min_holdout_decay_ratio
         self._multiple_testing_alpha = multiple_testing_familywise_alpha
+        if not 0 <= max_complement_rank_correlation <= 1:
+            raise ValueError("max_complement_rank_correlation must be in [0, 1]")
+        if not 0 <= min_complement_improvement_fraction <= 1:
+            raise ValueError("min_complement_improvement_fraction must be in [0, 1]")
+        self._max_complement_corr = max_complement_rank_correlation
+        self._min_complement_improvement = min_complement_improvement_fraction
         bonferroni_z_threshold_multiplier(
             1,
             familywise_alpha=multiple_testing_familywise_alpha,
@@ -116,7 +124,16 @@ class PromotionJudge:
                 notes="Signal unstable across walk-forward folds.",
             )
 
-        # ── 2d. Tail concentration (Round 4C) ──────────────────────────
+        # ── 2d. Composite-complement incremental value (Round 10) ─────
+        failure = self._check_complement(evaluation)
+        if failure is not None:
+            return JudgmentDetail(
+                decision=ExperimentDecision.REJECT,
+                failure=failure,
+                notes="Proposed component does not improve its base basket robustly.",
+            )
+
+        # ── 2e. Tail concentration (Round 4C) ──────────────────────────
         failure = self._check_tail_concentration(evaluation)
         if failure is not None:
             return JudgmentDetail(
@@ -125,7 +142,7 @@ class PromotionJudge:
                 notes="Long-short return concentrated in a handful of days.",
             )
 
-        # ── 2e. Holdout decay (Round 4E) ───────────────────────────────
+        # ── 2f. Holdout decay (Round 4E) ───────────────────────────────
         failure = self._check_holdout_decay(evaluation)
         if failure is not None:
             return JudgmentDetail(
@@ -291,6 +308,58 @@ class PromotionJudge:
             )
         return None
 
+    def _check_complement(self, evaluation: EvaluationBundle) -> FailureRecord | None:
+        """Require low correlation and persistent incremental RankIC lift."""
+        complement = evaluation.metadata.get("complement")
+        if not isinstance(complement, dict):
+            return None
+        max_corr = complement.get("max_abs_rank_correlation")
+        if not isinstance(max_corr, int | float):
+            return FailureRecord(
+                category=FailureCategory.DATA_INSUFFICIENT,
+                detail="complement_max_abs_rank_correlation is missing.",
+            )
+        if max_corr > self._max_complement_corr:
+            return FailureRecord(
+                category=FailureCategory.OTHER,
+                detail=(
+                    f"complement_max_abs_rank_correlation={max_corr:.2f} > "
+                    f"{self._max_complement_corr:.2f}."
+                ),
+            )
+        fraction = complement.get("fraction_positive_rank_ic_lift")
+        if not isinstance(fraction, int | float):
+            return FailureRecord(
+                category=FailureCategory.DATA_INSUFFICIENT,
+                detail="complement_positive_rank_ic_lift_fraction is missing.",
+            )
+        if fraction < self._min_complement_improvement:
+            return FailureRecord(
+                category=FailureCategory.WEAK_SIGNAL,
+                detail=(
+                    f"complement_positive_rank_ic_lift_fraction={fraction:.2f} < "
+                    f"{self._min_complement_improvement:.2f}."
+                ),
+            )
+        holdout = evaluation.metadata.get("holdout")
+        holdout_complement = holdout.get("complement") if isinstance(holdout, dict) else None
+        holdout_lift = (
+            holdout_complement.get("rank_ic_lift")
+            if isinstance(holdout_complement, dict)
+            else None
+        )
+        if not isinstance(holdout_lift, int | float):
+            return FailureRecord(
+                category=FailureCategory.DATA_INSUFFICIENT,
+                detail="complement_holdout_rank_ic_lift is missing.",
+            )
+        if holdout_lift <= 0:
+            return FailureRecord(
+                category=FailureCategory.WEAK_SIGNAL,
+                detail=f"complement_holdout_rank_ic_lift={holdout_lift:.4f} <= 0.",
+            )
+        return None
+
     def _build_trail(
         self,
         evaluation: EvaluationBundle,
@@ -305,6 +374,15 @@ class PromotionJudge:
             for key in ("n_folds", "fold_size_days", "step_days", "embargo_days"):
                 if key in wf and isinstance(wf[key], int | float | str):
                     wf_dict[key] = wf[key]
+        complement = evaluation.metadata.get("complement")
+        selection: dict[str, str | int | float] | None = None
+        if isinstance(complement, dict):
+            selection = {
+                "strategy": "composite_complement",
+                "base_recipe_id": str(complement.get("base_recipe_id", "")),
+                "max_abs_rank_correlation": self._max_complement_corr,
+                "min_positive_rank_ic_lift_fraction": self._min_complement_improvement,
+            }
         return PromotionTrail.from_inputs(
             evaluation_request=request,
             judge_thresholds={
@@ -315,6 +393,7 @@ class PromotionJudge:
                 "multiple_testing_familywise_alpha": self._multiple_testing_alpha,
             },
             walk_forward=wf_dict,
+            selection=selection,
         )
 
     def _check_holdout_decay(self, evaluation: EvaluationBundle) -> FailureRecord | None:

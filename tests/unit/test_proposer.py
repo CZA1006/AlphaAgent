@@ -12,11 +12,13 @@ from datetime import UTC, datetime
 
 import pytest
 
+from alpha_harness.combination import CombinationMethod, CombinationRecipe
 from alpha_harness.evaluators.promotion_judge import PromotionJudge
 from alpha_harness.factors.compiler import FactorDslCompiler
 from alpha_harness.llm import MockLLMClient
 from alpha_harness.orchestrator.research_loop import ResearchOrchestrator
 from alpha_harness.proposer import (
+    CompositeAnchor,
     HypothesisProposer,
     ProposalCandidate,
     ProposalRequest,
@@ -44,6 +46,18 @@ from tests.helpers.stubs import StubSignalQualityEvaluator
 def _batch(*proposals: dict) -> str:
     """Render a ``RawProposalBatch`` JSON payload for the mock LLM."""
     return json.dumps({"proposals": list(proposals)})
+
+
+def _anchor() -> CompositeAnchor:
+    return CompositeAnchor(
+        factor_id="composite_base",
+        recipe=CombinationRecipe.build(
+            method=CombinationMethod.RANK_AGGREGATE,
+            components=["rank(close)", "rank(volume)"],
+        ),
+        ic=0.03,
+        rank_ic=0.04,
+    )
 
 
 # ── Schema / result helpers ──────────────────────────────────────────────────
@@ -118,6 +132,17 @@ class TestPrompts:
         assert "us_equity" in prompt
         assert "mom_rank_20" in prompt
         assert "prefer 20 to 60 bar windows" in prompt
+
+    def test_complement_prompt_requires_typed_anchor_target(self) -> None:
+        anchor = _anchor()
+        prompt = build_user_prompt(ProposalRequest(
+            theme="add diversifying signal",
+            composite_anchors=[anchor],
+        ))
+        assert "Mandatory composite-complement task" in prompt
+        assert anchor.recipe.recipe_id in prompt
+        assert "base_recipe_id" in prompt
+        assert "reject" in prompt
 
 
 # ── Validation: happy path + filtering ──────────────────────────────────────
@@ -207,6 +232,32 @@ class TestProposeValidation:
             HypothesisProposer(mock).propose(
                 ProposalRequest(theme="x", n_candidates=0)
             )
+
+    def test_complement_mode_requires_known_novel_base_target(self) -> None:
+        anchor = _anchor()
+        mock = MockLLMClient(responses=[_batch(
+            {"expression": "rank(realized_vol)", "base_recipe_id": anchor.recipe.recipe_id},
+            {"expression": "rank(close)"},
+            {"expression": "rank(vwap)", "base_recipe_id": "unknown"},
+            {"expression": "rank(volume)", "base_recipe_id": anchor.recipe.recipe_id},
+        )])
+        result = HypothesisProposer(mock, max_rounds=1).propose(
+            ProposalRequest(
+                theme="complements",
+                n_candidates=4,
+                composite_anchors=[anchor],
+            )
+        )
+        assert [candidate.expression for candidate in result.candidates] == [
+            "rank(realized_vol)"
+        ]
+        candidate = result.candidates[0]
+        assert candidate.base_recipe_id == anchor.recipe.recipe_id
+        assert "complement" in candidate.tags
+        reasons = " ".join(item.reason for item in result.dropped)
+        assert "requires a base_recipe_id" in reasons
+        assert "Unknown base_recipe_id" in reasons
+        assert "not structurally novel" in reasons
 
 
 # ── Bounded repair round ─────────────────────────────────────────────────────

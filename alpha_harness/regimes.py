@@ -71,6 +71,8 @@ class StrictRegime:
     max_tail_concentration: float = 0.5
     min_holdout_decay_ratio: float = 0.5
     multiple_testing_familywise_alpha: float = 0.05
+    max_complement_rank_correlation: float = 0.5
+    min_complement_improvement_fraction: float = 0.6
 
     # ── Convenience constructors ─────────────────────────────────────────
 
@@ -118,6 +120,8 @@ class StrictRegime:
             "max_tail_concentration": self.max_tail_concentration,
             "min_holdout_decay_ratio": self.min_holdout_decay_ratio,
             "multiple_testing_familywise_alpha": self.multiple_testing_familywise_alpha,
+            "max_complement_rank_correlation": self.max_complement_rank_correlation,
+            "min_complement_improvement_fraction": self.min_complement_improvement_fraction,
         }
 
 

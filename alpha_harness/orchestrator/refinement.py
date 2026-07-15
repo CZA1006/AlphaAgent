@@ -171,13 +171,19 @@ class RefinementRunner:
         self,
         root_hypothesis: Hypothesis,
         eval_request: EvaluationRequest,
+        *,
+        precompiled_factor: FactorSpec | None = None,
     ) -> RefinementResult:
         """Evaluate ``root_hypothesis`` and refine it if the judge says so.
 
         Always runs the root cycle first so the caller gets at least one
         record back, even when no refinement is warranted.
         """
-        root_record = self._orchestrator.run_cycle(root_hypothesis, eval_request)
+        root_record = self._orchestrator.run_cycle(
+            root_hypothesis,
+            eval_request,
+            precompiled_factor=precompiled_factor,
+        )
         result = RefinementResult(
             root=root_record,
             current_trail_id=self._current_trail_id(eval_request),

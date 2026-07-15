@@ -279,8 +279,10 @@ Answer the question a single run cannot: does the loop produce alpha
   Y2, vs a no-edge null.
 - Holdout embargo, multiple-hypothesis pressure, and causal rolling beta
   findings are closed.
-- Then Round 10 proposer prompt-engineering (compose *complements*
-  to promoted composites) once there are enough promotions to chain.
+- Round 10's opt-in composite-complement contract, deterministic incremental
+  gates, schema-v7 audit trail, and exact replay are implemented. Empirical
+  activation waits for a basket that qualifies under the current promotion
+  and global-holdout rules.
 
 ### Also in scope (was the old Milestone 4)
 - better equity fundamentals; more crypto exchange data

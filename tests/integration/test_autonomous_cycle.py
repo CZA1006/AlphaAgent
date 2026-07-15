@@ -8,10 +8,15 @@ JSON payload it prints contains a non-empty :class:`ThemeCycleResponse`.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
-from scripts.autonomous_cycle import main as autonomous_main
+import scripts.autonomous_cycle as autonomous_module
+from alpha_harness.combination import CombinationMethod, CombinationRecipe
+from alpha_harness.proposer.schemas import RawProposal
+
+autonomous_main = autonomous_module.main
 
 
 def test_autonomous_cycle_mock_llm_end_to_end(
@@ -103,3 +108,70 @@ def test_autonomous_cycle_surfaces_refine_branch(
         "Expected at least one refined root or refinement child; got "
         f"roots={payload['roots']!r} refinements={payload['refinements']!r}"
     )
+
+
+def test_autonomous_cycle_complement_mode_builds_augmented_basket(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    promoted_dir = tmp_path / "promoted"
+    promoted_dir.mkdir()
+    base = CombinationRecipe.build(
+        method=CombinationMethod.RANK_AGGREGATE,
+        components=["rank(close)", "rank(volume)"],
+    )
+    factor_id = "composite_base"
+    (promoted_dir / f"{factor_id}.json").write_text(json.dumps({
+        "factor_id": factor_id,
+        "composite_recipe": base.model_dump(mode="json"),
+    }))
+    (promoted_dir / "_index.jsonl").write_text(json.dumps({
+        "factor_id": factor_id,
+        "ic": 0.03,
+        "rank_ic": 0.04,
+        "promoted_at": "2026-07-15T00:00:00+00:00",
+    }) + "\n")
+    monkeypatch.setattr(
+        autonomous_module,
+        "_MOCK_CANDIDATES",
+        [RawProposal(
+            expression="rank(high - low)",
+            rationale="range signal diversifies level and volume",
+            base_recipe_id=base.recipe_id,
+        )],
+    )
+
+    exit_code = autonomous_main([
+        "--mock-llm",
+        "--composite-complements",
+        "--promoted-dir", str(promoted_dir),
+        "--no-promoted-artifacts",
+        "--n-candidates", "1",
+        "--n-days", "160",
+        "--n-symbols", "8",
+        "--seed", "7",
+        "--max-depth", "0",
+        "--max-total-children", "0",
+        "--json",
+    ])
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert payload["proposals_accepted"] == 1
+    assert payload["roots"][0]["factor_name"].startswith("complement_")
+
+
+def test_autonomous_cycle_complement_mode_fails_without_anchor(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    exit_code = autonomous_main([
+        "--mock-llm",
+        "--composite-complements",
+        "--promoted-dir", str(tmp_path / "missing"),
+        "--n-candidates", "1",
+        "--n-days", "40",
+        "--n-symbols", "4",
+    ])
+    assert exit_code == 2
+    assert "requires at least one valid promoted composite anchor" in capsys.readouterr().err

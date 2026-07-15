@@ -115,7 +115,8 @@ def build_system_prompt() -> str:
         '      "expression": "<DSL expression>",\n'
         '      "rationale":  "<one-sentence economic intuition>",\n'
         '      "name":       "<short snake_case identifier, optional>",\n'
-        '      "tags":       ["optional", "tags"]\n'
+        '      "tags":       ["optional", "tags"],\n'
+        '      "base_recipe_id": "<promoted recipe id when complement mode is active>"\n'
         "    },\n"
         "    ...\n"
         "  ]\n"
@@ -149,6 +150,31 @@ def build_user_prompt(request: ProposalRequest) -> str:
             "promoted factors and to steer clear of the recent failure "
             "modes above."
         )
+
+    if request.composite_anchors:
+        sections.append("\n## Mandatory composite-complement task")
+        sections.append(
+            "Every proposal must be one NEW scalar DSL component that extends "
+            "exactly one promoted basket below. Set base_recipe_id to that "
+            "basket's exact recipe id. Do not emit a combine.* expression and "
+            "do not repeat or lightly rename an existing component. Prefer a "
+            "different economic mechanism and horizon likely to have low "
+            "cross-sectional rank correlation with the base basket. The "
+            "deterministic harness will evaluate base + component and reject "
+            "candidates that fail correlation or incremental RankIC gates."
+        )
+        for anchor in request.composite_anchors:
+            components = ", ".join(f"`{item}`" for item in anchor.recipe.components)
+            metrics: list[str] = []
+            if anchor.ic is not None:
+                metrics.append(f"ic={anchor.ic:+.3f}")
+            if anchor.rank_ic is not None:
+                metrics.append(f"rank_ic={anchor.rank_ic:+.3f}")
+            suffix = f" ({', '.join(metrics)})" if metrics else ""
+            sections.append(
+                f"  - recipe_id={anchor.recipe.recipe_id} "
+                f"method={anchor.recipe.method.value} components=[{components}]{suffix}"
+            )
 
     if request.extra_guidance.strip():
         sections.append(f"\n## Extra guidance\n{request.extra_guidance.strip()}")

@@ -29,6 +29,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
+from alpha_harness.combination import CombinationRecipe
 from alpha_harness.hermes_boundary.contracts import (
     CycleGoal,
     CycleOutcome,
@@ -40,12 +41,14 @@ from alpha_harness.hermes_boundary.contracts import (
 from alpha_harness.orchestrator.refinement import RefinementRunner
 from alpha_harness.orchestrator.research_loop import ResearchOrchestrator
 from alpha_harness.proposer import (
+    CompositeAnchor,
     HypothesisProposer,
     ProposalRequest,
 )
 from alpha_harness.registries.protocols import ExperimentRegistryProtocol
 from alpha_harness.schemas.evaluation import EvaluationRequest
 from alpha_harness.schemas.experiment import ExperimentDecision, ExperimentRecord
+from alpha_harness.schemas.factor import FactorSpec
 from alpha_harness.schemas.hypothesis import AssetClass, Hypothesis
 
 logger = logging.getLogger(__name__)
@@ -96,12 +99,16 @@ class HarnessAgentAdapter:
         *,
         proposer: HypothesisProposer | None = None,
         refinement_runner: RefinementRunner | None = None,
+        composite_anchors: list[CompositeAnchor] | None = None,
     ) -> None:
         self._orchestrator = orchestrator
         self._eval_request = eval_request
         self._experiments = experiment_registry
         self._proposer = proposer
         self._refinement = refinement_runner
+        self._composite_anchors = {
+            anchor.recipe.recipe_id: anchor for anchor in composite_anchors or []
+        }
 
     # ── AgentRuntimeAdapter protocol methods ─────────────────────────────
 
@@ -183,6 +190,7 @@ class HarnessAgentAdapter:
             n_candidates=request.n_candidates,
             extra_guidance=request.extra_guidance,
             prior_memory=request.prior_memory,
+            composite_anchors=list(self._composite_anchors.values()),
         )
         logger.info(
             "Theme cycle: theme=%r n_candidates=%d",
@@ -208,8 +216,24 @@ class HarnessAgentAdapter:
             },
         )
 
-        for hypothesis in hypotheses:
-            outcome = self._run_hypothesis(hypothesis, eval_request=session_request)
+        for candidate, hypothesis in zip(
+            proposal_result.candidates,
+            hypotheses,
+            strict=True,
+        ):
+            precompiled = None
+            if candidate.base_recipe_id is not None:
+                anchor = self._composite_anchors[candidate.base_recipe_id]
+                precompiled = _build_complement_factor(
+                    anchor=anchor,
+                    candidate_expression=candidate.expression,
+                    hypothesis=hypothesis,
+                )
+            outcome = self._run_hypothesis(
+                hypothesis,
+                eval_request=session_request,
+                precompiled_factor=precompiled,
+            )
             roots.append(_record_to_response(outcome.root))
             refinements.extend(
                 _record_to_response(child) for child in outcome.children
@@ -232,13 +256,22 @@ class HarnessAgentAdapter:
         hypothesis: Hypothesis,
         *,
         eval_request: EvaluationRequest | None = None,
+        precompiled_factor: FactorSpec | None = None,
     ) -> _RunResult:
         """Run one hypothesis through the orchestrator (+ refinement if any)."""
         request = eval_request or self._eval_request
         if self._refinement is not None:
-            result = self._refinement.run(hypothesis, request)
+            result = self._refinement.run(
+                hypothesis,
+                request,
+                precompiled_factor=precompiled_factor,
+            )
             return _RunResult(root=result.root, children=list(result.children))
-        record = self._orchestrator.run_cycle(hypothesis, request)
+        record = self._orchestrator.run_cycle(
+            hypothesis,
+            request,
+            precompiled_factor=precompiled_factor,
+        )
         return _RunResult(root=record, children=[])
 
 
@@ -254,6 +287,39 @@ def _coerce_asset_class(raw: str) -> AssetClass:
             "Unknown asset_class %r; falling back to us_equity.", raw,
         )
         return AssetClass.US_EQUITY
+
+
+def _build_complement_factor(
+    *,
+    anchor: CompositeAnchor,
+    candidate_expression: str,
+    hypothesis: Hypothesis,
+) -> FactorSpec:
+    """Build the deterministic base-plus-candidate composite under test."""
+    base = anchor.recipe
+    component_ids: list[str] = []
+    if len(base.component_factor_ids) == len(base.components):
+        component_ids = [
+            *base.component_factor_ids,
+            f"proposal_{base.recipe_id}_{len(base.components) + 1}",
+        ]
+    recipe = CombinationRecipe.build(
+        method=base.method,
+        components=[*base.components, candidate_expression],
+        component_factor_ids=component_ids,
+    )
+    return FactorSpec(
+        id=f"complement_{base.recipe_id[:8]}_{recipe.recipe_id}",
+        name=f"complement_{base.recipe_id[:8]}_{recipe.recipe_id[:8]}",
+        expression=f"<composite:{recipe.recipe_id}>",
+        hypothesis_id=hypothesis.id,
+        composite_recipe=recipe,
+        params={
+            "complement_base_recipe_id": base.recipe_id,
+            "complement_base_size": len(base.components),
+            "complement_candidate_expression": candidate_expression,
+        },
+    )
 
 
 def _request_to_hypothesis(request: ResearchCycleRequest) -> Hypothesis:

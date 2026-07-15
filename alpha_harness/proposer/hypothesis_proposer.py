@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from alpha_harness.evaluators.novelty import NoveltyEvaluator
 from alpha_harness.factors.compiler import DslCompilationError, FactorDslCompiler
 from alpha_harness.llm import LLMClient, LLMMessage, StructuredLLMError, request_structured
 from alpha_harness.proposer.prompts import (
@@ -25,6 +26,7 @@ from alpha_harness.proposer.prompts import (
     build_user_prompt,
 )
 from alpha_harness.proposer.schemas import (
+    CompositeAnchor,
     DroppedProposal,
     ProposalCandidate,
     ProposalRequest,
@@ -112,7 +114,8 @@ class HypothesisProposer:
                 attempts=1,
             )
 
-        outcome = self._validate(batch.proposals)
+        anchors = {anchor.recipe.recipe_id: anchor for anchor in request.composite_anchors}
+        outcome = self._validate(batch.proposals, anchors=anchors)
         attempts = 1
 
         # Round 2 — bounded repair pass, only if we came up short.
@@ -145,6 +148,7 @@ class HypothesisProposer:
                 repair_outcome = self._validate(
                     repair_batch.proposals,
                     already_seen={c.expression for c in outcome.candidates},
+                    anchors=anchors,
                 )
                 outcome.candidates.extend(repair_outcome.candidates)
                 outcome.dropped.extend(repair_outcome.dropped)
@@ -175,6 +179,7 @@ class HypothesisProposer:
         raw_proposals: list[RawProposal],
         *,
         already_seen: set[str] | None = None,
+        anchors: dict[str, CompositeAnchor] | None = None,
     ) -> _ValidationOutcome:
         """Run every raw proposal through the DSL compiler.
 
@@ -190,6 +195,7 @@ class HypothesisProposer:
         seen: set[str] = set(already_seen or set())
         candidates: list[ProposalCandidate] = []
         dropped: list[DroppedProposal] = []
+        anchor_map = anchors or {}
 
         for raw in raw_proposals:
             expression = (raw.expression or "").strip()
@@ -220,12 +226,52 @@ class HypothesisProposer:
                 ))
                 continue
 
+            base_recipe_id = (raw.base_recipe_id or "").strip() or None
+            if anchor_map and base_recipe_id is None:
+                dropped.append(DroppedProposal(
+                    expression=expression,
+                    rationale=raw.rationale,
+                    reason="Complement mode requires a base_recipe_id.",
+                ))
+                continue
+            if base_recipe_id is not None and base_recipe_id not in anchor_map:
+                dropped.append(DroppedProposal(
+                    expression=expression,
+                    rationale=raw.rationale,
+                    reason=f"Unknown base_recipe_id {base_recipe_id!r}.",
+                ))
+                continue
+            if base_recipe_id is not None:
+                anchor = anchor_map[base_recipe_id]
+                recipe = anchor.recipe
+                novelty = NoveltyEvaluator(
+                    existing_expressions=[
+                        (f"base_component_{i}", component)
+                        for i, component in enumerate(recipe.components)
+                    ],
+                    similarity_threshold=0.85,
+                ).check_novelty(factor)
+                if not novelty.is_novel:
+                    dropped.append(DroppedProposal(
+                        expression=expression,
+                        rationale=raw.rationale,
+                        reason=(
+                            "Candidate is not structurally novel versus its base "
+                            f"basket: {novelty.detail}"
+                        ),
+                    ))
+                    continue
+
             seen.add(expression)
+            tags = list(raw.tags)
+            if base_recipe_id is not None:
+                tags.extend(["complement", f"base_recipe:{base_recipe_id}"])
             candidates.append(ProposalCandidate(
                 expression=expression,
                 rationale=raw.rationale,
                 name=(raw.name or factor.name).strip() or factor.name,
-                tags=list(raw.tags),
+                tags=list(dict.fromkeys(tags)),
+                base_recipe_id=base_recipe_id,
             ))
 
         return _ValidationOutcome(candidates=candidates, dropped=dropped)

@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+from alpha_harness.combination import CombinationMethod, CombinationRecipe
 from alpha_harness.hermes_boundary.contracts import ThemeCycleRequest
-from alpha_harness.proposer.memory import build_memory_digest
+from alpha_harness.proposer.memory import build_memory_digest, load_composite_anchors
 from alpha_harness.proposer.prompts import build_user_prompt
 from alpha_harness.proposer.schemas import ProposalRequest
 from alpha_harness.reports.validation import FactorThumbnail, StrictValidationReport
@@ -260,15 +261,13 @@ def _write_promoted_index(
     Mirrors the on-disk shape PromotedArtifactWriter produces so the
     digest helper has something realistic to read.
     """
-    import hashlib as _hashlib
     import json as _json
 
     components = components or ["rank(close)", "rank(volume)"]
-    # Derive a stable per-(method, components) recipe_id so dedupe
-    # tests can distinguish "same recipe" from "different recipe".
-    recipe_id = _hashlib.sha256(
-        (method + "|" + "|".join(components)).encode("utf-8"),
-    ).hexdigest()[:16]
+    recipe = CombinationRecipe.build(
+        method=CombinationMethod(method),
+        components=components,
+    )
     artifact = {
         "schema_version": 3,
         "factor_id": factor_id,
@@ -276,10 +275,7 @@ def _write_promoted_index(
         "expression": f"combine.{method}([{', '.join(components)}])",
         "composite_recipe": (
             {
-                "method": method,
-                "components": components,
-                "component_factor_ids": [],
-                "recipe_id": recipe_id,
+                **recipe.model_dump(mode="json"),
             }
             if include_recipe
             else None
@@ -400,3 +396,20 @@ def test_composites_only_when_no_records(tmp_path) -> None:
     )
     assert "Recently promoted composites" in digest
     assert "Recent experiments" not in digest  # scalar header skipped
+
+
+def test_load_composite_anchors_returns_typed_deduped_recipes(tmp_path) -> None:
+    _write_promoted_index(
+        tmp_path,
+        factor_id="composite_old",
+        promoted_at="2026-05-20T00:00:00+00:00",
+    )
+    _write_promoted_index(
+        tmp_path,
+        factor_id="composite_new",
+        promoted_at="2026-05-21T00:00:00+00:00",
+    )
+    anchors = load_composite_anchors(tmp_path / "_index.jsonl", limit=5)
+    assert len(anchors) == 1
+    assert anchors[0].factor_id == "composite_new"
+    assert anchors[0].recipe.method is CombinationMethod.EQUAL_WEIGHT

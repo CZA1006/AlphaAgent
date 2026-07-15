@@ -270,7 +270,7 @@ class WalkForwardEvaluator:
             decay_ratio = held_out.rank_ic / in_sample.rank_ic
 
         metadata = dict(in_sample.metadata)
-        metadata["holdout"] = {
+        holdout_metadata: dict[str, object] = {
             "holdout_start": str(split_start),
             "holdout_end": str(request.eval_end),
             "holdout_days": holdout_days,
@@ -285,6 +285,10 @@ class WalkForwardEvaluator:
             "n_periods": held_out.n_periods,
             "decay_ratio": decay_ratio,
         }
+        held_out_complement = held_out.metadata.get("complement")
+        if isinstance(held_out_complement, dict):
+            holdout_metadata["complement"] = held_out_complement
+        metadata["holdout"] = holdout_metadata
         return in_sample.model_copy(
             update={
                 "eval_start": request.eval_start,
@@ -405,6 +409,39 @@ def _aggregate_metadata(
                     horizons.items(), key=lambda item: int(item[0])
                 )
             }
+
+    complement_payloads = [
+        payload
+        for fold in folds
+        if isinstance((payload := fold.metadata.get("complement")), dict)
+    ]
+    if complement_payloads:
+        correlations = [
+            float(value)
+            for payload in complement_payloads
+            if isinstance((value := payload.get("mean_rank_correlation")), int | float)
+        ]
+        lifts = [
+            float(value)
+            for payload in complement_payloads
+            if isinstance((value := payload.get("rank_ic_lift")), int | float)
+        ]
+        first = complement_payloads[0]
+        metadata["complement"] = {
+            "base_recipe_id": first.get("base_recipe_id"),
+            "candidate_expression": first.get("candidate_expression"),
+            "mean_rank_correlation": (
+                statistics.fmean(correlations) if correlations else None
+            ),
+            "max_abs_rank_correlation": (
+                max(abs(value) for value in correlations) if correlations else None
+            ),
+            "mean_rank_ic_lift": statistics.fmean(lifts) if lifts else None,
+            "fraction_positive_rank_ic_lift": (
+                sum(value > 0 for value in lifts) / len(lifts) if lifts else None
+            ),
+            "n_folds": len(complement_payloads),
+        }
 
     ic_by_horizon = metadata.get("ic_by_horizon")
     if isinstance(ic_by_horizon, dict):

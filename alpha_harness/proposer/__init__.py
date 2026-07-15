@@ -9,6 +9,7 @@ DSL, so free-form LLM text never reaches the research loop.
 
 from alpha_harness.proposer.hypothesis_proposer import HypothesisProposer
 from alpha_harness.proposer.schemas import (
+    CompositeAnchor,
     DroppedProposal,
     ProposalCandidate,
     ProposalRequest,
@@ -18,6 +19,7 @@ from alpha_harness.proposer.schemas import (
 )
 
 __all__ = [
+    "CompositeAnchor",
     "DroppedProposal",
     "HypothesisProposer",
     "ProposalCandidate",

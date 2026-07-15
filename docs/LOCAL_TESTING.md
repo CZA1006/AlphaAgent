@@ -670,7 +670,28 @@ uv run python -m scripts.inspect_composite \
   --promoted-dir artifacts/promoted
 ```
 
-### 7.4 Look-ahead audit (Round 9.1 fix)
+### 7.4 Propose deterministic complements (Round 10)
+
+Once the promoted zoo contains a composite that survived the current strict
+and global-holdout rules, run the opt-in complement loop:
+
+```bash
+uv run python -m scripts.validate_strict \
+  --theme hk_ipo \
+  --composite-complements \
+  --cost-bps 15
+```
+
+Each proposal must reference an exact base recipe and contribute one scalar
+DSL component. The evaluator tests the augmented basket and records base,
+component, and augmented rank-IC plus their correlation and incremental lift.
+Promotion requires maximum absolute fold correlation at most 0.50, positive
+lift in at least 60% of walk-forward folds, and positive global-holdout lift.
+Schema-v7 replay rebuilds
+the persisted composite recipe exactly. With no valid anchor, the command exits
+with status 2 instead of falling back to singleton discovery.
+
+### 7.5 Look-ahead audit (Round 9.1 fix)
 
 The combiner used to bypass `HoldoutPolicy` (the basket IC was
 computed without out-of-sample protection).  Fixed in commit

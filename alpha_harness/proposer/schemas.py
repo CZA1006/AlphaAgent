@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from alpha_harness.combination import CombinationRecipe
 from alpha_harness.retrieval import RelatedExperiment
 from alpha_harness.schemas.hypothesis import AssetClass, Hypothesis
 
@@ -28,6 +29,7 @@ class RawProposal(BaseModel):
     rationale: str = ""
     name: str | None = None
     tags: list[str] = Field(default_factory=list)
+    base_recipe_id: str | None = None
 
 
 class RawProposalBatch(BaseModel):
@@ -46,6 +48,17 @@ class ProposalCandidate(BaseModel):
     rationale: str = ""
     name: str = ""
     tags: list[str] = Field(default_factory=list)
+    base_recipe_id: str | None = None
+
+
+class CompositeAnchor(BaseModel):
+    """Promoted basket available as a deterministic complement target."""
+
+    factor_id: str
+    recipe: CombinationRecipe
+    ic: float | None = None
+    rank_ic: float | None = None
+    promoted_at: str = ""
 
 
 class DroppedProposal(BaseModel):
@@ -69,6 +82,10 @@ class ProposalRequest(BaseModel):
     # :func:`alpha_harness.proposer.memory.build_memory_digest`.  Independent
     # of ``related`` (which is theme/AST-scored).  Empty string disables.
     prior_memory: str = ""
+
+    # When non-empty, Round 10 complement mode is active: every proposal must
+    # name one of these promoted recipes as its base.
+    composite_anchors: list[CompositeAnchor] = Field(default_factory=list)
 
     model_config = {"arbitrary_types_allowed": True}
 

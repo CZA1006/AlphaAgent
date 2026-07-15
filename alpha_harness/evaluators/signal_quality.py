@@ -32,6 +32,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from alpha_harness.combination import CombinationRecipe, pairwise_rank_corr
 from alpha_harness.evaluators.neutralize import (
     apply_cost,
     compute_factor_turnover,
@@ -554,7 +555,17 @@ class SignalQualityEvaluator:
                 metadata={"evaluator": "signal_quality", "mode": "real"},
             )
 
-        return evaluate_precomputed_signal(signal=signal, df=df, request=request)
+        bundle = evaluate_precomputed_signal(signal=signal, df=df, request=request)
+        if factor.composite_recipe is not None and "complement_base_size" in factor.params:
+            bundle = _attach_complement_metadata(
+                bundle=bundle,
+                factor=factor,
+                full_df=full_df,
+                window_mask=mask,
+                window_df=df,
+                request=request,
+            )
+        return bundle
 
     def _evaluate_with_holdout(
         self,
@@ -608,7 +619,7 @@ class SignalQualityEvaluator:
             decay_ratio = ho_rank / is_rank
 
         merged_metadata = dict(in_sample.metadata)
-        merged_metadata["holdout"] = {
+        holdout_metadata: dict[str, Any] = {
             "holdout_start": str(split_start),
             "holdout_end": str(request.eval_end),
             "holdout_days": holdout_days,
@@ -623,6 +634,10 @@ class SignalQualityEvaluator:
             "n_periods": held_out.n_periods,
             "decay_ratio": decay_ratio,
         }
+        held_out_complement = held_out.metadata.get("complement")
+        if isinstance(held_out_complement, dict):
+            holdout_metadata["complement"] = held_out_complement
+        merged_metadata["holdout"] = holdout_metadata
         return in_sample.model_copy(
             update={
                 "eval_start": request.eval_start,
@@ -638,3 +653,73 @@ class SignalQualityEvaluator:
         mask = (ts_dates >= request.eval_start) & (ts_dates <= request.eval_end)
         filtered: pd.DataFrame = df.loc[mask].reset_index(drop=True)
         return filtered
+
+
+def _attach_complement_metadata(
+    *,
+    bundle: EvaluationBundle,
+    factor: FactorSpec,
+    full_df: pd.DataFrame,
+    window_mask: pd.Series,
+    window_df: pd.DataFrame,
+    request: EvaluationRequest,
+) -> EvaluationBundle:
+    """Compare a proposed augmented basket with its promoted base basket."""
+    recipe = factor.composite_recipe
+    assert recipe is not None
+    base_size_raw = factor.params.get("complement_base_size")
+    if not isinstance(base_size_raw, int) or not 0 < base_size_raw < len(recipe.components):
+        raise ValueError("invalid complement_base_size on composite factor")
+    if len(recipe.components) != base_size_raw + 1:
+        raise ValueError("Round 10 complement factors must add exactly one component")
+
+    base_component_ids: list[str] = []
+    if len(recipe.component_factor_ids) == len(recipe.components):
+        base_component_ids = recipe.component_factor_ids[:base_size_raw]
+    base_recipe = CombinationRecipe.build(
+        method=recipe.method,
+        components=recipe.components[:base_size_raw],
+        component_factor_ids=base_component_ids,
+    )
+    candidate_expression = recipe.components[-1]
+    base_full_signal = execute_composite(base_recipe, full_df)
+    candidate_ast = parse_expression(candidate_expression)
+    candidate_full_signal = DslExecutor(full_df).execute(candidate_ast)
+    base_signal = base_full_signal.loc[window_mask].reset_index(drop=True)
+    candidate_signal = candidate_full_signal.loc[window_mask].reset_index(drop=True)
+    base_bundle = evaluate_precomputed_signal(
+        signal=base_signal,
+        df=window_df,
+        request=request,
+    )
+    candidate_bundle = evaluate_precomputed_signal(
+        signal=candidate_signal,
+        df=window_df,
+        request=request,
+    )
+    correlation: Any = pairwise_rank_corr(
+        [base_signal, candidate_signal],
+        window_df["timestamp"],
+    ).iloc[0, 1]
+    rank_ic_lift = None
+    if bundle.rank_ic is not None and base_bundle.rank_ic is not None:
+        rank_ic_lift = bundle.rank_ic - base_bundle.rank_ic
+    corr_value = None if pd.isna(correlation) else float(correlation)
+    metadata = dict(bundle.metadata)
+    metadata["complement"] = {
+        "base_recipe_id": str(
+            factor.params.get("complement_base_recipe_id", base_recipe.recipe_id)
+        ),
+        "candidate_expression": candidate_expression,
+        "base_rank_ic": base_bundle.rank_ic,
+        "candidate_rank_ic": candidate_bundle.rank_ic,
+        "augmented_rank_ic": bundle.rank_ic,
+        "rank_ic_lift": rank_ic_lift,
+        "mean_rank_correlation": corr_value,
+        "max_abs_rank_correlation": abs(corr_value) if corr_value is not None else None,
+        "fraction_positive_rank_ic_lift": (
+            float(rank_ic_lift > 0) if rank_ic_lift is not None else None
+        ),
+        "n_folds": 1,
+    }
+    return bundle.model_copy(update={"metadata": metadata})

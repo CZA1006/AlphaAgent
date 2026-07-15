@@ -31,6 +31,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from alpha_harness.combination import CombinationRecipe
 from alpha_harness.multiple_testing import (
     DEFAULT_FAMILYWISE_ALPHA,
     bonferroni_z_threshold_multiplier,
@@ -42,7 +43,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_VALIDATION_DIR = Path("artifacts/validations")
 VALIDATION_INDEX_NAME = "_index.jsonl"
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 
 # ── Schema ──────────────────────────────────────────────────────────────────
@@ -76,6 +77,14 @@ class FactorThumbnail(BaseModel):
     holdout_ic: float | None = None
     holdout_rank_ic: float | None = None
     holdout_decay_ratio: float | None = None
+    # Round 10 — deterministic incremental diagnostics for base + component.
+    complement_base_recipe_id: str | None = None
+    complement_candidate_expression: str | None = None
+    complement_rank_correlation: float | None = None
+    complement_rank_ic_lift: float | None = None
+    complement_positive_lift_fraction: float | None = None
+    holdout_complement_rank_ic_lift: float | None = None
+    composite_recipe: CombinationRecipe | None = None
 
 
 class StrictValidationReport(BaseModel):
@@ -106,6 +115,7 @@ class StrictValidationReport(BaseModel):
     n_promoted: int
     n_refined: int
     n_rejected: int
+    n_complement_candidates: int = 0
     n_rejected_by_gate: dict[str, int] = Field(default_factory=dict)
     promoted_factor_ids: list[str] = Field(default_factory=list)
     promoted_trail_ids: list[str] = Field(default_factory=list)
@@ -126,6 +136,8 @@ class StrictValidationReport(BaseModel):
 # Rounds 4A.3 / 4B / 4C / 4E.
 _GATE_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("data_insufficient", re.compile(r"n_(periods|assets)=")),
+    ("complement_correlation", re.compile(r"complement_max_abs_rank_correlation=")),
+    ("complement_lift", re.compile(r"complement_(positive|holdout)_rank_ic_lift")),
     ("threshold_ic", re.compile(r"\bic=.*<\s*threshold")),
     ("threshold_rank_ic", re.compile(r"\brank_ic=.*<\s*threshold")),
     ("threshold_quantile_spread", re.compile(r"\bquantile_spread=.*<\s*threshold")),
@@ -151,6 +163,20 @@ def classify_failure(detail: str) -> str:
         if pattern.search(detail):
             return name
     return "other"
+
+
+def _optional_number(
+    payload: object,
+    key: str,
+    *,
+    fallback: str | None = None,
+) -> float | None:
+    if not isinstance(payload, dict):
+        return None
+    value = payload.get(key)
+    if not isinstance(value, int | float) and fallback is not None:
+        value = payload.get(fallback)
+    return float(value) if isinstance(value, int | float) else None
 
 
 # ── Builder ─────────────────────────────────────────────────────────────────
@@ -181,6 +207,7 @@ def build_validation_report(
     promoted_ids: list[str] = []
     promoted_trail_ids: list[str] = []
     thumbnails: list[FactorThumbnail] = []
+    n_complement_candidates = 0
     for r in records:
         gate: str | None = None
         detail = ""
@@ -209,6 +236,22 @@ def build_validation_report(
             holdout_ic = holdout_meta.get("ic")
             holdout_rank_ic = holdout_meta.get("rank_ic")
             holdout_decay_ratio = holdout_meta.get("decay_ratio")
+        complement_meta = ev.metadata.get("complement") if isinstance(ev.metadata, dict) else None
+        holdout_complement = (
+            holdout_meta.get("complement") if isinstance(holdout_meta, dict) else None
+        )
+        if isinstance(complement_meta, dict):
+            n_complement_candidates += 1
+        base_recipe_id = (
+            complement_meta.get("base_recipe_id")
+            if isinstance(complement_meta, dict)
+            else None
+        )
+        candidate_expression = (
+            complement_meta.get("candidate_expression")
+            if isinstance(complement_meta, dict)
+            else None
+        )
         thumbnails.append(
             FactorThumbnail(
                 factor_id=r.factor.id,
@@ -225,6 +268,30 @@ def build_validation_report(
                 holdout_ic=holdout_ic,
                 holdout_rank_ic=holdout_rank_ic,
                 holdout_decay_ratio=holdout_decay_ratio,
+                complement_base_recipe_id=(
+                    base_recipe_id if isinstance(base_recipe_id, str) else None
+                ),
+                complement_candidate_expression=(
+                    candidate_expression if isinstance(candidate_expression, str) else None
+                ),
+                complement_rank_correlation=_optional_number(
+                    complement_meta,
+                    "mean_rank_correlation",
+                ),
+                complement_rank_ic_lift=_optional_number(
+                    complement_meta,
+                    "mean_rank_ic_lift",
+                    fallback="rank_ic_lift",
+                ),
+                complement_positive_lift_fraction=_optional_number(
+                    complement_meta,
+                    "fraction_positive_rank_ic_lift",
+                ),
+                holdout_complement_rank_ic_lift=_optional_number(
+                    holdout_complement,
+                    "rank_ic_lift",
+                ),
+                composite_recipe=r.factor.composite_recipe,
             ),
         )
 
@@ -258,6 +325,7 @@ def build_validation_report(
         n_promoted=counts["promoted"],
         n_refined=counts["refined"],
         n_rejected=counts["rejected"],
+        n_complement_candidates=n_complement_candidates,
         n_rejected_by_gate=dict(sorted(by_gate.items())),
         promoted_factor_ids=promoted_ids,
         promoted_trail_ids=promoted_trail_ids,
@@ -453,6 +521,7 @@ class StrictValidationReportWriter:
                 "ic_threshold_multiplier": report.ic_threshold_multiplier,
                 "n_promoted": report.n_promoted,
                 "n_rejected": report.n_rejected,
+                "n_complement_candidates": report.n_complement_candidates,
                 "promoted_factor_ids": list(report.promoted_factor_ids),
             }
         )

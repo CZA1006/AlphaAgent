@@ -228,6 +228,12 @@ def test_aggregate_metadata_uses_all_folds_not_first_fold() -> None:
                     "episode_min_positive_count": 4.0,
                     "hit_rate": 0.4,
                 },
+                "complement": {
+                    "base_recipe_id": "base-1",
+                    "candidate_expression": "rank(volume)",
+                    "mean_rank_correlation": 0.2,
+                    "rank_ic_lift": 0.01,
+                },
             }
         }
     )
@@ -244,6 +250,12 @@ def test_aggregate_metadata_uses_all_folds_not_first_fold() -> None:
                     "episode_positive_phase_count": 5.0,
                     "episode_min_positive_count": 2.0,
                     "hit_rate": 0.8,
+                },
+                "complement": {
+                    "base_recipe_id": "base-1",
+                    "candidate_expression": "rank(volume)",
+                    "mean_rank_correlation": -0.4,
+                    "rank_ic_lift": -0.02,
                 },
             }
         }
@@ -267,6 +279,13 @@ def test_aggregate_metadata_uses_all_folds_not_first_fold() -> None:
     assert out.metadata["portfolio"]["episode_positive_phase_count"] == pytest.approx(5.0)
     assert out.metadata["portfolio"]["episode_min_positive_count"] == pytest.approx(2.0)
     assert out.metadata["portfolio"]["hit_rate"] == pytest.approx(0.6)
+    complement = out.metadata["complement"]
+    assert complement["base_recipe_id"] == "base-1"
+    assert complement["mean_rank_correlation"] == pytest.approx(-0.1)
+    assert complement["max_abs_rank_correlation"] == pytest.approx(0.4)
+    assert complement["mean_rank_ic_lift"] == pytest.approx(-0.005)
+    assert complement["fraction_positive_rank_ic_lift"] == pytest.approx(0.5)
+    assert complement["n_folds"] == 2
 
 
 def test_aggregate_passes_through_when_one_fold() -> None:

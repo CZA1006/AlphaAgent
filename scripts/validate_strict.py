@@ -35,6 +35,7 @@ import json
 import logging
 import sys
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from pathlib import Path
 
@@ -69,7 +70,11 @@ from alpha_harness.multiple_testing import bonferroni_z_threshold_multiplier
 from alpha_harness.orchestrator.refinement import RefinementConfig, RefinementRunner
 from alpha_harness.orchestrator.research_loop import ResearchOrchestrator
 from alpha_harness.proposer import HypothesisProposer
-from alpha_harness.proposer.memory import DEFAULT_MEMORY_DEPTH, build_memory_digest
+from alpha_harness.proposer.memory import (
+    DEFAULT_MEMORY_DEPTH,
+    build_memory_digest,
+    load_composite_anchors,
+)
 from alpha_harness.proposer.schemas import RawProposal, RawProposalBatch
 from alpha_harness.regimes import StrictRegime, get_regime
 from alpha_harness.registries.experiment import ExperimentRegistry
@@ -84,6 +89,7 @@ from alpha_harness.reports.validation import (
 )
 from alpha_harness.schemas.evaluation import EvaluationRequest
 from alpha_harness.schemas.experiment import ExperimentDecision, PromotionTrail
+from alpha_harness.schemas.factor import FactorSpec
 from alpha_harness.schemas.hypothesis import AssetClass, Hypothesis
 from alpha_harness.service import AlphaHarnessService
 
@@ -582,6 +588,14 @@ def _build_parser() -> argparse.ArgumentParser:
         "--promoted-dir",
         default=str(DEFAULT_PROMOTED_DIR),
     )
+    p.add_argument(
+        "--composite-complements",
+        action="store_true",
+        help=(
+            "Opt in to Round 10: propose one-component additions to recent "
+            "promoted composites and apply deterministic incremental gates."
+        ),
+    )
     p.add_argument("--trail-dir", default=str(DEFAULT_TRAIL_DIR))
     p.add_argument(
         "--no-write",
@@ -621,6 +635,12 @@ def _build_eval_request(
     )
 
 
+@dataclass(frozen=True)
+class _ReplayCandidate:
+    hypothesis: Hypothesis
+    precompiled_factor: FactorSpec | None = None
+
+
 def _load_replay_hypotheses(
     *,
     validation_dir: Path | str,
@@ -628,14 +648,14 @@ def _load_replay_hypotheses(
     data_fingerprint: str,
     limit: int,
     asset_class: AssetClass,
-) -> list[Hypothesis]:
-    """Load exact promoted expressions from explicitly named source reports."""
+) -> list[_ReplayCandidate]:
+    """Load exact promoted factors from explicitly named source reports."""
     if not source_cycle_ids:
         raise ValueError("replay_promoted requires at least one --source-cycle-id")
     if limit < 1:
         raise ValueError("--n-candidates must be >= 1")
 
-    hypotheses: list[Hypothesis] = []
+    candidates: list[_ReplayCandidate] = []
     seen_expressions: set[str] = set()
     for cycle_id in source_cycle_ids:
         report = read_report(validation_dir, cycle_id)
@@ -655,8 +675,7 @@ def _load_replay_hypotheses(
             if factor.expression in seen_expressions:
                 continue
             seen_expressions.add(factor.expression)
-            hypotheses.append(
-                Hypothesis(
+            hypothesis = Hypothesis(
                     text=factor.expression,
                     rationale=(
                         f"Deterministic replay of promoted factor {factor.factor_id} "
@@ -669,13 +688,34 @@ def _load_replay_hypotheses(
                         f"source_cycle:{cycle_id}",
                         f"source_factor:{factor.factor_id}",
                     ],
-                ),
-            )
-            if len(hypotheses) >= limit:
-                return hypotheses
-    if not hypotheses:
+                )
+            precompiled: FactorSpec | None = None
+            if factor.composite_recipe is not None:
+                recipe = factor.composite_recipe
+                params: dict[str, float | int | str] = {}
+                if factor.complement_base_recipe_id is not None:
+                    params = {
+                        "complement_base_recipe_id": factor.complement_base_recipe_id,
+                        "complement_base_size": len(recipe.components) - 1,
+                        "complement_candidate_expression": (
+                            factor.complement_candidate_expression
+                            or recipe.components[-1]
+                        ),
+                    }
+                precompiled = FactorSpec(
+                    id=factor.factor_id,
+                    name=f"replay_{factor.factor_id}",
+                    expression=factor.expression,
+                    hypothesis_id=hypothesis.id,
+                    composite_recipe=recipe,
+                    params=params,
+                )
+            candidates.append(_ReplayCandidate(hypothesis, precompiled))
+            if len(candidates) >= limit:
+                return candidates
+    if not candidates:
         raise ValueError("source validation reports contain no promoted factors")
-    return hypotheses
+    return candidates
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -716,6 +756,12 @@ def main(argv: list[str] | None = None) -> int:
             min_holdout_decay_ratio=judge_thresholds["min_holdout_decay_ratio"],
             multiple_testing_familywise_alpha=judge_thresholds[
                 "multiple_testing_familywise_alpha"
+            ],
+            max_complement_rank_correlation=judge_thresholds[
+                "max_complement_rank_correlation"
+            ],
+            min_complement_improvement_fraction=judge_thresholds[
+                "min_complement_improvement_fraction"
             ],
         ),
     )
@@ -787,7 +833,7 @@ def main(argv: list[str] | None = None) -> int:
         data_fingerprint=data_fingerprint,
     )
     adapter: HarnessAgentAdapter | None = None
-    replay_hypotheses: list[Hypothesis] = []
+    replay_candidates: list[_ReplayCandidate] = []
     if candidate_source is ResearchExecutorKind.PROPOSE:
         try:
             llm_client, llm_budget = _build_llm_client(args, cycle_id=cycle_id)
@@ -798,17 +844,35 @@ def main(argv: list[str] | None = None) -> int:
             llm_client=llm_client,
             compiler=FactorDslCompiler(),
         )
+        composite_anchors = (
+            load_composite_anchors(Path(args.promoted_dir) / "_index.jsonl")
+            if args.composite_complements
+            else []
+        )
+        if args.composite_complements and not composite_anchors:
+            print(
+                "error: --composite-complements requires at least one valid "
+                "promoted composite anchor",
+                file=sys.stderr,
+            )
+            return 2
+        if composite_anchors:
+            logger.info(
+                "Round 10 complement mode: loaded %d promoted composite anchor(s)",
+                len(composite_anchors),
+            )
         adapter = HarnessAgentAdapter(
             orchestrator=orch,
             eval_request=eval_request,
             experiment_registry=experiments,
             proposer=proposer,
             refinement_runner=runner,
+            composite_anchors=composite_anchors,
         )
     else:
         llm_budget = None
         try:
-            replay_hypotheses = _load_replay_hypotheses(
+            replay_candidates = _load_replay_hypotheses(
                 validation_dir=args.validation_dir,
                 source_cycle_ids=list(args.source_cycle_id),
                 data_fingerprint=data_fingerprint,
@@ -868,8 +932,12 @@ def main(argv: list[str] | None = None) -> int:
                 )
 
         if candidate_source is ResearchExecutorKind.REPLAY_PROMOTED:
-            for hypothesis in replay_hypotheses:
-                orch.run_cycle(hypothesis, eval_request)
+            for candidate in replay_candidates:
+                orch.run_cycle(
+                    candidate.hypothesis,
+                    eval_request,
+                    precompiled_factor=candidate.precompiled_factor,
+                )
         else:
             assert adapter is not None
             try:

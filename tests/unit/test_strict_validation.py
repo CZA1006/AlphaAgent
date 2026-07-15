@@ -9,6 +9,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+from alpha_harness.combination import CombinationMethod, CombinationRecipe
 from alpha_harness.llm import TokenBudget
 from alpha_harness.regimes import STRICT_REGIME, StrictRegime, get_regime
 from alpha_harness.reports.validation import (
@@ -115,6 +116,14 @@ def test_get_regime_strict() -> None:
         ("Required metric 'turnover' is missing.", "missing_metric"),
         ("ic_sign_consistent_horizons=1 across 3 horizons", "sign_consistency"),
         ("fraction_positive_rank_ic=0.25 < 0.6", "walk_forward_stability"),
+        (
+            "complement_max_abs_rank_correlation=0.70 > 0.50",
+            "complement_correlation",
+        ),
+        (
+            "complement_holdout_rank_ic_lift=-0.0100 <= 0",
+            "complement_lift",
+        ),
         ("tail_concentration=0.85 > 0.50", "tail_concentration"),
         (
             "holdout rank_ic=-0.04 disagrees in sign with in-sample rank_ic=0.06",
@@ -138,6 +147,7 @@ def _record(
     factor_id: str,
     decision: ExperimentDecision,
     failure_detail: str = "",
+    metadata: dict[str, object] | None = None,
 ) -> ExperimentRecord:
     failure = (
         FailureRecord(category=FailureCategory.WEAK_SIGNAL, detail=failure_detail)
@@ -152,7 +162,7 @@ def _record(
     return ExperimentRecord(
         hypothesis=Hypothesis(text="rank(close)"),
         factor=FactorSpec(id=factor_id, name="f", expression="rank(close)"),
-        evaluation=EvaluationBundle(),
+        evaluation=EvaluationBundle(metadata=metadata or {}),
         decision=decision,
         failure=failure,
         promotion_trail=trail,
@@ -224,6 +234,39 @@ def test_build_report_persists_budget_pricing_and_spend() -> None:
     assert report.budget.completion_cost_per_1k == pytest.approx(0.002)
 
 
+def test_build_report_persists_complement_diagnostics() -> None:
+    record = _record(
+        factor_id="complement-1",
+        decision=ExperimentDecision.REJECT,
+        failure_detail="complement_holdout_rank_ic_lift=-0.0100 <= 0.",
+        metadata={
+            "complement": {
+                "base_recipe_id": "base-1",
+                "candidate_expression": "rank(volume)",
+                "mean_rank_correlation": 0.2,
+                "mean_rank_ic_lift": 0.01,
+                "fraction_positive_rank_ic_lift": 0.75,
+            },
+            "holdout": {"complement": {"rank_ic_lift": -0.01}},
+        },
+    )
+    report = build_validation_report(
+        cycle_id="complements",
+        regime_trail_id="trail-x",
+        universe_id="strict",
+        started_at=datetime.now(UTC),
+        records=[record],
+    )
+    assert report.n_complement_candidates == 1
+    [factor] = report.factors
+    assert factor.complement_base_recipe_id == "base-1"
+    assert factor.complement_candidate_expression == "rank(volume)"
+    assert factor.complement_rank_correlation == pytest.approx(0.2)
+    assert factor.complement_rank_ic_lift == pytest.approx(0.01)
+    assert factor.complement_positive_lift_fraction == pytest.approx(0.75)
+    assert factor.holdout_complement_rank_ic_lift == pytest.approx(-0.01)
+
+
 # ── Writer round-trip ──────────────────────────────────────────────────────
 
 
@@ -252,7 +295,7 @@ def test_writer_round_trips_payload(tmp_path: Path) -> None:
     assert path is not None and path.is_file()
     payload = json.loads(path.read_text())
     assert payload["cycle_id"] == "c-rt"
-    assert payload["schema_version"] == 6
+    assert payload["schema_version"] == 7
     assert payload["memory_scope_id"] == "scope-1"
     assert payload["data_fingerprint"] == "data-1"
     assert payload["n_promoted"] == 1
@@ -261,6 +304,7 @@ def test_writer_round_trips_payload(tmp_path: Path) -> None:
     assert rows[0]["cycle_id"] == "c-rt"
     assert rows[0]["n_proposals_in_session"] == 1
     assert rows[0]["ic_threshold_multiplier"] == pytest.approx(1.0)
+    assert rows[0]["n_complement_candidates"] == 0
 
 
 def test_writer_idempotent_on_same_cycle(tmp_path: Path) -> None:
@@ -334,7 +378,7 @@ def test_load_replay_hypotheses_uses_exact_promoted_sources(tmp_path: Path) -> N
     )
     StrictValidationReportWriter(tmp_path).write(report)
 
-    hypotheses = _load_replay_hypotheses(
+    candidates = _load_replay_hypotheses(
         validation_dir=tmp_path,
         source_cycle_ids=["source-1"],
         data_fingerprint="data-1",
@@ -342,10 +386,43 @@ def test_load_replay_hypotheses_uses_exact_promoted_sources(tmp_path: Path) -> N
         asset_class=AssetClass.HK_EQUITY,
     )
 
-    assert [hypothesis.text for hypothesis in hypotheses] == ["rank(close)"]
-    assert hypotheses[0].source == "validation_replay"
-    assert hypotheses[0].asset_class is AssetClass.HK_EQUITY
-    assert "source_factor:promoted" in hypotheses[0].tags
+    assert [candidate.hypothesis.text for candidate in candidates] == ["rank(close)"]
+    assert candidates[0].precompiled_factor is None
+    assert candidates[0].hypothesis.source == "validation_replay"
+    assert candidates[0].hypothesis.asset_class is AssetClass.HK_EQUITY
+    assert "source_factor:promoted" in candidates[0].hypothesis.tags
+
+
+def test_load_replay_hypotheses_reconstructs_complement_factor(tmp_path: Path) -> None:
+    base = CombinationRecipe.build(
+        method=CombinationMethod.RANK_AGGREGATE,
+        components=["rank(close)", "rank(volume)"],
+    )
+    augmented = CombinationRecipe.build(
+        method=base.method,
+        components=[*base.components, "rank(high - low)"],
+    )
+    report = _minimal_report("source-complement").model_copy(update={
+        "factors": [FactorThumbnail(
+            factor_id="complement-1",
+            expression=f"<composite:{augmented.recipe_id}>",
+            decision=ExperimentDecision.PROMOTE_CANDIDATE.value,
+            complement_base_recipe_id=base.recipe_id,
+            complement_candidate_expression="rank(high - low)",
+            composite_recipe=augmented,
+        )],
+    })
+    StrictValidationReportWriter(tmp_path).write(report)
+    [candidate] = _load_replay_hypotheses(
+        validation_dir=tmp_path,
+        source_cycle_ids=["source-complement"],
+        data_fingerprint="data-1",
+        limit=1,
+        asset_class=AssetClass.HK_EQUITY,
+    )
+    assert candidate.precompiled_factor is not None
+    assert candidate.precompiled_factor.composite_recipe == augmented
+    assert candidate.precompiled_factor.params["complement_base_size"] == 2
 
 
 def test_load_replay_hypotheses_rejects_snapshot_mismatch(tmp_path: Path) -> None:

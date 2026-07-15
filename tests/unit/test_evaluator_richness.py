@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from alpha_harness.combination import CombinationMethod, CombinationRecipe
 from alpha_harness.evaluators.neutralize import (
     apply_cost,
     compute_factor_turnover,
@@ -342,6 +343,36 @@ def test_evaluator_records_causal_beta_policy() -> None:
     }
 
 
+def test_evaluator_records_complement_incremental_diagnostics() -> None:
+    panel = _panel()
+    base = CombinationRecipe.build(
+        method=CombinationMethod.RANK_AGGREGATE,
+        components=["rank(close)", "rank(volume)"],
+    )
+    augmented = CombinationRecipe.build(
+        method=base.method,
+        components=[*base.components, "rank(high - low)"],
+    )
+    factor = FactorSpec(
+        name="complement",
+        expression=f"<composite:{augmented.recipe_id}>",
+        composite_recipe=augmented,
+        params={
+            "complement_base_recipe_id": base.recipe_id,
+            "complement_base_size": 2,
+        },
+    )
+    bundle = SignalQualityEvaluator(panel).evaluate(factor, _eval_request())
+    diagnostics = bundle.metadata["complement"]
+    assert isinstance(diagnostics, dict)
+    assert diagnostics["base_recipe_id"] == base.recipe_id
+    assert diagnostics["candidate_expression"] == "rank(high - low)"
+    assert diagnostics["n_folds"] == 1
+    assert diagnostics["rank_ic_lift"] == pytest.approx(
+        bundle.rank_ic - diagnostics["base_rank_ic"]
+    )
+
+
 def test_evaluator_turnover_and_cost_recorded() -> None:
     panel = _panel()
     evaluator = SignalQualityEvaluator(panel)
@@ -414,3 +445,72 @@ def test_judge_single_horizon_unaffected() -> None:
         ExperimentDecision.PROMOTE_CANDIDATE,
         ExperimentDecision.REFINE,
     )
+
+
+@pytest.mark.parametrize(
+    ("complement", "holdout", "expected"),
+    [
+        (
+            {},
+            None,
+            "complement_max_abs_rank_correlation is missing",
+        ),
+        (
+            {"max_abs_rank_correlation": 0.20},
+            None,
+            "complement_positive_rank_ic_lift_fraction is missing",
+        ),
+        (
+            {"max_abs_rank_correlation": 0.20, "fraction_positive_rank_ic_lift": 0.75},
+            None,
+            "complement_holdout_rank_ic_lift is missing",
+        ),
+        (
+            {"max_abs_rank_correlation": 0.70, "fraction_positive_rank_ic_lift": 1.0},
+            None,
+            "complement_max_abs_rank_correlation",
+        ),
+        (
+            {"max_abs_rank_correlation": 0.20, "fraction_positive_rank_ic_lift": 0.50},
+            None,
+            "complement_positive_rank_ic_lift_fraction",
+        ),
+        (
+            {"max_abs_rank_correlation": 0.20, "fraction_positive_rank_ic_lift": 0.75},
+            {"complement": {"rank_ic_lift": -0.01}},
+            "complement_holdout_rank_ic_lift",
+        ),
+    ],
+)
+def test_judge_rejects_non_complements(
+    complement: dict[str, float],
+    holdout: dict[str, object] | None,
+    expected: str,
+) -> None:
+    bundle = _bundle_passing()
+    bundle.metadata = {"complement": complement}
+    if holdout is not None:
+        bundle.metadata["holdout"] = holdout
+    detail = PromotionJudge().judge(_hypothesis(), _factor(), bundle, _eval_request())
+    assert detail.decision is ExperimentDecision.REJECT
+    assert detail.failure is not None
+    assert expected in detail.failure.detail
+
+
+def test_judge_promotes_robust_complement_and_records_selection_policy() -> None:
+    bundle = _bundle_passing()
+    bundle.metadata = {
+        "complement": {
+            "base_recipe_id": "base-1",
+            "max_abs_rank_correlation": 0.20,
+            "fraction_positive_rank_ic_lift": 0.75,
+        },
+        "holdout": {"complement": {"rank_ic_lift": 0.01}},
+    }
+    detail = PromotionJudge(refine_margin=0.0).judge(
+        _hypothesis(), _factor(), bundle, _eval_request()
+    )
+    assert detail.decision is ExperimentDecision.PROMOTE_CANDIDATE
+    assert detail.promotion_trail is not None
+    assert detail.promotion_trail.selection["strategy"] == "composite_complement"
+    assert detail.promotion_trail.selection["base_recipe_id"] == "base-1"

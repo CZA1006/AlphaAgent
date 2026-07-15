@@ -72,6 +72,7 @@ from alpha_harness.proposer import HypothesisProposer
 from alpha_harness.proposer.memory import (
     DEFAULT_MEMORY_DEPTH,
     build_memory_digest,
+    load_composite_anchors,
 )
 from alpha_harness.proposer.schemas import RawProposal, RawProposalBatch
 from alpha_harness.registries.factory import build_registries
@@ -328,6 +329,14 @@ def _build_parser() -> argparse.ArgumentParser:
         "--no-promoted-artifacts",
         action="store_true",
         help="Skip writing promotion artifacts even when a factor is promoted.",
+    )
+    p.add_argument(
+        "--composite-complements",
+        action="store_true",
+        help=(
+            "Opt in to Round 10 composite-complement proposals; requires a "
+            "valid promoted composite under --promoted-dir."
+        ),
     )
 
     # Trail registry (Round 4J)
@@ -719,12 +728,30 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     # ── 7. Adapter.run_theme ──────────────────────────────────────────────
+    composite_anchors = (
+        load_composite_anchors(Path(args.promoted_dir) / "_index.jsonl")
+        if args.composite_complements
+        else []
+    )
+    if args.composite_complements and not composite_anchors:
+        print(
+            "error: --composite-complements requires at least one valid "
+            "promoted composite anchor",
+            file=sys.stderr,
+        )
+        return 2
+    if composite_anchors:
+        logger.info(
+            "Round 10 complement mode: loaded %d promoted composite anchor(s).",
+            len(composite_anchors),
+        )
     adapter = HarnessAgentAdapter(
         orchestrator=orchestrator,
         eval_request=eval_request,
         experiment_registry=registries.experiments,
         proposer=proposer,
         refinement_runner=refinement_runner,
+        composite_anchors=composite_anchors,
     )
 
     # ── 6b. Build the rolling-memory digest (Round 4A.4) ─────────────────

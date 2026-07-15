@@ -24,6 +24,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from alpha_harness.combination import CombinationMethod, CombinationRecipe
+from alpha_harness.proposer.schemas import CompositeAnchor
 from alpha_harness.reports.validation import StrictValidationReport
 from alpha_harness.schemas.experiment import ExperimentDecision, ExperimentRecord
 
@@ -212,58 +214,97 @@ def _build_composites_section(
     never to a raised exception, so this can be wired into any proposer
     flow without a try/except in the caller.
     """
-    if promoted_index_path is None or top_composites <= 0:
+    anchors = load_composite_anchors(promoted_index_path, limit=top_composites)
+    if not anchors:
         return ""
-    idx_path = Path(promoted_index_path)
-    if not idx_path.is_file():
-        return ""
-
-    rows = _read_index_rows(idx_path)
-    if not rows:
-        return ""
-
-    # Sort newest first.  ``promoted_at`` is an ISO 8601 string written
-    # by PromotedArtifactWriter, so lexicographic order == chronological.
-    rows.sort(key=lambda r: r.get("promoted_at", ""), reverse=True)
-
-    artifact_dir = idx_path.parent
     lines = [
         "Recently promoted composites (use these as building blocks, "
         "don't re-propose the same recipe):",
     ]
-    emitted = 0
+    for anchor in anchors:
+        recipe = anchor.recipe
+        metrics = []
+        if anchor.ic is not None:
+            metrics.append(f"ic={anchor.ic:+.3f}")
+        if anchor.rank_ic is not None:
+            metrics.append(f"rank_ic={anchor.rank_ic:+.3f}")
+        metrics_str = f"  ({', '.join(metrics)})" if metrics else ""
+        components_str = ", ".join(recipe.components)
+        lines.append(
+            f"  - combine.{recipe.method.value}([{components_str}])  "
+            f"recipe_id={recipe.recipe_id}{metrics_str}",
+        )
+    return "\n".join(lines)
+
+
+def load_composite_anchors(
+    promoted_index_path: Path | str | None,
+    *,
+    limit: int = DEFAULT_TOP_COMPOSITES,
+) -> list[CompositeAnchor]:
+    """Load recent, valid promoted composites as typed Round 10 anchors."""
+    if promoted_index_path is None or limit <= 0:
+        return []
+    idx_path = Path(promoted_index_path)
+    if not idx_path.is_file():
+        return []
+    rows = _read_index_rows(idx_path)
+    rows.sort(key=lambda row: str(row.get("promoted_at", "")), reverse=True)
+    anchors: list[CompositeAnchor] = []
     seen_recipes: set[str] = set()
     for row in rows:
-        if emitted >= top_composites:
-            break
         factor_id = row.get("factor_id")
-        if not factor_id:
+        if not isinstance(factor_id, str) or not factor_id:
             continue
-        recipe = _load_composite_recipe(artifact_dir / f"{factor_id}.json")
-        if recipe is None:
+        raw = _load_composite_recipe(idx_path.parent / f"{factor_id}.json")
+        if raw is None:
             continue
-        recipe_id = recipe.get("recipe_id", "")
-        if recipe_id in seen_recipes:
+        try:
+            method = CombinationMethod(str(raw.get("method", "")))
+            components_raw = raw.get("components")
+            if not isinstance(components_raw, list) or not all(
+                isinstance(component, str) for component in components_raw
+            ):
+                continue
+            component_ids_raw = raw.get("component_factor_ids", [])
+            component_ids = (
+                [str(item) for item in component_ids_raw]
+                if isinstance(component_ids_raw, list)
+                else []
+            )
+            recipe = CombinationRecipe.build(
+                method=method,
+                components=components_raw,
+                component_factor_ids=component_ids,
+            )
+        except (TypeError, ValueError):
             continue
-        seen_recipes.add(recipe_id)
-        method = recipe.get("method", "?")
-        components = recipe.get("components", [])
-        ic = row.get("ic")
-        ric = row.get("rank_ic")
-        metrics = []
-        if isinstance(ic, int | float):
-            metrics.append(f"ic={ic:+.3f}")
-        if isinstance(ric, int | float):
-            metrics.append(f"rank_ic={ric:+.3f}")
-        metrics_str = f"  ({', '.join(metrics)})" if metrics else ""
-        components_str = ", ".join(components) if components else ""
-        lines.append(
-            f"  - combine.{method}([{components_str}])  recipe_id={recipe_id}{metrics_str}",
-        )
-        emitted += 1
-    if emitted == 0:
-        return ""
-    return "\n".join(lines)
+        persisted_recipe_id = raw.get("recipe_id")
+        if persisted_recipe_id != recipe.recipe_id:
+            logger.warning(
+                "Skipping composite %s with inconsistent recipe_id %r (expected %s)",
+                factor_id,
+                persisted_recipe_id,
+                recipe.recipe_id,
+            )
+            continue
+        if recipe.recipe_id in seen_recipes:
+            continue
+        seen_recipes.add(recipe.recipe_id)
+        anchors.append(CompositeAnchor(
+            factor_id=factor_id,
+            recipe=recipe,
+            ic=_optional_float(row.get("ic")),
+            rank_ic=_optional_float(row.get("rank_ic")),
+            promoted_at=str(row.get("promoted_at", "")),
+        ))
+        if len(anchors) >= limit:
+            break
+    return anchors
+
+
+def _optional_float(value: object) -> float | None:
+    return float(value) if isinstance(value, int | float) else None
 
 
 def _read_index_rows(idx_path: Path) -> list[dict[str, Any]]:
