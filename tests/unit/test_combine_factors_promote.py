@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from argparse import Namespace
 from datetime import date
 from pathlib import Path
 
@@ -10,9 +11,16 @@ import pytest
 
 from alpha_harness.combination import CombinationMethod, CombinationRecipe
 from alpha_harness.evaluators.persistence import FactorSelectionStrategy
+from alpha_harness.regimes import StrictRegime
 from alpha_harness.schemas.evaluation import EvaluationBundle, EvaluationProfile, EvaluationRequest
 from alpha_harness.schemas.experiment import ExperimentDecision, PromotionTrail
-from scripts.combine_factors import _judge_basket, _promote_basket, _select_component_indices
+from scripts.combine_factors import (
+    _build_eval_request,
+    _judge_basket,
+    _promote_basket,
+    _resolve_expressions,
+    _select_component_indices,
+)
 
 
 class _Args:
@@ -148,6 +156,104 @@ def test_judge_basket_rejects_holdout_sign_flip() -> None:
     assert detail.decision == ExperimentDecision.REJECT
     assert detail.failure is not None
     assert "holdout rank_ic" in detail.failure.detail
+
+
+def test_judge_basket_applies_candidate_family_pressure() -> None:
+    bundle = EvaluationBundle(
+        ic=0.04,
+        rank_ic=0.04,
+        quantile_spread=0.02,
+        n_periods=200,
+        n_assets=50,
+    )
+    request = _request().model_copy(update={"n_proposals_in_session": 7})
+
+    detail = _judge_basket(
+        recipe=_recipe(),
+        basket_bundle=bundle,
+        request=request,
+        judge_thresholds={"multiple_testing_familywise_alpha": 0.05},
+    )
+
+    assert detail.decision == ExperimentDecision.REJECT
+    assert detail.failure is not None
+    assert "rank_ic" in detail.failure.detail
+    assert "n_proposals_in_session=7" in detail.failure.detail
+
+
+def test_combination_request_records_cost_and_candidate_family() -> None:
+    import pandas as pd
+
+    request = _build_eval_request(
+        df=pd.DataFrame({"timestamp": ["2026-01-01", "2026-06-30"]}),
+        regime=StrictRegime(cost_bps=15.0),
+        factor_id="basket",
+        universe_id="hk_ipo",
+        n_proposals_in_session=7,
+    )
+
+    assert request.cost_bps == 15.0
+    assert request.n_proposals_in_session == 7
+
+
+def test_report_expression_source_preserves_provenance(tmp_path: Path) -> None:
+    report_path = tmp_path / "source.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "cycle_id": "source-cycle",
+                "data_fingerprint": "source-panel",
+                "factors": [
+                    {"expression": "rank(close)", "ic": 0.1, "rank_ic": 0.1},
+                    {"expression": "rank(volume)", "ic": 0.1, "rank_ic": 0.1},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    args = Namespace(
+        expr=[],
+        expressions_file=None,
+        from_validation_report=str(report_path),
+        filter_min_ic=None,
+        filter_passes_ic=True,
+        filter_passes_rank_ic=True,
+        promote=False,
+    )
+
+    resolved = _resolve_expressions(args)
+
+    assert resolved.expressions == ["rank(close)", "rank(volume)"]
+    assert resolved.source_cycle_ids == ["source-cycle"]
+    assert resolved.source_data_fingerprints == ["source-panel"]
+
+
+def test_promotion_source_requires_fingerprint(tmp_path: Path) -> None:
+    report_path = tmp_path / "legacy.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "cycle_id": "legacy",
+                "factors": [
+                    {"expression": "rank(close)"},
+                    {"expression": "rank(volume)"},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    args = Namespace(
+        expr=[],
+        expressions_file=None,
+        from_validation_report=str(report_path),
+        filter_min_ic=None,
+        filter_passes_ic=False,
+        filter_passes_rank_ic=False,
+        promote=True,
+    )
+
+    with pytest.raises(ValueError, match="must include cycle_id and data_fingerprint"):
+        _resolve_expressions(args)
 
 
 def test_promote_basket_writes_deterministic_factor_id(tmp_path: Path) -> None:

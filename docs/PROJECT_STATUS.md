@@ -102,6 +102,16 @@ two LLMs over a shared out-of-sample window the baskets did not hold up.
   base recipe, component expression, incremental diagnostics, and exact
   composite recipe so 15 bps replay reconstructs the same factor. The mode
   fails closed when no eligible promoted composite exists.
+- **Fixed-snapshot composite-anchor arbitration (2026-07-15)** — the
+  predeclared seven-factor OFI smoothing family was ranked by training-fold
+  persistence and replayed as a z-score top-4 basket on fingerprint
+  `6bf7ac...` at 15 bps. Combination schema v3 now records the target/source
+  fingerprints, source cycles, cost, proposal-family size, and Bonferroni
+  multiplier. With `N=7` (`1.4895x`), the basket cleared adjusted IC and
+  rank-IC (`+0.0898` / `+0.0901`) but was deterministically rejected because
+  worst-fold tail concentration reached `1.05`; its components were also
+  highly redundant (mean pairwise rank correlation `0.824`). No composite
+  anchor was written or promoted.
 - **Continuous-event search and deterministic OFI diagnosis (2026-07-14)** —
   two bounded DeepSeek runs tested 18 computable `event_decay` candidates for
   `$0.00445629` provider-reported cost: 0 promotions, 10 weak-IC rejects, and

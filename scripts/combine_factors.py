@@ -31,6 +31,7 @@ import argparse
 import json
 import logging
 import sys
+from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import cast
@@ -52,6 +53,7 @@ from alpha_harness.combination import (
     compute_signal,
     pairwise_rank_corr,
 )
+from alpha_harness.data.fingerprint import dataframe_fingerprint
 from alpha_harness.data.synthetic import generate_price_panel
 from alpha_harness.evaluators.persistence import (
     PERSISTENCE_SCORE_VERSION,
@@ -62,6 +64,7 @@ from alpha_harness.evaluators.persistence import (
 from alpha_harness.evaluators.promotion_judge import PromotionJudge
 from alpha_harness.evaluators.signal_quality import evaluate_precomputed_signal
 from alpha_harness.evaluators.walk_forward import WalkForwardEvaluator
+from alpha_harness.multiple_testing import bonferroni_z_threshold_multiplier
 from alpha_harness.regimes import StrictRegime, get_regime
 from alpha_harness.reports import (
     DEFAULT_COMBINATION_DIR,
@@ -176,8 +179,17 @@ class _PrecomputedSignalEvaluator:
 # ── Expression source ───────────────────────────────────────────────────────
 
 
-def _resolve_expressions(args: argparse.Namespace) -> list[str]:
+@dataclass(frozen=True)
+class _ResolvedExpressions:
+    expressions: list[str]
+    source_cycle_ids: list[str]
+    source_data_fingerprints: list[str]
+
+
+def _resolve_expressions(args: argparse.Namespace) -> _ResolvedExpressions:
     exprs: list[str] = list(args.expr or [])
+    source_cycle_ids: list[str] = []
+    source_data_fingerprints: list[str] = []
     if args.expressions_file:
         path = Path(args.expressions_file)
         if not path.is_file():
@@ -187,7 +199,10 @@ def _resolve_expressions(args: argparse.Namespace) -> list[str]:
             if line and not line.startswith("#"):
                 exprs.append(line)
     if args.from_validation_report:
-        exprs.extend(_load_from_validation_report(args))
+        report_expressions, cycle_ids, fingerprints = _load_from_validation_report(args)
+        exprs.extend(report_expressions)
+        source_cycle_ids.extend(cycle_ids)
+        source_data_fingerprints.extend(fingerprints)
     if len(exprs) < 2:
         raise ValueError("need at least 2 expressions to combine; got " + str(len(exprs)))
     # Deduplicate while preserving order so the same factor isn't loaded
@@ -198,10 +213,16 @@ def _resolve_expressions(args: argparse.Namespace) -> list[str]:
         if e not in seen:
             seen.add(e)
             deduped.append(e)
-    return deduped
+    return _ResolvedExpressions(
+        expressions=deduped,
+        source_cycle_ids=list(dict.fromkeys(source_cycle_ids)),
+        source_data_fingerprints=list(dict.fromkeys(source_data_fingerprints)),
+    )
 
 
-def _load_from_validation_report(args: argparse.Namespace) -> list[str]:
+def _load_from_validation_report(
+    args: argparse.Namespace,
+) -> tuple[list[str], list[str], list[str]]:
     """Pull factor expressions from one or more StrictValidationReport JSONs.
 
     ``--from-validation-report`` accepts a path to a single
@@ -217,12 +238,15 @@ def _load_from_validation_report(args: argparse.Namespace) -> list[str]:
 
     threshold_ic = args.filter_min_ic if args.filter_min_ic is not None else 0.0
     out: list[str] = []
+    cycle_ids: list[str] = []
+    fingerprints: list[str] = []
     for path in files:
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
             logger.warning("Skipping %s: %s", path, exc)
             continue
+        before = len(out)
         for thumb in payload.get("factors", []):
             ic = thumb.get("ic")
             ric = thumb.get("rank_ic")
@@ -235,6 +259,23 @@ def _load_from_validation_report(args: argparse.Namespace) -> list[str]:
             expr = thumb.get("expression")
             if expr:
                 out.append(str(expr))
+        if len(out) > before:
+            cycle_id = payload.get("cycle_id")
+            fingerprint = payload.get("data_fingerprint")
+            if getattr(args, "promote", False) and (
+                not isinstance(cycle_id, str)
+                or not cycle_id
+                or not isinstance(fingerprint, str)
+                or not fingerprint
+            ):
+                raise ValueError(
+                    f"promotion source report {path} must include cycle_id "
+                    "and data_fingerprint"
+                )
+            if isinstance(cycle_id, str) and cycle_id:
+                cycle_ids.append(cycle_id)
+            if isinstance(fingerprint, str) and fingerprint:
+                fingerprints.append(fingerprint)
     if not out:
         logger.warning(
             "No factors loaded from %s after filters (passes_ic=%s, passes_rank_ic=%s, min_ic=%s).",
@@ -243,7 +284,7 @@ def _load_from_validation_report(args: argparse.Namespace) -> list[str]:
             args.filter_passes_rank_ic,
             args.filter_min_ic,
         )
-    return out
+    return out, cycle_ids, fingerprints
 
 
 # ── CLI ─────────────────────────────────────────────────────────────────────
@@ -324,6 +365,12 @@ def _build_parser() -> argparse.ArgumentParser:
         default="strict",
     )
     p.add_argument(
+        "--cost-bps",
+        type=float,
+        default=None,
+        help="Override the regime cost assumption for deterministic stress replay.",
+    )
+    p.add_argument(
         "--json",
         action="store_true",
         help="Emit JSON instead of a text block.",
@@ -387,6 +434,7 @@ def _build_eval_request(
     regime: StrictRegime,
     factor_id: str,
     universe_id: str,
+    n_proposals_in_session: int = 1,
 ) -> EvaluationRequest:
     """Construct the EvaluationRequest used for one combine_factors run.
 
@@ -406,6 +454,7 @@ def _build_eval_request(
         beta_min_periods=regime.beta_min_periods,
         cost_bps=regime.cost_bps,
         holdout=regime.holdout_policy(),
+        n_proposals_in_session=n_proposals_in_session,
     )
 
 
@@ -463,6 +512,10 @@ def _judge_basket(
         min_fraction_positive_folds=judge_thresholds.get("min_fraction_positive_folds", 0.6),
         max_tail_concentration=judge_thresholds.get("max_tail_concentration", 0.5),
         min_holdout_decay_ratio=judge_thresholds.get("min_holdout_decay_ratio", 0.5),
+        multiple_testing_familywise_alpha=judge_thresholds.get(
+            "multiple_testing_familywise_alpha",
+            0.05,
+        ),
     ).judge(
         hypothesis=hypothesis,
         factor=factor,
@@ -598,14 +651,22 @@ def _select_component_indices(
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
 
+    if args.cost_bps is not None and args.cost_bps < 0:
+        print("error: --cost-bps must be >= 0", file=sys.stderr)
+        return 2
+
     try:
-        expressions = _resolve_expressions(args)
+        resolved = _resolve_expressions(args)
         df = _load_data(args)
     except (FileNotFoundError, ValueError, RuntimeError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
+    expressions = resolved.expressions
+    data_fingerprint = dataframe_fingerprint(df)
     regime = get_regime(args.regime)
+    if args.cost_bps is not None:
+        regime = replace(regime, cost_bps=args.cost_bps)
     started_at = datetime.now(UTC)
     logger.info(
         "Combining %d factors via %s under '%s' regime (ic>=%.4f rank_ic>=%.4f)",
@@ -702,6 +763,7 @@ def main(argv: list[str] | None = None) -> int:
         regime=regime,
         factor_id="basket",
         universe_id=args.universe_id,
+        n_proposals_in_session=candidate_count,
     )
     basket_bundle = _score_signal(
         signal=basket_sig,
@@ -709,6 +771,17 @@ def main(argv: list[str] | None = None) -> int:
         regime=regime,
         request=basket_request,
     )
+    basket_metadata = dict(basket_bundle.metadata)
+    basket_metadata["data_fingerprint"] = data_fingerprint
+    basket_metadata["source_validation_cycle_ids"] = resolved.source_cycle_ids
+    basket_metadata["source_data_fingerprints"] = resolved.source_data_fingerprints
+    basket_bundle = basket_bundle.model_copy(update={"metadata": basket_metadata})
+    threshold_multiplier = bonferroni_z_threshold_multiplier(
+        candidate_count,
+        familywise_alpha=regime.multiple_testing_familywise_alpha,
+    )
+    adjusted_ic_threshold = regime.ic_threshold * threshold_multiplier
+    adjusted_rank_ic_threshold = regime.rank_ic_threshold * threshold_multiplier
     basket: dict[str, object] = {
         "method": method.value,
         "ic": basket_bundle.ic,
@@ -716,9 +789,12 @@ def main(argv: list[str] | None = None) -> int:
         "quantile_spread": basket_bundle.quantile_spread,
         "net_quantile_spread": basket_bundle.net_quantile_spread,
     }
-    basket["passes_ic"] = basket_bundle.ic is not None and basket_bundle.ic >= regime.ic_threshold
+    basket["passes_ic"] = (
+        basket_bundle.ic is not None and basket_bundle.ic >= adjusted_ic_threshold
+    )
     basket["passes_rank_ic"] = (
-        basket_bundle.rank_ic is not None and basket_bundle.rank_ic >= regime.rank_ic_threshold
+        basket_bundle.rank_ic is not None
+        and basket_bundle.rank_ic >= adjusted_rank_ic_threshold
     )
     basket["passes_quantile_spread"] = (
         basket_bundle.quantile_spread is not None
@@ -788,6 +864,12 @@ def main(argv: list[str] | None = None) -> int:
         cycle_id=cycle_id,
         regime_trail_id=regime_trail.trail_id,
         universe_id=args.universe_id,
+        data_fingerprint=data_fingerprint,
+        source_validation_cycle_ids=resolved.source_cycle_ids,
+        source_data_fingerprints=resolved.source_data_fingerprints,
+        cost_bps=basket_request.cost_bps,
+        n_proposals_in_session=candidate_count,
+        ic_threshold_multiplier=threshold_multiplier,
         started_at=started_at,
         method=method,
         components=expressions,
@@ -843,12 +925,20 @@ def main(argv: list[str] | None = None) -> int:
         "selection_strategy": selection_strategy.value,
         "selection_score_version": selection_score_version,
         "selection_top_k": args.top_k,
+        "data_fingerprint": data_fingerprint,
+        "source_validation_cycle_ids": resolved.source_cycle_ids,
+        "source_data_fingerprints": resolved.source_data_fingerprints,
+        "cost_bps": basket_request.cost_bps,
+        "n_proposals_in_session": candidate_count,
+        "ic_threshold_multiplier": threshold_multiplier,
         "individuals": individuals,
         "basket": basket,
         "avg_pairwise_rank_corr": avg_off_diag,
         "thresholds": {
             "ic": regime.ic_threshold,
             "rank_ic": regime.rank_ic_threshold,
+            "adjusted_ic": adjusted_ic_threshold,
+            "adjusted_rank_ic": adjusted_rank_ic_threshold,
             "quantile_spread": regime.quantile_spread_threshold,
         },
         "cycle_id": cycle_id,
@@ -909,6 +999,12 @@ def _print_summary(s: dict[str, object]) -> None:
         f"  thresholds                    : ic>={thresholds['ic']:.4f}  "
         f"rank_ic>={thresholds['rank_ic']:.4f}",
     )
+    if cast(float, s["ic_threshold_multiplier"]) > 1:
+        print(
+            f"  family-adjusted (N={s['n_proposals_in_session']})      : "
+            f"ic>={thresholds['adjusted_ic']:.4f}  "
+            f"rank_ic>={thresholds['adjusted_rank_ic']:.4f}",
+        )
     print(f"{border}\n")
 
 

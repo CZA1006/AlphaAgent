@@ -122,6 +122,13 @@ global-holdout lift. Schema v7 records the recipe and incremental diagnostics
 for exact 15 bps replay. The canonical promoted zoo currently has no eligible
 anchor, so the mode intentionally fails closed on the current snapshot.
 
+The no-LLM anchor arbitration has now been run on that snapshot. The
+persistence-selected top-4 OFI smoothing basket used 15 bps costs and the
+predeclared `N=7` family pressure (`1.4895x`). It cleared adjusted IC/RankIC
+but failed worst-fold tail concentration at `1.05`; mean component rank
+correlation was `0.824`. No anchor was promoted. Do not rerun basket variants
+against this observed holdout to search around the rejection.
+
 The first run's sole candidate was replayed on the same panel fingerprint after
 the global-holdout fix and rejected: rank-IC fell from +0.0230 in training to
 -0.0030 on the trailing holdout, while tail concentration reached 11.76. It is

@@ -629,6 +629,21 @@ uv run python -m scripts.combine_factors \
   --regime strict --method zscore_average
 ```
 
+For a cost-stress arbitration, pass `--cost-bps`. Combination schema v3 records
+the evaluated panel fingerprint, contributing validation cycle/fingerprint,
+cost assumption, proposal-family size, and multiple-testing multiplier. When
+`--promote` consumes validation reports, every contributing report must carry
+both `cycle_id` and `data_fingerprint`; legacy sources fail closed.
+
+```bash
+uv run python -m scripts.combine_factors \
+  --from-validation-report artifacts/validations/<cycle-id>.json \
+  --selection-strategy persistence --top-k 4 \
+  --regime strict --cost-bps 15 --method zscore_average \
+  --data-source bigquery --universe configs/universes/hk_ipo.txt \
+  --start-date 2025-12-12 --end-date 2026-06-26
+```
+
 ### 7.2 Promote a basket as a composite factor (Round 8)
 
 Add `--promote` and the basket gets registered as a composite

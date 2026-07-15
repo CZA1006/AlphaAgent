@@ -47,6 +47,7 @@ from alpha_harness.artifacts import (
     PromotedArtifactWriter,
     TrailRegistryWriter,
 )
+from alpha_harness.data.fingerprint import dataframe_fingerprint as _dataframe_fingerprint
 from alpha_harness.data.synthetic import generate_price_panel
 from alpha_harness.director import ResearchExecutorKind
 from alpha_harness.evaluators.promotion_judge import PromotionJudge
@@ -98,26 +99,6 @@ logging.basicConfig(
     format="%(asctime)s  %(levelname)-8s  %(name)s  %(message)s",
 )
 logger = logging.getLogger("validate_strict")
-
-
-def _dataframe_fingerprint(df: pd.DataFrame) -> str:
-    """Return an order-invariant hash of columns, dtypes, and row contents."""
-    columns = sorted(str(column) for column in df.columns)
-    canonical = df.loc[:, columns]
-    row_hashes = pd.util.hash_pandas_object(
-        canonical,
-        index=False,
-        categorize=True,
-    ).to_numpy(dtype="uint64")
-    row_hashes.sort()
-    metadata = {
-        "columns": columns,
-        "dtypes": [str(canonical[column].dtype) for column in columns],
-        "rows": len(canonical),
-    }
-    digest = hashlib.sha256(json.dumps(metadata, sort_keys=True).encode("utf-8"))
-    digest.update(row_hashes.tobytes())
-    return digest.hexdigest()
 
 
 def _validation_memory_scope_id(

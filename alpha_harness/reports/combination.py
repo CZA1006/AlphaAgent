@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_COMBINATION_DIR = Path("artifacts/combinations")
 COMBINATION_INDEX_NAME = "_index.jsonl"
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 # Re-export so existing callers can keep importing from
@@ -61,6 +61,12 @@ class CombinationReport(BaseModel):
     cycle_id: str
     regime_trail_id: str
     universe_id: str = ""
+    data_fingerprint: str = ""
+    source_validation_cycle_ids: list[str] = Field(default_factory=list)
+    source_data_fingerprints: list[str] = Field(default_factory=list)
+    cost_bps: float = 0.0
+    n_proposals_in_session: int = Field(default=1, ge=1)
+    ic_threshold_multiplier: float = Field(default=1.0, ge=1.0)
     started_at: datetime
     finished_at: datetime
     recipe: CombinationRecipe
@@ -83,6 +89,12 @@ def build_combination_report(
     cycle_id: str,
     regime_trail_id: str,
     universe_id: str,
+    data_fingerprint: str = "",
+    source_validation_cycle_ids: list[str] | None = None,
+    source_data_fingerprints: list[str] | None = None,
+    cost_bps: float = 0.0,
+    n_proposals_in_session: int = 1,
+    ic_threshold_multiplier: float = 1.0,
     started_at: datetime,
     method: CombinationMethod,
     components: list[str],
@@ -110,6 +122,12 @@ def build_combination_report(
         cycle_id=cycle_id,
         regime_trail_id=regime_trail_id,
         universe_id=universe_id,
+        data_fingerprint=data_fingerprint,
+        source_validation_cycle_ids=list(source_validation_cycle_ids or []),
+        source_data_fingerprints=list(source_data_fingerprints or []),
+        cost_bps=cost_bps,
+        n_proposals_in_session=n_proposals_in_session,
+        ic_threshold_multiplier=ic_threshold_multiplier,
         started_at=started_at,
         finished_at=finished,
         recipe=recipe,
@@ -236,6 +254,10 @@ class CombinationReportWriter:
                 "cycle_id": report.cycle_id,
                 "regime_trail_id": report.regime_trail_id,
                 "universe_id": report.universe_id,
+                "data_fingerprint": report.data_fingerprint,
+                "cost_bps": report.cost_bps,
+                "n_proposals_in_session": report.n_proposals_in_session,
+                "ic_threshold_multiplier": report.ic_threshold_multiplier,
                 "started_at": report.started_at.isoformat(),
                 "finished_at": report.finished_at.isoformat(),
                 "method": report.recipe.method.value,

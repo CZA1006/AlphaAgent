@@ -103,6 +103,12 @@ def test_build_and_write_round_trip(tmp_path: Path) -> None:
         cycle_id="cycle-abc",
         regime_trail_id="trail-deadbeef",
         universe_id="sp50",
+        data_fingerprint="panel-abc",
+        source_validation_cycle_ids=["source-1"],
+        source_data_fingerprints=["source-panel"],
+        cost_bps=15.0,
+        n_proposals_in_session=7,
+        ic_threshold_multiplier=1.4895,
         started_at=started,
         method=CombinationMethod.EQUAL_WEIGHT,
         components=["rank(close)", "rank(volume)"],
@@ -132,6 +138,12 @@ def test_build_and_write_round_trip(tmp_path: Path) -> None:
     assert on_disk["selection_score_version"] == "rank_ic_sign_stability_v1"
     assert on_disk["selection_top_k"] == 2
     assert on_disk["selection_candidate_count"] == 4
+    assert on_disk["data_fingerprint"] == "panel-abc"
+    assert on_disk["source_validation_cycle_ids"] == ["source-1"]
+    assert on_disk["source_data_fingerprints"] == ["source-panel"]
+    assert on_disk["cost_bps"] == 15.0
+    assert on_disk["n_proposals_in_session"] == 7
+    assert on_disk["ic_threshold_multiplier"] == pytest.approx(1.4895)
 
     rows = read_combination_index(tmp_path)
     assert len(rows) == 1
@@ -139,6 +151,9 @@ def test_build_and_write_round_trip(tmp_path: Path) -> None:
     assert rows[0]["recipe_id"] == report.recipe.recipe_id
     assert rows[0]["passes_regime"] is True
     assert rows[0]["selection_strategy"] == "persistence"
+    assert rows[0]["data_fingerprint"] == "panel-abc"
+    assert rows[0]["cost_bps"] == 15.0
+    assert rows[0]["n_proposals_in_session"] == 7
 
 
 def test_writer_upserts_same_cycle_id(tmp_path: Path) -> None:

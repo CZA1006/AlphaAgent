@@ -283,6 +283,10 @@ Answer the question a single run cannot: does the loop produce alpha
   gates, schema-v7 audit trail, and exact replay are implemented. Empirical
   activation waits for a basket that qualifies under the current promotion
   and global-holdout rules.
+- The first fixed-snapshot anchor arbitration was rejected: the persistence
+  top-4 OFI smoothing basket passed adjusted IC/RankIC at 15 bps and `N=7`,
+  but failed worst-fold tail concentration (`1.05`) and was highly correlated
+  (`0.824`). Do not search additional basket variants on the observed holdout.
 
 ### Also in scope (was the old Milestone 4)
 - better equity fundamentals; more crypto exchange data
