@@ -67,9 +67,14 @@ def _metrics(
     signal: pd.Series,
     returns: pd.Series,
     timestamps: pd.Series,
+    *,
+    overlap_horizon_bars: int = 5,
 ) -> tuple[pd.Series, dict[str, float | None]]:
     stream = compute_long_short_returns(signal, returns, timestamps)
-    return stream, compute_portfolio_metrics(stream)
+    return stream, compute_portfolio_metrics(
+        stream,
+        overlap_horizon_bars=overlap_horizon_bars,
+    )
 
 
 def _top_dates(stream: pd.Series, limit: int = 3) -> list[dict[str, object]]:
@@ -228,10 +233,16 @@ def main(argv: list[str] | None = None) -> int:
                 },
                 "folds": fold_payloads,
                 "listing_age_attribution": _group_attribution(
-                    in_sample, signal, returns, "listing_age_bucket",
+                    in_sample,
+                    signal,
+                    returns,
+                    "listing_age_bucket",
                 ),
                 "event_proximity_attribution": _group_attribution(
-                    in_sample, signal, returns, "event_proximity_bucket",
+                    in_sample,
+                    signal,
+                    returns,
+                    "event_proximity_bucket",
                 ),
             },
         )

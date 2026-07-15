@@ -136,9 +136,11 @@ The attribution is complete. It reproduced worst-fold tail ratios 0.775 and
 dates are consecutive, overlapping five-day labels. The 31–90-day listing-age
 bucket was positive and the 91+ bucket negative, but this is post-hoc evidence,
 not a promotion rule. Keep both factors rejected and retain the age pattern for
-a future untouched-window test. The next evaluator change may add an
-episode-aware tail statistic as informational metadata only; it must not relax
-the current promotion gate on this evidence.
+a future untouched-window test. The episode-aware statistic is now present as
+informational metadata only. It reports aggregate non-overlapping top-three
+positive shares of 0.470/0.408 for 10/20-day OFI, while the thinnest fold
+cohorts contain only 3–4 positive observations. This confirms inadequate
+independent episode count and does not relax the current promotion gate.
 
 Each iteration: `ResearchDirector.plan` → run the selected
 `validate_strict` command → read the new validation reports →

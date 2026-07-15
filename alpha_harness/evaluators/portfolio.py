@@ -71,10 +71,44 @@ def compute_long_short_returns(
     return pd.Series(out_values, index=out_index, name="long_short_return")
 
 
+def _tail_concentration(returns: np.ndarray) -> float | None:
+    total = float(returns.sum())
+    if total <= 0 or returns.size < 3:
+        return None
+    return float(np.sort(returns)[-3:].sum()) / total
+
+
+def _top3_positive_share(returns: np.ndarray) -> float | None:
+    positive = returns[returns > 0]
+    if positive.size == 0:
+        return None
+    return float(np.sort(positive)[-3:].sum()) / float(positive.sum())
+
+
+def _episode_top3_positive_share(
+    returns: np.ndarray,
+    overlap_horizon_bars: int,
+) -> tuple[float | None, float | None, int, int]:
+    """Summarise positive-return concentration across non-overlapping cohorts."""
+    horizon = max(1, overlap_horizon_bars)
+    cohorts = [returns[offset::horizon] for offset in range(min(horizon, returns.size))]
+    shares = [share for cohort in cohorts if (share := _top3_positive_share(cohort)) is not None]
+    positive_counts = [int((cohort > 0).sum()) for cohort in cohorts if (cohort > 0).any()]
+    if not shares:
+        return None, None, 0, 0
+    return (
+        float(np.median(shares)),
+        max(shares),
+        len(shares),
+        min(positive_counts),
+    )
+
+
 def compute_portfolio_metrics(
     returns: pd.Series,
     *,
     annualisation: int = _TRADING_DAYS,
+    overlap_horizon_bars: int = 1,
 ) -> dict[str, float | None]:
     """Summarise a return stream with risk-aware statistics.
 
@@ -91,6 +125,12 @@ def compute_portfolio_metrics(
     * ``tail_concentration`` — ``sum(top-3 returns) / sum(returns)``
       when the total is positive; otherwise ``None``.  > 0.5 means
       three days carry the majority of the total long-short return.
+    * ``episode_top3_positive_share`` — after splitting overlapping labels
+      into fixed-phase, non-overlapping cohorts, the median share of positive
+      return carried by each cohort's top three observations. The corresponding
+      maximum and minimum positive cohort size are also recorded. These bounded
+      diagnostics are informational only; the judge does not gate them.
+    * ``episode_positive_phase_count`` — cohorts with positive observations.
     * ``n_periods`` — sample size used.
     """
     if returns is None or len(returns) == 0:
@@ -101,6 +141,10 @@ def compute_portfolio_metrics(
             "max_drawdown": None,
             "hit_rate": None,
             "tail_concentration": None,
+            "episode_top3_positive_share": None,
+            "episode_top3_positive_share_max": None,
+            "episode_positive_phase_count": 0,
+            "episode_min_positive_count": 0,
             "n_periods": 0,
         }
 
@@ -115,6 +159,10 @@ def compute_portfolio_metrics(
             "max_drawdown": None,
             "hit_rate": None,
             "tail_concentration": None,
+            "episode_top3_positive_share": None,
+            "episode_top3_positive_share_max": None,
+            "episode_positive_phase_count": 0,
+            "episode_min_positive_count": 0,
             "n_periods": 0,
         }
 
@@ -133,14 +181,13 @@ def compute_portfolio_metrics(
     drawdowns = running_max - cumulative
     max_drawdown = float(drawdowns.max()) if drawdowns.size else 0.0
 
-    # Tail concentration — only meaningful when the total is positive.
-    total = float(arr.sum())
-    tail_concentration: float | None
-    if total > 0 and n >= 3:
-        top3 = float(np.sort(arr)[-3:].sum())
-        tail_concentration = top3 / total
-    else:
-        tail_concentration = None
+    tail_concentration = _tail_concentration(arr)
+    episode_share, episode_share_max, episode_phase_count, episode_min_positive = (
+        _episode_top3_positive_share(
+            arr,
+            overlap_horizon_bars,
+        )
+    )
 
     return {
         "mean_return": mean_ret,
@@ -149,5 +196,9 @@ def compute_portfolio_metrics(
         "max_drawdown": max_drawdown,
         "hit_rate": hit_rate,
         "tail_concentration": tail_concentration,
+        "episode_top3_positive_share": episode_share,
+        "episode_top3_positive_share_max": episode_share_max,
+        "episode_positive_phase_count": float(episode_phase_count),
+        "episode_min_positive_count": float(episode_min_positive),
         "n_periods": float(n),
     }

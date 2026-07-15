@@ -428,10 +428,15 @@ def _aggregate_metadata(
                 if isinstance(value, int | float):
                     portfolio_values.append(float(value))
             if portfolio_values:
-                portfolio[key] = (
-                    max(portfolio_values)
-                    if key == "tail_concentration"
-                    else statistics.fmean(portfolio_values)
-                )
+                if key in {
+                    "tail_concentration",
+                    "episode_top3_positive_share",
+                    "episode_top3_positive_share_max",
+                }:
+                    portfolio[key] = max(portfolio_values)
+                elif key == "episode_min_positive_count":
+                    portfolio[key] = min(portfolio_values)
+                else:
+                    portfolio[key] = statistics.fmean(portfolio_values)
         metadata["portfolio"] = portfolio
     return metadata

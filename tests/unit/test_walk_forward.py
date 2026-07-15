@@ -218,7 +218,14 @@ def test_aggregate_metadata_uses_all_folds_not_first_fold() -> None:
                 "ic_by_horizon": {"5": 0.04, "10": -0.02},
                 "rank_ic_by_horizon": {"5": 0.05, "10": 0.01},
                 "ic_sign_consistent_horizons": 1,
-                "portfolio": {"tail_concentration": 0.2, "hit_rate": 0.4},
+                "portfolio": {
+                    "tail_concentration": 0.2,
+                    "episode_top3_positive_share": 0.3,
+                    "episode_top3_positive_share_max": 0.5,
+                    "episode_positive_phase_count": 5.0,
+                    "episode_min_positive_count": 4.0,
+                    "hit_rate": 0.4,
+                },
             }
         }
     )
@@ -228,7 +235,14 @@ def test_aggregate_metadata_uses_all_folds_not_first_fold() -> None:
                 "ic_by_horizon": {"5": 0.08, "10": 0.06},
                 "rank_ic_by_horizon": {"5": 0.07, "10": 0.03},
                 "ic_sign_consistent_horizons": 2,
-                "portfolio": {"tail_concentration": 0.7, "hit_rate": 0.8},
+                "portfolio": {
+                    "tail_concentration": 0.7,
+                    "episode_top3_positive_share": 0.8,
+                    "episode_top3_positive_share_max": 0.9,
+                    "episode_positive_phase_count": 5.0,
+                    "episode_min_positive_count": 2.0,
+                    "hit_rate": 0.8,
+                },
             }
         }
     )
@@ -246,6 +260,10 @@ def test_aggregate_metadata_uses_all_folds_not_first_fold() -> None:
     )
     assert out.metadata["ic_sign_consistent_horizons"] == 2
     assert out.metadata["portfolio"]["tail_concentration"] == pytest.approx(0.7)
+    assert out.metadata["portfolio"]["episode_top3_positive_share"] == pytest.approx(0.8)
+    assert out.metadata["portfolio"]["episode_top3_positive_share_max"] == pytest.approx(0.9)
+    assert out.metadata["portfolio"]["episode_positive_phase_count"] == pytest.approx(5.0)
+    assert out.metadata["portfolio"]["episode_min_positive_count"] == pytest.approx(2.0)
     assert out.metadata["portfolio"]["hit_rate"] == pytest.approx(0.6)
 
 

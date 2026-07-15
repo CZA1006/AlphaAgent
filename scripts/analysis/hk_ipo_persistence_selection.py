@@ -108,7 +108,7 @@ def _tail_concentration(
         df = df[keep]
         sig = sig[keep]
     ls = compute_long_short_returns(sig, df["fwd"], df["timestamp"])
-    metrics = compute_portfolio_metrics(ls)
+    metrics = compute_portfolio_metrics(ls, overlap_horizon_bars=HORIZON)
     return metrics["tail_concentration"]
 
 

@@ -289,7 +289,10 @@ def evaluate_precomputed_signal(
         timestamps,
         request.profile.n_quantiles,
     )
-    portfolio_metrics = compute_portfolio_metrics(ls_returns)
+    portfolio_metrics = compute_portfolio_metrics(
+        ls_returns,
+        overlap_horizon_bars=request.label.forecast_horizon_bars,
+    )
 
     ic_by_horizon: dict[str, float] = {}
     rank_ic_by_horizon: dict[str, float] = {}

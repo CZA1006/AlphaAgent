@@ -100,6 +100,16 @@ two LLMs over a shared out-of-sample window the baskets did not hold up.
   but decayed sharply OOS. **Conclusion:** stop spending LLM budget on event
   interactions; retain 10/20-day OFI as unpromoted leads for deterministic
   regime and return-date attribution.
+- **Episode-aware tail diagnostic (2026-07-15)** — portfolio metadata now
+  splits multi-day forward labels into fixed-phase, non-overlapping cohorts and
+  records the median/max share of positive return carried by each cohort's top
+  three observations, plus the minimum positive cohort size. It is explicitly
+  informational: `PromotionJudge` still reads only the original worst-fold
+  `tail_concentration`. On the fixed HK IPO snapshot, aggregate episode shares
+  were 0.470/0.408 for 10/20-day OFI, but each fold had only 3–4 positive
+  observations in its thinnest phase and median top-three shares of 0.76–1.00.
+  The overlap correction therefore confirms inadequate independent episode
+  count rather than clearing the factors; both remain rejected.
 - **Typed event-truth audit executor** — a read-only five-check BigQuery task
   writes generic research-task artifacts and feeds deterministic issue counts
   back to the post-run policy. The 2026-07-14 live smoke found 280 review rows
@@ -301,9 +311,11 @@ positive while 91+ days were negative, but that partition was inspected after
 seeing the outcomes and is only a future hypothesis. **Decision:** both factors
 remain rejected; no event or age filter is promoted on this snapshot.
 
-The current engineering task is to add an informational episode-aware tail
-diagnostic for overlapping multi-day labels. It must not replace or relax the
-existing worst-fold gate until calibrated on independent datasets.
+The episode-aware diagnostic is now implemented and confirms that the apparent
+three-date March cluster is not enough to rescue the factors: non-overlapping
+fold cohorts contain only 3–4 positive observations in their thinnest phase.
+The next fixed-snapshot engineering task is the already-audited global-holdout
+embargo gap; it changes label separation, not factor thresholds or data scope.
 
 ### 1. Data scaling — the actual prerequisite (decided)
 

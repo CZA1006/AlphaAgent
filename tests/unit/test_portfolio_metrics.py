@@ -73,6 +73,31 @@ def test_tail_concentration_none_when_total_negative() -> None:
     assert m["tail_concentration"] is None
 
 
+def test_episode_share_uses_worst_non_overlapping_phase() -> None:
+    s = pd.Series([1.0, 0.8, 0.6, 0.2, -0.1, 0.1, 0.3, 0.2, -0.1, 0.2, 0.1, 0.1])
+    m = compute_portfolio_metrics(s, overlap_horizon_bars=3)
+    phase_shares = []
+    for offset in range(3):
+        positive = s.iloc[offset::3]
+        positive = positive[positive > 0]
+        phase_shares.append(float(positive.nlargest(3).sum() / positive.sum()))
+    assert m["episode_top3_positive_share"] == pytest.approx(
+        pd.Series(phase_shares).median(),
+    )
+    assert m["episode_top3_positive_share_max"] == pytest.approx(max(phase_shares))
+    assert m["episode_positive_phase_count"] == 3.0
+    assert m["episode_min_positive_count"] == 3.0
+
+
+def test_episode_share_is_informational_to_judge() -> None:
+    bundle = _bundle_with_tail(0.30)
+    portfolio = bundle.metadata["portfolio"]
+    assert isinstance(portfolio, dict)
+    portfolio["episode_top3_positive_share"] = 1.0
+    detail = PromotionJudge().judge(Hypothesis(text="x"), _factor(), bundle, _request())
+    assert detail.decision == ExperimentDecision.PROMOTE_CANDIDATE
+
+
 def test_metrics_handle_empty_series() -> None:
     m = compute_portfolio_metrics(pd.Series(dtype=float))
     assert m["mean_return"] is None
