@@ -24,8 +24,12 @@ combine into baskets that can themselves be promoted and refined; and
 promoted work feeds the next cycle's prompt.  The architecture runs
 end-to-end against real DeepSeek + Qwen LLMs and real Polygon SP-50
 data.  **What is proven is that the harness measures alpha honestly;
-what is *not* proven is that the loop reliably produces alpha** — on
-two LLMs over a shared out-of-sample window the baskets did not hold up.
+what is now also established is that on SP-50 daily OHLCV the loop does
+*not* produce alpha on average** — the predeclared 12-cell rolling
+robustness study (2026-07-15) found coin-flip Y2 outcomes and zero
+strict clears across two LLMs and three windows
+([`CASE_STUDY_ROBUSTNESS_SP50.md`](CASE_STUDY_ROBUSTNESS_SP50.md)).
+The live alpha hypothesis is the HK IPO order-flow track.
 
 ---
 
@@ -371,30 +375,31 @@ autonomous research-director loop (Round 10) is **robustness-first** —
 every self-generated candidate basket auto-confirmed on a held-out
 window before it counts as alpha.
 
-### 2. Multi-run robustness study — orchestrator built (2026-07-15), awaiting data backfill
+### 2. Multi-run robustness study — RUN (2026-07-15): a systematic null
 
-The designed experiment now exists as `scripts/robustness_study.py`
-(`make robustness-study`):
+The designed experiment exists (`scripts/robustness_study.py`,
+`make robustness-study`: predeclared rolling Y1→Y2 grid with embargo
+gap, `no_basket`/`failed` cells kept in the denominator,
+smoke-verified to report "no edge" on a synthetic no-edge panel) —
+**and has now been run for real** on freshly backfilled SP-50 parquet
+(2024-07-15 → 2026-06-30), 3 rolling splits × {DeepSeek-v3.1,
+Qwen3-235B} × {input_order, persistence} = 12 cells, ≈ $0.04 total.
 
-- **Rolling Y1→Y2 splits** with an embargo gap between selection and
-  validation (stricter than the adjacent windows the case studies
-  used), **× LLMs × selection strategies** (`input_order` vs
-  `persistence` — so the selector arbitration rides the same grid).
-- **Predeclared by construction**: the full cell grid is written to
-  the run record before the first cell executes; `no_basket`/`failed`
-  cells stay in the denominator.
-- **Primary statistic (predeclared)**: two-sided binomial sign test on
-  basket Y2 rank-IC against the no-edge 0.5, per arm and pooled;
-  strict-regime clears reported alongside.
-- **Smoke-verified on a synthetic no-edge panel** (mock LLM, 4 cells):
-  Y2 rank-ICs ≈ 0, zero strict clears, sign p = 1.0 — the study
-  correctly reports "no edge" when there is none.
+**Result: 10/12 executed, Y2 rank-IC positive 4/10 (sign p = 0.75),
+pooled mean −0.011, strict clears 0/10.**  Both LLMs, both selection
+strategies, all three windows — nothing distinguishable from no-edge,
+under Bonferroni-scaled thresholds, on a survivorship-biased universe
+that should *favour* finding spurious alpha.  The v1 positive now
+reads as window luck, as v2/v3 suggested.  The selector arms showed no
+separation (2/5 vs 2/5).  Full write-up:
+[`CASE_STUDY_ROBUSTNESS_SP50.md`](CASE_STUDY_ROBUSTNESS_SP50.md).
 
-**Blocked on data only:** the SP-50 parquet store is empty on this
-machine — `make backfill-sp50` needs `POLYGON_API_KEY` (free tier
-reaches back ~2 years, enough for 2 twelve-month or 4 nine-month
-rolling splits).  Once backfilled, the real run is one command with
-DeepSeek + Qwen.
+**What this changes:** "does the loop produce alpha on average on
+daily OHLCV?" is now answered — no, for this proposer/DSL/universe.
+The live alpha hypothesis is the HK IPO microstructure track
+(order-flow information OHLCV cannot express), pending its data
+update.  Re-running this same grid on HK IPO once the panel extends is
+the natural next study.
 
 ### 3. Round 10 — activate composite complements when an anchor qualifies
 
