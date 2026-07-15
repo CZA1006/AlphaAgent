@@ -37,94 +37,7 @@ workflow. LLMs are restricted to proposal-side tasks;
 all market data transforms, statistics, risk checks, and promotion decisions
 remain inside the deterministic Alpha Harness core.
 
-```mermaid
-flowchart TB
-    subgraph CONTROL["A. Research control and runtime"]
-        direction LR
-        OBJ["Research objective<br/>market, universe, constraints"]
-        DIR["Research Director<br/>topic and typed executor,<br/>success and stop criteria"]
-        HERMES["Hermes runtime<br/>session, tools, provider integration"]
-        BOUNDARY["Typed Alpha Harness boundary<br/>HarnessAgentAdapter"]
-        OBJ --> DIR --> HERMES --> BOUNDARY
-    end
-
-    subgraph PROPOSAL["B. LLM-assisted proposal"]
-        direction LR
-        CONTEXT["Retrieved research evidence<br/>experiments, failures, promoted recipes"]
-        LLM["Budgeted structured proposer<br/>OpenRouter or deterministic mock"]
-        GUARD["Schema validation, bounded repair,<br/>safe DSL compile, canonical novelty"]
-        CONTEXT --> LLM --> GUARD
-    end
-
-    subgraph DATA["C. Point-in-time data plane"]
-        direction LR
-        SOURCES["Parquet, Polygon, BigQuery, CCXT<br/>prices, microstructure, events"]
-        PANEL["Typed loaders and canonical panel<br/>symbol normalization, panel fingerprint"]
-        SOURCES --> PANEL
-    end
-
-    subgraph CORE["D. Deterministic quantitative core"]
-        direction LR
-        FACTOR["Typed FactorSpec<br/>scalar expression or CompositeRecipe"]
-        EXEC["Safe factor execution<br/>full-history compute, then window slice"]
-        METRICS["Point-in-time evaluation<br/>lagged labels, IC, RankIC, spread,<br/>turnover, costs, neutralization, risk"]
-        ROBUST["Robustness protocol<br/>calendar folds, purge, embargo,<br/>multi-horizon checks, global holdout"]
-        JUDGE["PromotionJudge<br/>familywise pressure, six gates,<br/>conditional complement gates"]
-        VERDICT{"Deterministic verdict"}
-        MUTATE["Bounded AST mutation<br/>lineage-aware refinement"]
-        FACTOR --> EXEC --> METRICS --> ROBUST --> JUDGE --> VERDICT
-        VERDICT -->|"REFINE"| MUTATE --> FACTOR
-    end
-
-    subgraph EVIDENCE["E. Reproducibility and learning"]
-        direction LR
-        EXP["Experiment registry<br/>memory or PostgreSQL"]
-        REPORT["Validation and combination reports<br/>fingerprint, cost, gates, provenance"]
-        TRAIL["PromotionTrail and promoted artifacts<br/>policy hash and exact factor payload"]
-        MEMORY["Durable lineage and proposer memory"]
-        EXP --> MEMORY
-        REPORT --> MEMORY
-        TRAIL --> MEMORY
-    end
-
-    subgraph COMPOSITE["F. Basket and complement loop"]
-        direction LR
-        SELECT["Predeclared candidate family<br/>input-order or persistence selection"]
-        RECIPE["Deterministic combination<br/>Composite FactorSpec re-enters core evaluation"]
-        ANCHOR["Eligible promoted recipe<br/>one-component complement target"]
-        SELECT --> RECIPE --> ANCHOR
-    end
-
-    NEXT["G. Next autonomous cycle<br/>memory digest and eligible anchors return to<br/>the Director and proposal context"]
-
-    BOUNDARY --> CONTEXT
-    GUARD --> FACTOR
-    PANEL --> EXEC
-    PANEL --> METRICS
-
-    VERDICT -->|"all outcomes"| EXP
-    VERDICT --> REPORT
-    VERDICT -->|"PROMOTE"| TRAIL
-
-    REPORT --> SELECT
-    TRAIL --> ANCHOR
-
-    MEMORY -.->|"research evidence"| NEXT
-    REPORT -.->|"post-run policy"| NEXT
-    ANCHOR -.->|"opt-in complement context"| NEXT
-
-    classDef control fill:#eef2f7,stroke:#475569,color:#111827,stroke-width:1px;
-    classDef runtime fill:#e8f1fb,stroke:#2563eb,color:#111827,stroke-width:1px;
-    classDef llm fill:#fff4d6,stroke:#b7791f,color:#111827,stroke-width:1px;
-    classDef deterministic fill:#e8f5ee,stroke:#27835c,color:#111827,stroke-width:1px;
-    classDef storage fill:#f3f4f6,stroke:#6b7280,color:#111827,stroke-width:1px;
-
-    class OBJ,DIR,NEXT control;
-    class HERMES,BOUNDARY runtime;
-    class CONTEXT,LLM,GUARD llm;
-    class SOURCES,PANEL,FACTOR,EXEC,METRICS,ROBUST,JUDGE,VERDICT,MUTATE,SELECT,RECIPE,ANCHOR deterministic;
-    class EXP,REPORT,TRAIL,MEMORY storage;
-```
+![AlphaAgent system architecture and closed-loop research lifecycle](docs/assets/alphaagent-system-architecture.png)
 
 *Figure 1. AlphaAgent system architecture and closed-loop research lifecycle.
 The diagram separates LLM-assisted hypothesis formation from the deterministic
@@ -135,8 +48,8 @@ arrows are policy and memory feedback. The yellow proposal plane may suggest
 what to test, but it cannot write quantitative verdicts. Green nodes own all
 statistical truth. Each research run emits linked records carrying the data
 fingerprint, evaluation contract, failure taxonomy, and promotion provenance.
-Endpoint G denotes logical re-entry into the Director and proposal context at
-the start of the next autonomous cycle.
+The dashed Next Cycle path denotes logical re-entry into the Director and
+proposal context at the start of the next autonomous cycle.
 
 The architectural invariant is one-way: Hermes calls the typed Alpha Harness
 boundary, while `alpha_harness/` never imports Hermes runtime internals. The
