@@ -12,14 +12,17 @@ The goal is **not** to build a generic agent that imitates a human analyst step 
 - distill reusable research skills
 - improve its own research efficiency over time
 
-## Initial market focus
+## Market scope
 
-Phase 1 focuses on:
+The original Phase 1 architecture focuses on:
 
 - US equities
 - Crypto spot and perp markets
 
-The data model is designed to support additional asset classes later (ETFs, futures, options metadata, FX, rates, commodities).
+The active empirical program also includes HK IPO equities, where BigQuery
+panels join daily prices, tick-derived microstructure, and curated event data.
+The data model is designed to support additional asset classes later (ETFs,
+futures, options metadata, FX, rates, commodities).
 
 ## Core principle
 
@@ -27,16 +30,130 @@ The data model is designed to support additional asset classes later (ETFs, futu
 
 This repository keeps those responsibilities clearly separated, and a static auditor (`make audit`) blocks any inward import from `hermes.*` / `runtime.*` into the harness.
 
-## What works today (post Round 4–9)
+## System architecture and autonomous research lifecycle
 
-The full agent loop runs end-to-end on real data and **closes back on itself** — composites promoted by one cycle feed the proposer's prompt in the next:
+The diagram below presents the current system as a reproducible scientific
+workflow. LLMs are restricted to proposal-side tasks;
+all market data transforms, statistics, risk checks, and promotion decisions
+remain inside the deterministic Alpha Harness core.
 
+```mermaid
+flowchart TB
+    subgraph CONTROL["A. Research control and runtime"]
+        direction LR
+        OBJ["Research objective<br/>market, universe, constraints"]
+        DIR["Research Director<br/>topic and typed executor,<br/>success and stop criteria"]
+        HERMES["Hermes runtime<br/>session, tools, provider integration"]
+        BOUNDARY["Typed Alpha Harness boundary<br/>HarnessAgentAdapter"]
+        OBJ --> DIR --> HERMES --> BOUNDARY
+    end
+
+    subgraph PROPOSAL["B. LLM-assisted proposal"]
+        direction LR
+        CONTEXT["Retrieved research evidence<br/>experiments, failures, promoted recipes"]
+        LLM["Budgeted structured proposer<br/>OpenRouter or deterministic mock"]
+        GUARD["Schema validation, bounded repair,<br/>safe DSL compile, canonical novelty"]
+        CONTEXT --> LLM --> GUARD
+    end
+
+    subgraph DATA["C. Point-in-time data plane"]
+        direction LR
+        SOURCES["Parquet, Polygon, BigQuery, CCXT<br/>prices, microstructure, events"]
+        PANEL["Typed loaders and canonical panel<br/>symbol normalization, panel fingerprint"]
+        SOURCES --> PANEL
+    end
+
+    subgraph CORE["D. Deterministic quantitative core"]
+        direction LR
+        FACTOR["Typed FactorSpec<br/>scalar expression or CompositeRecipe"]
+        EXEC["Safe factor execution<br/>full-history compute, then window slice"]
+        METRICS["Point-in-time evaluation<br/>lagged labels, IC, RankIC, spread,<br/>turnover, costs, neutralization, risk"]
+        ROBUST["Robustness protocol<br/>calendar folds, purge, embargo,<br/>multi-horizon checks, global holdout"]
+        JUDGE["PromotionJudge<br/>familywise pressure, six gates,<br/>conditional complement gates"]
+        VERDICT{"Deterministic verdict"}
+        MUTATE["Bounded AST mutation<br/>lineage-aware refinement"]
+        FACTOR --> EXEC --> METRICS --> ROBUST --> JUDGE --> VERDICT
+        VERDICT -->|"REFINE"| MUTATE --> FACTOR
+    end
+
+    subgraph EVIDENCE["E. Reproducibility and learning"]
+        direction LR
+        EXP["Experiment registry<br/>memory or PostgreSQL"]
+        REPORT["Validation and combination reports<br/>fingerprint, cost, gates, provenance"]
+        TRAIL["PromotionTrail and promoted artifacts<br/>policy hash and exact factor payload"]
+        MEMORY["Durable lineage and proposer memory"]
+        EXP --> MEMORY
+        REPORT --> MEMORY
+        TRAIL --> MEMORY
+    end
+
+    subgraph COMPOSITE["F. Basket and complement loop"]
+        direction LR
+        SELECT["Predeclared candidate family<br/>input-order or persistence selection"]
+        RECIPE["Deterministic combination<br/>Composite FactorSpec re-enters core evaluation"]
+        ANCHOR["Eligible promoted recipe<br/>one-component complement target"]
+        SELECT --> RECIPE --> ANCHOR
+    end
+
+    NEXT["G. Next autonomous cycle<br/>memory digest and eligible anchors return to<br/>the Director and proposal context"]
+
+    BOUNDARY --> CONTEXT
+    GUARD --> FACTOR
+    PANEL --> EXEC
+    PANEL --> METRICS
+
+    VERDICT -->|"all outcomes"| EXP
+    VERDICT --> REPORT
+    VERDICT -->|"PROMOTE"| TRAIL
+
+    REPORT --> SELECT
+    TRAIL --> ANCHOR
+
+    MEMORY -.->|"research evidence"| NEXT
+    REPORT -.->|"post-run policy"| NEXT
+    ANCHOR -.->|"opt-in complement context"| NEXT
+
+    classDef control fill:#eef2f7,stroke:#475569,color:#111827,stroke-width:1px;
+    classDef runtime fill:#e8f1fb,stroke:#2563eb,color:#111827,stroke-width:1px;
+    classDef llm fill:#fff4d6,stroke:#b7791f,color:#111827,stroke-width:1px;
+    classDef deterministic fill:#e8f5ee,stroke:#27835c,color:#111827,stroke-width:1px;
+    classDef storage fill:#f3f4f6,stroke:#6b7280,color:#111827,stroke-width:1px;
+
+    class OBJ,DIR,NEXT control;
+    class HERMES,BOUNDARY runtime;
+    class CONTEXT,LLM,GUARD llm;
+    class SOURCES,PANEL,FACTOR,EXEC,METRICS,ROBUST,JUDGE,VERDICT,MUTATE,SELECT,RECIPE,ANCHOR deterministic;
+    class EXP,REPORT,TRAIL,MEMORY storage;
 ```
-LLM proposer → DSL compile → walk-forward + embargo + holdout evaluator
-            → 6-gate judge → trail-stamped artifact + cycle report
-            → combine_factors --promote → composite registry citizen
-            → next cycle's proposer memory digest
-```
+
+*Figure 1. AlphaAgent system architecture and closed-loop research lifecycle.
+The diagram separates LLM-assisted hypothesis formation from the deterministic
+quantitative path that owns statistical evaluation and promotion.*
+
+**Interpretation.** Solid arrows are executable data or control paths; dashed
+arrows are policy and memory feedback. The yellow proposal plane may suggest
+what to test, but it cannot write quantitative verdicts. Green nodes own all
+statistical truth. Each research run emits linked records carrying the data
+fingerprint, evaluation contract, failure taxonomy, and promotion provenance.
+Endpoint G denotes logical re-entry into the Director and proposal context at
+the start of the next autonomous cycle.
+
+The architectural invariant is one-way: Hermes calls the typed Alpha Harness
+boundary, while `alpha_harness/` never imports Hermes runtime internals. The
+static auditor also prevents network or LLM access from entering deterministic
+evaluators.
+
+## What works today (post Round 4–10)
+
+The full agent loop runs end-to-end on real data and **closes back on itself**:
+composites promoted by one cycle feed the proposer's prompt in the next.
+
+The executable path is the solid-arrow loop in the architecture diagram:
+structured proposal → safe DSL → deterministic evaluation → promotion judge →
+reproducible records → optional basket/complement construction → next-cycle
+memory. Round 10 adds opt-in composite complements with deterministic
+correlation and incremental-RankIC gates; the current HK IPO snapshot has no
+eligible composite anchor, so that path fails closed rather than inventing one.
 
 Validated end-to-end against real DeepSeek + Qwen on real Polygon SP-50
 **and** real Bloomberg HK IPO tick data (in GCP BigQuery).
@@ -63,6 +180,12 @@ Every cycle's promotion decision passes through six independently-validated gate
 5. **tail concentration** (Round 4C) — top-3 days cannot carry more than 50% of the gross long-short return
 6. **out-of-sample holdout decay** (Round 4E) — last 20% of the window must agree in sign and decay no more than 50% from in-sample rank-IC
 
+Before the profile gates, IC and rank-IC thresholds are scaled by the
+predeclared proposal-family size using a one-sided Bonferroni z-critical
+multiplier. Composite-complement candidates have three additional conditional
+requirements: low base/component correlation, positive incremental rank-IC in
+at least 60% of folds, and positive incremental rank-IC on the global holdout.
+
 Any failure exits with a structured `FailureRecord` whose category and detail string land in the cycle report. Promotions stamp a `PromotionTrail` (Round 4F) — a SHA-256 of every evaluator + judge knob — so the on-disk factor zoo stays reproducible across config drift.
 
 ### Operator surface
@@ -85,7 +208,7 @@ Every research artifact is queryable from a CLI:
 
 `scripts/validate_strict.py --llm openrouter` is the production research entry point. It:
 
-- loads parquet OHLCV (or live Polygon, or synthetic) for a chosen universe
+- loads Parquet, Polygon, BigQuery, CCXT, or synthetic data for a chosen universe
 - builds a strict / lenient `Regime` with all 6 judge gates active
 - has the LLM proposer generate N candidates per cycle (memory-augmented after Round 4A.4)
 - evaluates every candidate through walk-forward + embargo + holdout
@@ -94,14 +217,14 @@ Every research artifact is queryable from a CLI:
 
 We've exercised this against 50 SP large-caps × 2 years of daily bars × 30+ LLM-proposed factors per regime, with all six judge gates confirmed firing in production. See [docs/LOCAL_TESTING.md](docs/LOCAL_TESTING.md) for end-to-end recipes.
 
-### Multi-factor combination (Round 6 → 9)
+### Multi-factor combination and complements (Round 6 → 10)
 
 `scripts/combine_factors.py` takes N DSL expressions and produces a basket
 via rank aggregation, z-score average, or equal weight.  Returns per-factor
 + basket IC / rank-IC plus the average pairwise rank correlation so the
 operator can see whether the combination should have helped.
 
-Round 7 → 9 layered three things on top of the combination plumbing:
+Rounds 7 → 10 layered four things on top of the combination plumbing:
 
 - **Round 7 — audit-grade reports.**  Every validation report now carries
   per-factor thumbnails (expression + headline metrics + gate name on
@@ -122,6 +245,12 @@ Round 7 → 9 layered three things on top of the combination plumbing:
   a time via the existing scalar mutator, rebuild the recipe, evaluate.
   `scripts/inspect_composite` is the read-only auditor (`--list` or
   `--recipe-id`).
+- **Round 10 — deterministic complements.** The opt-in
+  `--composite-complements` path asks for one scalar addition to an exact
+  promoted recipe, evaluates the augmented basket, and applies correlation,
+  walk-forward incremental-rank-IC, and holdout-lift gates. Validation schema
+  v7 preserves exact replay; combination schema v3 records panel/source
+  fingerprints, cost stress, candidate-family size, and selection provenance.
 
 Read the per-round design notes in
 [`docs/ROUND7_TO_9_SUMMARY.md`](docs/ROUND7_TO_9_SUMMARY.md).  The
