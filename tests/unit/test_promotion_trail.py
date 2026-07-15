@@ -174,6 +174,41 @@ def test_sector_map_changes_trail_id() -> None:
     assert a.trail_id != b.trail_id
 
 
+def test_beta_window_changes_trail_id_only_when_beta_is_enabled() -> None:
+    beta_short = PromotionTrail.from_inputs(
+        evaluation_request=_request(
+            neutralize=NeutralizeMode.BETA,
+            beta_lookback_bars=20,
+            beta_min_periods=10,
+        ),
+        judge_thresholds={},
+    )
+    beta_long = PromotionTrail.from_inputs(
+        evaluation_request=_request(
+            neutralize=NeutralizeMode.BETA,
+            beta_lookback_bars=60,
+            beta_min_periods=20,
+        ),
+        judge_thresholds={},
+    )
+    assert beta_short.trail_id != beta_long.trail_id
+    assert beta_short.beta_estimation_method == "rolling_ols_lagged_1"
+
+    sector_short = PromotionTrail.from_inputs(
+        evaluation_request=_request(
+            neutralize=NeutralizeMode.SECTOR,
+            beta_lookback_bars=20,
+            beta_min_periods=10,
+        ),
+        judge_thresholds={},
+    )
+    sector_long = PromotionTrail.from_inputs(
+        evaluation_request=_request(neutralize=NeutralizeMode.SECTOR),
+        judge_thresholds={},
+    )
+    assert sector_short.trail_id == sector_long.trail_id
+
+
 # ── Judge embeds trail only on PROMOTE ──────────────────────────────────────
 
 

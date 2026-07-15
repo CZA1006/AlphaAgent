@@ -4,9 +4,12 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Self
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+DEFAULT_BETA_LOOKBACK_BARS = 60
+DEFAULT_BETA_MIN_PERIODS = 20
 
 # ── Evaluation profile ───────────────────────────────────────────────────────
 
@@ -60,8 +63,8 @@ class NeutralizeMode(StrEnum):
 
     ``NONE``    — raw returns (backwards-compatible default).
     ``SECTOR``  — subtract the per-date sector mean return.
-    ``BETA``    — subtract ``beta * universe_mean_return`` (in-sample beta
-                  estimated on the eval window; documented limitation).
+    ``BETA``    — subtract ``beta * universe_mean_return`` using a strictly
+                  lagged rolling beta estimated from prior dates only.
     ``BOTH``    — sector de-meaning, then beta neutralization on the residual.
     """
 
@@ -151,6 +154,11 @@ class EvaluationRequest(BaseModel):
     # ``NONE`` preserves legacy behaviour for every existing caller.
     neutralize: NeutralizeMode = NeutralizeMode.NONE
 
+    # Causal beta-estimation policy. The coefficient applied at date t uses
+    # only paired observations strictly before t.
+    beta_lookback_bars: int = Field(default=DEFAULT_BETA_LOOKBACK_BARS, ge=2)
+    beta_min_periods: int = Field(default=DEFAULT_BETA_MIN_PERIODS, ge=2)
+
     # Optional ``{symbol: sector}`` map.  Only used when ``neutralize`` is
     # ``SECTOR`` or ``BOTH``.  Symbols not present fall back to a single
     # ``"UNKNOWN"`` bucket (i.e. no effective sector neutralization).
@@ -166,6 +174,12 @@ class EvaluationRequest(BaseModel):
     # ``holdout_fraction`` of the window into a held-out slice that
     # the judge cross-checks against the in-sample metrics.
     holdout: HoldoutPolicy = Field(default_factory=HoldoutPolicy)
+
+    @model_validator(mode="after")
+    def _validate_beta_window(self) -> Self:
+        if self.beta_min_periods > self.beta_lookback_bars:
+            raise ValueError("beta_min_periods must be <= beta_lookback_bars")
+        return self
 
 
 # ── Evaluation output ────────────────────────────────────────────────────────

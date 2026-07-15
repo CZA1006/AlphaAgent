@@ -119,6 +119,105 @@ def test_beta_neutralization_zeros_pure_market_mover() -> None:
         assert df[df["sym"] == sym]["resid"].abs().mean() < 1e-9
 
 
+def test_beta_neutralization_does_not_read_future_returns() -> None:
+    """Changing future labels must not alter already-produced residuals."""
+    n = 50
+    timestamps = pd.Series(pd.date_range("2024-01-01", periods=n).repeat(3))
+    symbols = pd.Series(["A", "B", "C"] * n)
+    rng = np.random.default_rng(17)
+    market = rng.normal(0.0, 0.01, size=n)
+    loadings = {"A": 0.7, "B": 1.2, "C": 1.8}
+    returns = pd.Series([
+        loadings[symbol] * market[day] + rng.normal(0.0, 0.001)
+        for day in range(n)
+        for symbol in ("A", "B", "C")
+    ])
+
+    baseline = neutralize_forward_returns(
+        returns,
+        timestamps=timestamps,
+        symbols=symbols,
+        mode=NeutralizeMode.BETA,
+        beta_lookback_bars=10,
+        beta_min_periods=5,
+    )
+    cutoff = pd.Timestamp("2024-02-05")
+    future_mask = timestamps >= cutoff
+    mutated_returns = returns.copy()
+    mutated_returns.loc[future_mask & (symbols == "A")] += 0.25
+    mutated_returns.loc[future_mask & (symbols == "C")] -= 0.20
+    mutated = neutralize_forward_returns(
+        mutated_returns,
+        timestamps=timestamps,
+        symbols=symbols,
+        mode=NeutralizeMode.BETA,
+        beta_lookback_bars=10,
+        beta_min_periods=5,
+    )
+
+    pd.testing.assert_series_equal(
+        baseline.loc[~future_mask],
+        mutated.loc[~future_mask],
+    )
+    assert not np.allclose(
+        baseline.loc[future_mask].to_numpy(),
+        mutated.loc[future_mask].to_numpy(),
+        equal_nan=True,
+    )
+
+
+def test_beta_neutralization_requires_prior_warmup() -> None:
+    timestamps = pd.Series(pd.date_range("2024-01-01", periods=6).repeat(2))
+    symbols = pd.Series(["A", "B"] * 6)
+    returns = pd.Series([0.01, 0.02, -0.01, -0.03, 0.02, 0.01] * 2)
+    out = neutralize_forward_returns(
+        returns,
+        timestamps=timestamps,
+        symbols=symbols,
+        mode=NeutralizeMode.BETA,
+        beta_lookback_bars=4,
+        beta_min_periods=3,
+    )
+
+    assert out.loc[timestamps < pd.Timestamp("2024-01-04")].isna().all()
+
+
+def test_beta_request_rejects_min_periods_above_lookback() -> None:
+    with pytest.raises(ValueError, match="beta_min_periods"):
+        EvaluationRequest(
+            factor_id="f",
+            universe_id="u",
+            eval_start=date(2024, 1, 1),
+            eval_end=date(2024, 12, 31),
+            neutralize=NeutralizeMode.BETA,
+            beta_lookback_bars=10,
+            beta_min_periods=11,
+        )
+
+
+def test_both_mode_does_not_drop_zero_market_sector_residuals() -> None:
+    timestamps = pd.Series(pd.date_range("2024-01-01", periods=3).repeat(2))
+    symbols = pd.Series(["A", "B"] * 3)
+    returns = pd.Series([0.02, -0.02, 0.04, 0.00, -0.01, 0.03])
+    sector_map = {"A": "X", "B": "X"}
+    sector = neutralize_forward_returns(
+        returns,
+        timestamps=timestamps,
+        symbols=symbols,
+        mode=NeutralizeMode.SECTOR,
+        sector_map=sector_map,
+    )
+    both = neutralize_forward_returns(
+        returns,
+        timestamps=timestamps,
+        symbols=symbols,
+        mode=NeutralizeMode.BOTH,
+        sector_map=sector_map,
+    )
+
+    pd.testing.assert_series_equal(both, sector)
+
+
 def test_none_mode_is_identity() -> None:
     fwd = pd.Series([0.1, -0.2, 0.3])
     out = neutralize_forward_returns(
@@ -226,6 +325,21 @@ def test_evaluator_default_omits_multi_horizon_metadata() -> None:
     evaluator = SignalQualityEvaluator(panel)
     bundle = evaluator.evaluate(_factor(), _eval_request())
     assert "ic_by_horizon" not in bundle.metadata
+
+
+def test_evaluator_records_causal_beta_policy() -> None:
+    panel = _panel()
+    evaluator = SignalQualityEvaluator(panel)
+    request = _eval_request(neutralize=NeutralizeMode.BETA).model_copy(
+        update={"beta_lookback_bars": 12, "beta_min_periods": 6},
+    )
+    bundle = evaluator.evaluate(_factor(), request)
+
+    assert bundle.metadata["beta_estimation"] == {
+        "method": "rolling_ols_lagged_1",
+        "lookback_bars": 12,
+        "min_periods": 6,
+    }
 
 
 def test_evaluator_turnover_and_cost_recorded() -> None:

@@ -320,8 +320,11 @@ uv run python -m scripts.autonomous_cycle \
 ```
 
 - `--neutralize {none,sector,beta,both}` — cross-sectional residualization
-  applied to forward returns.  `sector` subtracts the per-date sector mean;
-  `beta` subtracts `beta_i * universe_mean[t]` using in-sample beta.
+  applied to forward returns. `sector` subtracts the per-date sector mean;
+  `beta` subtracts `beta_i[t] * universe_mean[t]`, where `beta_i[t]` uses
+  strictly prior observations only. Configure the causal rolling window with
+  `--beta-lookback-bars` (default 60) and `--beta-min-periods` (default 20).
+  Pre-warmup residuals remain unavailable rather than reading future returns.
 - `--sector-map PATH` — required for `sector` / `both`.  A
   `{symbol,sector}` CSV; `configs/universes/sp50_sectors.csv` ships for the
   default universe.  Unmapped symbols land in `UNKNOWN`.

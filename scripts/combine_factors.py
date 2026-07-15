@@ -402,6 +402,8 @@ def _build_eval_request(
         label=regime.label_definition(),
         profile=regime.evaluation_profile(),
         neutralize=regime.neutralize,
+        beta_lookback_bars=regime.beta_lookback_bars,
+        beta_min_periods=regime.beta_min_periods,
         cost_bps=regime.cost_bps,
         holdout=regime.holdout_policy(),
     )

@@ -135,6 +135,8 @@ def _window_inputs(
         timestamps=window["timestamp"],
         symbols=window["symbol"],
         mode=regime.neutralize,
+        beta_lookback_bars=regime.beta_lookback_bars,
+        beta_min_periods=regime.beta_min_periods,
     )
     return window, signal, returns
 

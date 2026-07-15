@@ -48,6 +48,8 @@ class StrictRegime:
     # Evaluator richness
     cost_bps: float = 5.0
     neutralize: NeutralizeMode = NeutralizeMode.SECTOR
+    beta_lookback_bars: int = 60
+    beta_min_periods: int = 20
     extra_horizons: tuple[int, ...] = (1, 5, 20)
     forecast_horizon_bars: int = 5
     lag_bars: int = 1

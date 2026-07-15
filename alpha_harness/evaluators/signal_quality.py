@@ -46,6 +46,7 @@ from alpha_harness.schemas.evaluation import (
     HoldoutPolicy,
     HoldoutStrategy,
     LabelDefinition,
+    NeutralizeMode,
 )
 from alpha_harness.schemas.factor import FactorSpec
 
@@ -269,6 +270,8 @@ def evaluate_precomputed_signal(
         symbols=groups,
         mode=request.neutralize,
         sector_map=request.sector_map,
+        beta_lookback_bars=request.beta_lookback_bars,
+        beta_min_periods=request.beta_min_periods,
     )
 
     ic = compute_mean_ic(signal, fwd_returns, timestamps)
@@ -317,6 +320,8 @@ def evaluate_precomputed_signal(
             symbols=groups,
             mode=request.neutralize,
             sector_map=request.sector_map,
+            beta_lookback_bars=request.beta_lookback_bars,
+            beta_min_periods=request.beta_min_periods,
         )
         aux_ic = compute_mean_ic(signal, aux_fwd, timestamps)
         aux_rank = compute_mean_rank_ic(signal, aux_fwd, timestamps)
@@ -335,6 +340,12 @@ def evaluate_precomputed_signal(
         "cost_bps": float(request.cost_bps),
         "portfolio": portfolio_metrics,
     }
+    if request.neutralize in (NeutralizeMode.BETA, NeutralizeMode.BOTH):
+        metadata["beta_estimation"] = {
+            "method": "rolling_ols_lagged_1",
+            "lookback_bars": request.beta_lookback_bars,
+            "min_periods": request.beta_min_periods,
+        }
     if len(ic_by_horizon) > 1:
         metadata["ic_by_horizon"] = ic_by_horizon
         metadata["rank_ic_by_horizon"] = rank_ic_by_horizon

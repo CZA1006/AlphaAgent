@@ -384,7 +384,7 @@ def _aggregate_metadata(
 ) -> dict[str, object]:
     """Aggregate judge-relevant metadata without leaking the first fold."""
     metadata: dict[str, object] = {}
-    for key in ("evaluator", "mode", "neutralize", "cost_bps"):
+    for key in ("evaluator", "mode", "neutralize", "cost_bps", "beta_estimation"):
         stable_values = [fold.metadata.get(key) for fold in folds if key in fold.metadata]
         if stable_values and all(value == stable_values[0] for value in stable_values):
             metadata[key] = stable_values[0]

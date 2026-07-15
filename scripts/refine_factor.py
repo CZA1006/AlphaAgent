@@ -101,6 +101,8 @@ def _build_parser() -> argparse.ArgumentParser:
         choices=[m.value for m in NeutralizeMode],
         default=NeutralizeMode.NONE.value,
     )
+    p.add_argument("--beta-lookback-bars", type=int, default=60)
+    p.add_argument("--beta-min-periods", type=int, default=20)
     p.add_argument("--holdout-fraction", type=float, default=0.0)
     p.add_argument(
         "--holdout-strategy",
@@ -172,6 +174,8 @@ def main(argv: list[str] | None = None) -> int:
             n_quantiles=5,
         ),
         neutralize=NeutralizeMode(args.neutralize),
+        beta_lookback_bars=args.beta_lookback_bars,
+        beta_min_periods=args.beta_min_periods,
         cost_bps=args.cost_bps,
         holdout=HoldoutPolicy(
             strategy=HoldoutStrategy(args.holdout_strategy),

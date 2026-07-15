@@ -7,9 +7,6 @@ apparent IC.
 
 Limitations
 -----------
-* Beta is estimated *in-sample* over the evaluation window (one coefficient
-  per symbol).  This is a deliberate first cut — full rolling / out-of-sample
-  beta can replace it without changing the caller-facing API.
 * Sector assignments come from a static ``dict[symbol, sector]`` passed by
   the caller.  Symbols missing from the map land in a single ``"UNKNOWN"``
   bucket; that bucket is still demeaned, but if every symbol is unknown the
@@ -21,7 +18,11 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from alpha_harness.schemas.evaluation import NeutralizeMode
+from alpha_harness.schemas.evaluation import (
+    DEFAULT_BETA_LOOKBACK_BARS,
+    DEFAULT_BETA_MIN_PERIODS,
+    NeutralizeMode,
+)
 
 
 def _sector_demean(
@@ -46,38 +47,54 @@ def _beta_neutralize(
     fwd: pd.Series,
     timestamps: pd.Series,
     symbols: pd.Series,
+    *,
+    lookback_bars: int,
+    min_periods: int,
 ) -> pd.Series:
     """Subtract ``beta_i * universe_mean[t]`` from each ``fwd[i, t]``.
 
-    ``beta_i`` is the in-sample OLS slope of ``fwd_i`` against the
-    cross-sectional mean return, estimated over the entire eval window.
-    Symbols with zero universe-return variance get ``beta = 0`` (i.e. no
-    adjustment).
+    The coefficient applied at date ``t`` is estimated from at most
+    ``lookback_bars`` paired observations strictly before ``t``. Rows without
+    ``min_periods`` prior observations remain NaN so callers cannot mistake an
+    unstable fallback for an out-of-sample residual. Symbols with zero market
+    variance after warmup get beta zero.
     """
+    if min_periods > lookback_bars:
+        raise ValueError("min_periods must be <= lookback_bars")
+
     universe_mean = fwd.groupby(timestamps.to_numpy()).transform("mean")
-    resid = fwd.copy()
+    frame = pd.DataFrame({
+        "_position": np.arange(len(fwd)),
+        "_timestamp": timestamps.to_numpy(),
+        "_symbol": symbols.to_numpy(),
+        "_return": fwd.to_numpy(dtype=float),
+        "_market": universe_mean.to_numpy(dtype=float),
+    })
+    result = np.full(len(frame), np.nan, dtype=float)
 
-    var_univ = float(np.nanvar(universe_mean.to_numpy()))
-    if var_univ == 0.0 or np.isnan(var_univ):
-        return resid
+    for _, group in frame.groupby("_symbol", sort=False, dropna=False):
+        ordered = group.sort_values(["_timestamp", "_position"], kind="stable")
+        prior_return = ordered["_return"].shift(1)
+        prior_market = ordered["_market"].shift(1)
+        rolling = prior_return.rolling(window=lookback_bars, min_periods=min_periods)
+        covariance = rolling.cov(prior_market)
+        variance = prior_market.rolling(
+            window=lookback_bars,
+            min_periods=min_periods,
+        ).var()
+        beta = covariance / variance
+        beta = beta.mask(variance == 0.0, 0.0)
+        residual = ordered["_return"] - beta * ordered["_market"]
+        zero_market = np.isclose(
+            ordered["_market"].to_numpy(dtype=float),
+            0.0,
+            rtol=0.0,
+            atol=1e-15,
+        )
+        residual = residual.mask(zero_market, ordered["_return"])
+        result[ordered["_position"].to_numpy(dtype=int)] = residual.to_numpy()
 
-    # Per-symbol beta via OLS: cov(fwd_i, mean) / var(mean) over dates.
-    for sym in symbols.unique():
-        mask = symbols == sym
-        y = fwd[mask].to_numpy(dtype=float)
-        x = universe_mean[mask].to_numpy(dtype=float)
-        valid = ~(np.isnan(y) | np.isnan(x))
-        if valid.sum() < 2:
-            continue
-        x_v = x[valid]
-        y_v = y[valid]
-        x_var = float(np.var(x_v))
-        if x_var == 0.0:
-            continue
-        beta = float(np.cov(y_v, x_v, ddof=0)[0, 1] / x_var)
-        resid.loc[mask] = fwd[mask] - beta * universe_mean[mask]
-
-    return resid
+    return pd.Series(result, index=fwd.index, name=fwd.name)
 
 
 def neutralize_forward_returns(
@@ -87,6 +104,8 @@ def neutralize_forward_returns(
     symbols: pd.Series | None,
     mode: NeutralizeMode,
     sector_map: dict[str, str] | None = None,
+    beta_lookback_bars: int = DEFAULT_BETA_LOOKBACK_BARS,
+    beta_min_periods: int = DEFAULT_BETA_MIN_PERIODS,
 ) -> pd.Series:
     """Return forward returns with the requested neutralization applied.
 
@@ -98,7 +117,13 @@ def neutralize_forward_returns(
     if mode in (NeutralizeMode.SECTOR, NeutralizeMode.BOTH):
         fwd = _sector_demean(fwd, timestamps, symbols, sector_map or {})
     if mode in (NeutralizeMode.BETA, NeutralizeMode.BOTH):
-        fwd = _beta_neutralize(fwd, timestamps, symbols)
+        fwd = _beta_neutralize(
+            fwd,
+            timestamps,
+            symbols,
+            lookback_bars=beta_lookback_bars,
+            min_periods=beta_min_periods,
+        )
     return fwd
 
 

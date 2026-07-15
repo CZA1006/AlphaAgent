@@ -11,7 +11,7 @@
 | 1 | Combiner's basket evaluation bypasses `HoldoutPolicy` | **CRITICAL** | ✅ fixed in `c535059` |
 | 2 | `CombinationReport.basket_metrics` drops `metadata.holdout` | **CRITICAL** | ✅ fixed in `c535059` |
 | 3 | TAIL holdout label overlap | medium | resolved by window-local labels; regression added 2026-07-15 |
-| 4 | Beta neutralization is estimated in-sample over full window | medium | acknowledged in code |
+| 4 | Beta neutralization is estimated in-sample over full window | medium | resolved by strictly lagged rolling OLS |
 | 5 | SP-50 universe is survivorship-biased by construction | medium | acknowledged in universe header |
 | 6 | No multiple-hypothesis pressure over proposer cycles | medium | resolved by schema v6 session thresholds |
 | 7 | DSL rolling operators use `min_periods=1` | low | acknowledged in code |
@@ -108,7 +108,7 @@ rank-IC, and quantile spread remain unchanged while holdout rank-IC changes.
 Explicitly trimming another `lag + horizon` days would double-purge the label
 boundary and is therefore not applied.
 
-## Finding 4 (medium): in-sample beta estimation
+## Finding 4 (resolved): in-sample beta estimation
 
 **Where:** `alpha_harness/evaluators/neutralize.py:_beta_neutralize`.
 
@@ -116,11 +116,23 @@ Per-symbol beta is estimated over the full evaluation window and used
 to neutralize every date in that window.  Future-dated returns thus
 contribute to the beta used for past-dated residuals.
 
-**Mitigation already in code:** the module docstring acknowledges
-this is "a deliberate first cut — full rolling / out-of-sample beta
-can replace it without changing the caller-facing API."  In the case
-study we used `NeutralizeMode.SECTOR` (not BETA), so this wasn't
-exercised — but it's a real gap for future runs.
+**Resolution (2026-07-15).** Beta neutralization now uses per-symbol rolling
+OLS with a mandatory one-date lag. The coefficient applied at date `t` sees at
+most the prior 60 paired observations and requires 20 by default; neither the
+current return nor any future return can enter the estimate. Rows before warmup
+remain unavailable instead of receiving an in-sample fallback. Both parameters
+are typed request fields, are recorded in evaluator metadata, and enter the
+promotion-trail hash when beta neutralization is active.
+
+A mutation regression changes all returns after a cutoff and proves every
+pre-cutoff residual is byte-for-byte unchanged. The `BOTH` path also preserves
+sector residuals when sector demeaning makes the market component zero, avoiding
+an unnecessary beta warmup sample loss. Existing HK IPO strict studies use
+`NeutralizeMode.SECTOR`, so this closes a future-use leakage path without
+retroactively changing their metrics. A seven-factor OFI replay on fingerprint
+`6bf7ac...` retained the same regime trail (`ef194f4dfc1f6c54`), rejection
+split (`tail_concentration=6`, `holdout_decay=1`), and every factor metric;
+only run-generated factor ids differ.
 
 ## Finding 5 (medium): SP-50 universe survivorship bias
 

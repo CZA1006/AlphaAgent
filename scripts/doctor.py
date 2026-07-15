@@ -355,6 +355,8 @@ def _check_strict_regime_resolves() -> CheckResult:
             label=STRICT_REGIME.label_definition(),
             profile=STRICT_REGIME.evaluation_profile(),
             neutralize=STRICT_REGIME.neutralize,
+            beta_lookback_bars=STRICT_REGIME.beta_lookback_bars,
+            beta_min_periods=STRICT_REGIME.beta_min_periods,
             cost_bps=STRICT_REGIME.cost_bps,
             holdout=STRICT_REGIME.holdout_policy(),
         )

@@ -277,10 +277,15 @@ Two LLMs on the same Y2 window both sign-flip out-of-sample.  The
 failure is **window-specific, not LLM-specific**.  The v1 positive is
 real-but-fragile.
 
-### Known evaluator gaps (from the audit, still open)
+### Evaluator leakage audit
 
-- **Finding 4 (medium)** — beta neutralization is estimated in-sample
-  over the full window (documented as a deliberate first cut).
+- **Finding 4 closed (2026-07-15)** — beta neutralization now uses strictly
+  lagged rolling OLS (60-bar lookback, 20 prior observations by default).
+  Future-return mutation cannot change past residuals; the policy and window
+  are persisted in evaluator metadata and promotion trails. The HK IPO OFI
+  fixed-snapshot replay retained fingerprint `6bf7ac...`, regime trail
+  `ef194f4dfc1f6c54`, all factor metrics, and the same 6 tail / 1 holdout
+  rejection split.
 
 ### Structural limitations
 
@@ -323,7 +328,10 @@ The global-holdout embargo audit is also closed: window-local label construction
 already purges the final `lag+horizon` training labels, and a holdout-price
 mutation test proves training metrics cannot read them. Multiple-hypothesis
 pressure accounting is now also closed under schema v6; historical reports are
-not silently rewritten or retroactively relabeled.
+not silently rewritten or retroactively relabeled. The final medium evaluator
+gap, full-window beta estimation, is closed by causal rolling beta; the current
+HK IPO results are unchanged because their strict regime uses sector rather
+than beta neutralization.
 
 ### 1. Data scaling — the actual prerequisite (decided)
 
@@ -360,18 +368,14 @@ This is mostly orchestration (a harness around `validate_strict` +
 `combine_factors` that sweeps windows/LLMs/universes and tallies), not
 new core code.
 
-### 3. Close the remaining audit findings (medium)
-
-- Optional: rolling/out-of-sample beta (Finding 4).
-
-### 4. Round 10 — proposer prompt-engineering for composites
+### 3. Round 10 — proposer prompt-engineering for composites
 
 Teach the proposer to propose *complements* to promoted composites
 (low-correlation additions), then measure whether composed baskets
 generalize better than singleton baskets.  Depends on having several
 promotions to chain, so it's downstream of (2).
 
-### 5. Broaden data realism (lower priority)
+### 4. Broaden data realism (lower priority)
 
 Point-in-time universe loader (kill survivorship bias), liquidity-aware
 cost model, longer history via a paid data tier.

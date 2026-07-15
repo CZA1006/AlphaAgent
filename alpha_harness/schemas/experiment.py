@@ -64,6 +64,9 @@ class PromotionTrail(BaseModel):
     trail_id: str
     # Evaluator-side
     neutralize: str = "none"
+    beta_estimation_method: str = "rolling_ols_lagged_1"
+    beta_lookback_bars: int = Field(default=60, ge=2)
+    beta_min_periods: int = Field(default=20, ge=2)
     sector_map_hash: str = ""  # sha256 of sorted (symbol,sector) pairs
     cost_bps: float = 0.0
     extra_horizons: list[int] = Field(default_factory=list)
@@ -125,8 +128,10 @@ class PromotionTrail(BaseModel):
             familywise_alpha=multiple_testing_alpha,
         )
 
+        neutralize = str(getattr(evaluation_request, "neutralize", "none"))
+        beta_enabled = neutralize in {"beta", "both"}
         body = {
-            "neutralize": str(getattr(evaluation_request, "neutralize", "none")),
+            "neutralize": neutralize,
             "sector_map_hash": sector_hash,
             "cost_bps": float(getattr(evaluation_request, "cost_bps", 0.0)),
             "extra_horizons": (list(label.extra_horizons) if label is not None else []),
@@ -150,6 +155,16 @@ class PromotionTrail(BaseModel):
             "multiple_testing_familywise_alpha": multiple_testing_alpha,
             "ic_threshold_multiplier": threshold_multiplier,
         }
+        if beta_enabled:
+            body.update({
+                "beta_estimation_method": "rolling_ols_lagged_1",
+                "beta_lookback_bars": int(
+                    getattr(evaluation_request, "beta_lookback_bars", 60)
+                ),
+                "beta_min_periods": int(
+                    getattr(evaluation_request, "beta_min_periods", 20)
+                ),
+            })
         if selection:
             body["selection"] = dict(selection)
         canonical = _json.dumps(body, sort_keys=True, default=str)

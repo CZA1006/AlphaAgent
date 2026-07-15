@@ -277,8 +277,8 @@ Answer the question a single run cannot: does the loop produce alpha
   ≥2 universes through the audit-clean pipeline.
 - The headline metric: fraction of basket runs that clear strict on
   Y2, vs a no-edge null.
-- Holdout-embargo and `n_proposals_in_session` multiple-hypothesis
-  pressure findings are closed; rolling/out-of-sample beta remains optional.
+- Holdout embargo, multiple-hypothesis pressure, and causal rolling beta
+  findings are closed.
 - Then Round 10 proposer prompt-engineering (compose *complements*
   to promoted composites) once there are enough promotions to chain.
 
