@@ -142,6 +142,12 @@ positive shares of 0.470/0.408 for 10/20-day OFI, while the thinnest fold
 cohorts contain only 3–4 positive observations. This confirms inadequate
 independent episode count and does not relax the current promotion gate.
 
+The global holdout audit is also closed without adding a second date trim.
+Current scalar, precomputed, and walk-forward paths construct forward returns
+inside the in-sample slice, so the final `lag+horizon` labels are unavailable
+and cannot read holdout prices. Holdout metadata now records this six-bar purge,
+and a price-mutation regression proves the training metrics are invariant.
+
 Each iteration: `ResearchDirector.plan` → run the selected
 `validate_strict` command → read the new validation reports →
 `ResearchPostRunPolicy.decide` picks the next topic (or stops) → the next

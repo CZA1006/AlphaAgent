@@ -192,6 +192,8 @@ def test_walk_forward_reserves_one_global_tail_holdout() -> None:
         "holdout_start": "2024-03-21",
         "holdout_end": "2024-04-09",
         "holdout_days": 20,
+        "embargo_bars": 6,
+        "embargo_mode": "window_local_forward_returns",
         "ic": 0.02,
         "rank_ic": 0.025,
         "quantile_spread": 0.01,

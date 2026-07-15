@@ -7,8 +7,12 @@ from datetime import date, timedelta
 import pandas as pd
 import pytest
 
+from alpha_harness.combination import compute_signal
 from alpha_harness.evaluators.promotion_judge import PromotionJudge
-from alpha_harness.evaluators.signal_quality import SignalQualityEvaluator
+from alpha_harness.evaluators.signal_quality import (
+    SignalQualityEvaluator,
+    evaluate_precomputed_signal,
+)
 from alpha_harness.factors.compiler import FactorDslCompiler
 from alpha_harness.reports.cycle_report import _holdout_summary, _thumbnail
 from alpha_harness.schemas.evaluation import (
@@ -88,6 +92,65 @@ def test_evaluator_splits_window_when_holdout_active() -> None:
     # Holdout starts at end - 11 = Feb 18.
     assert holdout["holdout_start"] == "2024-02-18"
     assert holdout["holdout_end"] == "2024-02-29"
+    assert holdout["embargo_bars"] == 6
+    assert holdout["embargo_mode"] == "window_local_forward_returns"
+
+
+def test_holdout_prices_cannot_change_in_sample_metrics() -> None:
+    import numpy as np
+
+    df = _toy_panel(n_days=80, seed=19)
+    req = EvaluationRequest(
+        factor_id="f",
+        universe_id="u",
+        eval_start=date(2024, 1, 1),
+        eval_end=date(2024, 3, 20),
+        profile=EvaluationProfile(min_periods=5, min_assets=2),
+        holdout=HoldoutPolicy(strategy=HoldoutStrategy.TAIL, holdout_fraction=0.25),
+    )
+    factor = FactorDslCompiler().compile(Hypothesis(text="rank(close)"))
+    baseline = SignalQualityEvaluator(df).evaluate(factor, req)
+
+    changed = df.copy()
+    holdout_start = date.fromisoformat(baseline.metadata["holdout"]["holdout_start"])
+    mask = pd.to_datetime(changed["timestamp"]).dt.date >= holdout_start
+    rng = np.random.default_rng(123)
+    changed.loc[mask, "close"] = rng.lognormal(mean=4.5, sigma=1.0, size=int(mask.sum()))
+    perturbed = SignalQualityEvaluator(changed).evaluate(factor, req)
+
+    assert perturbed.ic == pytest.approx(baseline.ic)
+    assert perturbed.rank_ic == pytest.approx(baseline.rank_ic)
+    assert perturbed.quantile_spread == pytest.approx(baseline.quantile_spread)
+    assert perturbed.metadata["holdout"]["rank_ic"] != pytest.approx(
+        baseline.metadata["holdout"]["rank_ic"],
+    )
+
+
+def test_precomputed_holdout_uses_same_embargo_contract() -> None:
+    df = _toy_panel(n_days=80, seed=23)
+    req = EvaluationRequest(
+        factor_id="f",
+        universe_id="u",
+        eval_start=date(2024, 1, 1),
+        eval_end=date(2024, 3, 20),
+        profile=EvaluationProfile(min_periods=5, min_assets=2),
+        holdout=HoldoutPolicy(strategy=HoldoutStrategy.TAIL, holdout_fraction=0.25),
+    )
+    factor = FactorDslCompiler().compile(Hypothesis(text="rank(close)"))
+    scalar = SignalQualityEvaluator(df).evaluate(factor, req)
+    precomputed = evaluate_precomputed_signal(
+        signal=compute_signal("rank(close)", df),
+        df=df,
+        request=req,
+    )
+
+    assert precomputed.ic == pytest.approx(scalar.ic)
+    assert precomputed.rank_ic == pytest.approx(scalar.rank_ic)
+    assert precomputed.metadata["holdout"]["embargo_bars"] == 6
+    assert (
+        precomputed.metadata["holdout"]["embargo_mode"]
+        == "window_local_forward_returns"
+    )
 
 
 def test_evaluator_holdout_none_is_passthrough() -> None:

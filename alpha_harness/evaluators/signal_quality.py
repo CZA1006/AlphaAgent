@@ -375,11 +375,11 @@ def _evaluate_precomputed_with_holdout(
     both halves with the holdout disabled, attach the holdout block
     as ``metadata.holdout`` on the in-sample bundle.
 
-    The in-sample window ends at ``split_start - 1``; both halves
-    work with a filtered ``df``/``signal`` slice so the recursive
-    call still sees aligned inputs.  No embargo gap between the two
-    halves yet — that's a separate finding tracked in
-    ``docs/AUDIT_LOOK_AHEAD.md`` (Finding 3).
+    The in-sample window ends at ``split_start - 1``; both halves work with a
+    filtered ``df``/``signal`` slice before forward returns are built. The last
+    ``lag + horizon`` in-sample labels are therefore unavailable by
+    construction, providing a bar-based purge without trimming the window a
+    second time.
     """
     from datetime import timedelta as _td
 
@@ -436,6 +436,8 @@ def _evaluate_precomputed_with_holdout(
         "holdout_start": str(split_start),
         "holdout_end": str(eval_end),
         "holdout_days": holdout_days,
+        "embargo_bars": request.label.lag_bars + request.label.forecast_horizon_bars,
+        "embargo_mode": "window_local_forward_returns",
         "ic": ho_bundle.ic,
         "rank_ic": ho_rank,
         "quantile_spread": ho_bundle.quantile_spread,
@@ -599,6 +601,9 @@ class SignalQualityEvaluator:
             "holdout_start": str(split_start),
             "holdout_end": str(request.eval_end),
             "holdout_days": holdout_days,
+            "embargo_bars": request.label.lag_bars
+            + request.label.forecast_horizon_bars,
+            "embargo_mode": "window_local_forward_returns",
             "ic": held_out.ic,
             "rank_ic": ho_rank,
             "quantile_spread": held_out.quantile_spread,

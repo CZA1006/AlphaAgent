@@ -10,7 +10,7 @@
 |---|---|---|---|
 | 1 | Combiner's basket evaluation bypasses `HoldoutPolicy` | **CRITICAL** | ✅ fixed in `c535059` |
 | 2 | `CombinationReport.basket_metrics` drops `metadata.holdout` | **CRITICAL** | ✅ fixed in `c535059` |
-| 3 | TAIL holdout has no embargo between in-sample and holdout | medium | bug — open |
+| 3 | TAIL holdout label overlap | medium | resolved by window-local labels; regression added 2026-07-15 |
 | 4 | Beta neutralization is estimated in-sample over full window | medium | acknowledged in code |
 | 5 | SP-50 universe is survivorship-biased by construction | medium | acknowledged in universe header |
 | 6 | No multiple-hypothesis correction over proposer cycles | medium | methodology — open |
@@ -83,9 +83,10 @@ factor's edge survived out-of-sample.
 to `FactorThumbnail` and populate them from `bundle.metadata.get
 ("holdout", {})` at build time.  Schema version bump (1 → 2).
 
-## Finding 3 (medium): TAIL holdout has no embargo
+## Finding 3 (resolved): TAIL holdout label overlap
 
-**Where:** `alpha_harness/evaluators/signal_quality.py:_evaluate_with_holdout`.
+**Original location:**
+`alpha_harness/evaluators/signal_quality.py:_evaluate_with_holdout`.
 
 The in-sample window is `[eval_start, is_end]` where `is_end =
 split_start − 1 day`.  The in-sample IC at date `is_end − k` (for k
@@ -94,13 +95,18 @@ in [0, horizon − 1]) uses forward returns computed from prices
 the holdout window.  So ~6 days of in-sample labels overlap with the
 holdout span.
 
-**Impact:** in-sample IC reads ~3 % of its labels from the holdout's
-price span.  Direction-changing for borderline factors; ignorable for
-clear positives or clear negatives.
+**Resolution (2026-07-15).** This finding described the pre-Finding-9 execution
+order. The current scalar and precomputed paths first slice the in-sample
+`df`/`signal`, then construct forward returns within that slice. Consequently,
+the final `lag + horizon` training labels are NaN and cannot read holdout
+prices. The walk-forward wrapper uses the same window-local inner evaluator.
+All three paths now record `embargo_bars` and
+`embargo_mode=window_local_forward_returns` in holdout metadata.
 
-**Fix.** Trim the last `lag + horizon` days off the in-sample window
-before computing in-sample IC.  Equivalently: insert an embargo gap
-of `lag + horizon` days between in-sample end and holdout start.
+Regression coverage mutates every holdout price and verifies that in-sample IC,
+rank-IC, and quantile spread remain unchanged while holdout rank-IC changes.
+Explicitly trimming another `lag + horizon` days would double-purge the label
+boundary and is therefore not applied.
 
 ## Finding 4 (medium): in-sample beta estimation
 
@@ -315,7 +321,7 @@ the experiment.
    case study produced a positive verdict
    (`docs/CASE_STUDY_HONEST.md` post-fix section), so the corrected
    metrics speak for themselves going forward.
-4. **(medium)** Add embargo gap to `_evaluate_with_holdout`.
+4. **(resolved)** Verify and surface the window-local holdout purge.
 5. **(medium)** Add `n_proposals_in_session` to validation reports
    so multiple-hypothesis pressure is visible.
 6. **(low)** Add point-in-time universe loader path for future

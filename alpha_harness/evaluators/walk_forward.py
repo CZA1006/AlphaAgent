@@ -274,6 +274,9 @@ class WalkForwardEvaluator:
             "holdout_start": str(split_start),
             "holdout_end": str(request.eval_end),
             "holdout_days": holdout_days,
+            "embargo_bars": request.label.lag_bars
+            + request.label.forecast_horizon_bars,
+            "embargo_mode": "window_local_forward_returns",
             "ic": held_out.ic,
             "rank_ic": held_out.rank_ic,
             "quantile_spread": held_out.quantile_spread,

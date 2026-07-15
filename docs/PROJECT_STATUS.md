@@ -270,8 +270,6 @@ real-but-fragile.
 
 ### Known evaluator gaps (from the audit, still open)
 
-- **Finding 3 (medium)** — TAIL holdout has no embargo gap; in-sample
-  labels overlap ~`lag+horizon` days into the holdout window.
 - **Finding 4 (medium)** — beta neutralization is estimated in-sample
   over the full window (documented as a deliberate first cut).
 - **Finding 6 (medium)** — no multiple-hypothesis correction; with
@@ -314,8 +312,10 @@ remain rejected; no event or age filter is promoted on this snapshot.
 The episode-aware diagnostic is now implemented and confirms that the apparent
 three-date March cluster is not enough to rescue the factors: non-overlapping
 fold cohorts contain only 3–4 positive observations in their thinnest phase.
-The next fixed-snapshot engineering task is the already-audited global-holdout
-embargo gap; it changes label separation, not factor thresholds or data scope.
+The global-holdout embargo audit is also closed: window-local label construction
+already purges the final `lag+horizon` training labels, and a holdout-price
+mutation test proves training metrics cannot read them. The next fixed-snapshot
+engineering task is multiple-hypothesis pressure accounting (Finding 6).
 
 ### 1. Data scaling — the actual prerequisite (decided)
 
@@ -354,7 +354,6 @@ new core code.
 
 ### 3. Close the remaining audit findings (medium)
 
-- Add the holdout embargo gap (Finding 3, ~15 lines).
 - Record `n_proposals_in_session` in reports and let the judge tighten
   thresholds under multiple-hypothesis pressure (Finding 6).
 - Optional: rolling/out-of-sample beta (Finding 4).
