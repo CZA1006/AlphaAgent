@@ -95,10 +95,22 @@ export ALPHA_AGENT_PROMPT_COST_PER_1K=<prompt-rate>
 export ALPHA_AGENT_COMPLETION_COST_PER_1K=<completion-rate>
 ```
 
-Validation schema v5 records provider-reported `usage.cost`, cumulative tokens,
+Validation schema v6 records provider-reported `usage.cost`, cumulative tokens,
 calls, and the fallback rates. It also distinguishes actual-cost calls from
 estimated calls. The 2026-07-14 first run predated this guard: its `$0.0036`
 figure was an external estimate, not a reproducible artifact value.
+
+Schema v6 also predeclares the full proposal family before the first candidate
+is judged. IC and rank-IC thresholds are multiplied by the Bonferroni
+one-sided z-critical ratio (`1.6858×` for a 3×6 session); quantile spread is not
+treated as a significance statistic. Reports and promotion trails persist the
+family size, familywise alpha, and multiplier. Invalid or dropped LLM outputs do
+not reduce the predeclared count after outcomes are visible.
+
+A no-LLM replay of the seven OFI smoothing candidates on fingerprint
+`6bf7ac...` recorded `N=7` / `1.4895×`. All seven still cleared the adjusted
+IC/RankIC bar and were rejected by the same downstream gates (six tail, one
+holdout decay). The current HK IPO decision is unchanged.
 
 The first run's sole candidate was replayed on the same panel fingerprint after
 the global-holdout fix and rejected: rank-IC fell from +0.0230 in training to

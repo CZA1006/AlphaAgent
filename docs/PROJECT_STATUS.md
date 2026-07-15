@@ -52,7 +52,15 @@ two LLMs over a shared out-of-sample window the baskets did not hold up.
   across folds rather than inherited from the first fold.
 - **Six-gate promotion judge** — data sufficiency, profile thresholds,
   multi-horizon sign consistency, walk-forward stability, tail
-  concentration, holdout decay.
+  concentration, holdout decay. Schema v6 adds predeclared session-level
+  multiple-hypothesis pressure: IC and rank-IC thresholds scale by the
+  Bonferroni one-sided z-critical ratio (`1.6858×` for 18 proposal slots),
+  while quantile spread remains an economic threshold. The family size,
+  alpha, and multiplier are persisted in requests, reports, and trails.
+  A fixed-snapshot seven-factor HK IPO OFI replay recorded `N=7` and
+  `1.4895×`; all seven remained rejected by the same deeper gates
+  (`tail_concentration=6`, `holdout_decay=1`), so the policy change did not
+  manufacture a different conclusion for the current research lead.
 - **Reproducibility chain** — `PromotionTrail` SHA-256 over every
   knob; trail-aware refinement guard; trail diff + registry.
 - **Multi-factor combination + composites** — baskets are first-class
@@ -65,7 +73,7 @@ two LLMs over a shared out-of-sample window the baskets did not hold up.
   two-invocation CLI integration test verifies the cross-process path.
 - **Typed cost-replay executor** — after event-conditioned discovery promotes
   candidates, the Director passes their exact validation cycle ids into a
-  no-LLM, no-mutation replay at 15 bps. Schema-v5 validation reports capture
+  no-LLM, no-mutation replay at 15 bps. Schema-v6 validation reports capture
   candidate source, source cycles, panel fingerprint, and cost provenance;
   snapshot mismatches fail closed. Discovery promotions and replay survivors
   are counted separately.
@@ -74,7 +82,8 @@ two LLMs over a shared out-of-sample window the baskets did not hold up.
   report. Explicit token rates remain a fallback and reports distinguish actual
   cost calls from estimated calls.
 - **Corrected bounded-loop acceptance (2026-07-14)** — DeepSeek completed three
-  proposal cycles under the global-holdout evaluator and schema-v5 budget
+  proposal cycles under the global-holdout evaluator and the then-current
+  schema-v5 budget
   ledger: 18 proposals, 18 deterministic rejections, 0 promotions, 6,806
   tokens, and `$0.00296483` provider-reported cost across three actual-cost
   calls (zero estimated calls). Rejections were `threshold_ic=9`,
@@ -272,8 +281,6 @@ real-but-fragile.
 
 - **Finding 4 (medium)** — beta neutralization is estimated in-sample
   over the full window (documented as a deliberate first cut).
-- **Finding 6 (medium)** — no multiple-hypothesis correction; with
-  18+ proposals per study, some clear by chance.
 
 ### Structural limitations
 
@@ -314,8 +321,9 @@ three-date March cluster is not enough to rescue the factors: non-overlapping
 fold cohorts contain only 3–4 positive observations in their thinnest phase.
 The global-holdout embargo audit is also closed: window-local label construction
 already purges the final `lag+horizon` training labels, and a holdout-price
-mutation test proves training metrics cannot read them. The next fixed-snapshot
-engineering task is multiple-hypothesis pressure accounting (Finding 6).
+mutation test proves training metrics cannot read them. Multiple-hypothesis
+pressure accounting is now also closed under schema v6; historical reports are
+not silently rewritten or retroactively relabeled.
 
 ### 1. Data scaling — the actual prerequisite (decided)
 
@@ -354,8 +362,6 @@ new core code.
 
 ### 3. Close the remaining audit findings (medium)
 
-- Record `n_proposals_in_session` in reports and let the judge tighten
-  thresholds under multiple-hypothesis pressure (Finding 6).
 - Optional: rolling/out-of-sample beta (Finding 4).
 
 ### 4. Round 10 — proposer prompt-engineering for composites

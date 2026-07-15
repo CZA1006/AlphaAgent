@@ -54,6 +54,7 @@ def test_strict_regime_defaults_match_proposal() -> None:
     assert r.holdout_fraction == 0.20
     assert r.embargo_days == r.lag_bars + r.forecast_horizon_bars
     assert r.extra_horizons == (1, 5, 20)
+    assert r.multiple_testing_familywise_alpha == pytest.approx(0.05)
 
 
 def test_strict_regime_yields_consistent_trail_id() -> None:
@@ -186,6 +187,8 @@ def test_build_report_aggregates_counts_and_gates() -> None:
         records=records,
     )
     assert report.n_proposals == 5
+    assert report.n_proposals_in_session == 5
+    assert report.ic_threshold_multiplier > 1.0
     assert report.n_promoted == 1
     assert report.n_rejected == 3
     assert report.n_refined == 1
@@ -249,13 +252,15 @@ def test_writer_round_trips_payload(tmp_path: Path) -> None:
     assert path is not None and path.is_file()
     payload = json.loads(path.read_text())
     assert payload["cycle_id"] == "c-rt"
-    assert payload["schema_version"] == 5
+    assert payload["schema_version"] == 6
     assert payload["memory_scope_id"] == "scope-1"
     assert payload["data_fingerprint"] == "data-1"
     assert payload["n_promoted"] == 1
     rows = read_validation_index(tmp_path)
     assert len(rows) == 1
     assert rows[0]["cycle_id"] == "c-rt"
+    assert rows[0]["n_proposals_in_session"] == 1
+    assert rows[0]["ic_threshold_multiplier"] == pytest.approx(1.0)
 
 
 def test_writer_idempotent_on_same_cycle(tmp_path: Path) -> None:

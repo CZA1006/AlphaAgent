@@ -142,6 +142,11 @@ class EvaluationRequest(BaseModel):
     # Evaluation strictness
     profile: EvaluationProfile = Field(default_factory=EvaluationProfile)
 
+    # Predeclared family size for multiple-hypothesis pressure. A single-factor
+    # caller remains fully backwards-compatible; theme/session runners set the
+    # total number of proposal slots before any candidate is judged.
+    n_proposals_in_session: int = Field(default=1, ge=1)
+
     # Cross-sectional neutralization applied to forward returns.  Default
     # ``NONE`` preserves legacy behaviour for every existing caller.
     neutralize: NeutralizeMode = NeutralizeMode.NONE

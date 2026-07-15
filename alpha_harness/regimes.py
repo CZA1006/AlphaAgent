@@ -68,6 +68,7 @@ class StrictRegime:
     min_fraction_positive_folds: float = 0.6
     max_tail_concentration: float = 0.5
     min_holdout_decay_ratio: float = 0.5
+    multiple_testing_familywise_alpha: float = 0.05
 
     # ── Convenience constructors ─────────────────────────────────────────
 
@@ -114,6 +115,7 @@ class StrictRegime:
             "min_fraction_positive_folds": self.min_fraction_positive_folds,
             "max_tail_concentration": self.max_tail_concentration,
             "min_holdout_decay_ratio": self.min_holdout_decay_ratio,
+            "multiple_testing_familywise_alpha": self.multiple_testing_familywise_alpha,
         }
 
 

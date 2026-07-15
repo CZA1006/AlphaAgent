@@ -65,6 +65,7 @@ from alpha_harness.llm import (
     default_log_path,
     token_budget_from_env,
 )
+from alpha_harness.multiple_testing import bonferroni_z_threshold_multiplier
 from alpha_harness.orchestrator.refinement import RefinementConfig, RefinementRunner
 from alpha_harness.orchestrator.research_loop import ResearchOrchestrator
 from alpha_harness.proposer import HypothesisProposer
@@ -601,6 +602,7 @@ def _build_eval_request(
     factor_id: str,
     df: pd.DataFrame,
     cost_bps: float | None = None,
+    n_proposals_in_session: int = 1,
 ) -> EvaluationRequest:
     ts_dates = pd.to_datetime(df["timestamp"]).dt.date
     return EvaluationRequest(
@@ -613,6 +615,7 @@ def _build_eval_request(
         neutralize=regime.neutralize,
         cost_bps=regime.cost_bps if cost_bps is None else cost_bps,
         holdout=regime.holdout_policy(),
+        n_proposals_in_session=n_proposals_in_session,
     )
 
 
@@ -709,6 +712,9 @@ def main(argv: list[str] | None = None) -> int:
             min_fraction_positive_folds=judge_thresholds["min_fraction_positive_folds"],
             max_tail_concentration=judge_thresholds["max_tail_concentration"],
             min_holdout_decay_ratio=judge_thresholds["min_holdout_decay_ratio"],
+            multiple_testing_familywise_alpha=judge_thresholds[
+                "multiple_testing_familywise_alpha"
+            ],
         ),
     )
 
@@ -739,12 +745,28 @@ def main(argv: list[str] | None = None) -> int:
         judge_thresholds=judge_thresholds,
     )
 
+    n_cycles = (
+        1 if candidate_source is ResearchExecutorKind.REPLAY_PROMOTED else max(1, args.n_cycles)
+    )
+    planned_session_proposals = max(1, args.n_candidates * n_cycles)
+
     # ── Build the eval request once; HarnessAgentAdapter reuses it ──────
     eval_request = _build_eval_request(
         regime=regime,
         factor_id="pending",
         df=price_data,
         cost_bps=args.cost_bps,
+        n_proposals_in_session=planned_session_proposals,
+    )
+    logger.info(
+        "Multiple-testing pressure: n_proposals_in_session=%d alpha=%.3f "
+        "ic_threshold_multiplier=%.4f",
+        eval_request.n_proposals_in_session,
+        regime.multiple_testing_familywise_alpha,
+        bonferroni_z_threshold_multiplier(
+            eval_request.n_proposals_in_session,
+            familywise_alpha=regime.multiple_testing_familywise_alpha,
+        ),
     )
     regime_trail = PromotionTrail.from_inputs(
         evaluation_request=eval_request,
@@ -814,9 +836,6 @@ def main(argv: list[str] | None = None) -> int:
             regime_trail.trail_id,
         )
     # ── Multi-cycle loop with proposer memory (Round 4A.4) ──────────────
-    n_cycles = (
-        1 if candidate_source is ResearchExecutorKind.REPLAY_PROMOTED else max(1, args.n_cycles)
-    )
     reports: list[StrictValidationReport] = []
     for i in range(n_cycles):
         sub_cycle_id = cycle_id if n_cycles == 1 else f"{cycle_id}-c{i + 1:02d}"
@@ -890,6 +909,8 @@ def main(argv: list[str] | None = None) -> int:
             started_at=sub_started,
             records=records_this_cycle,
             budget=llm_budget,
+            n_proposals_in_session=eval_request.n_proposals_in_session,
+            multiple_testing_familywise_alpha=regime.multiple_testing_familywise_alpha,
         )
         if not args.no_write:
             StrictValidationReportWriter(args.validation_dir).write(report)
@@ -955,6 +976,10 @@ def _print_summary(report: object) -> None:
     print(f"  regime trail_id   : {report.regime_trail_id}")  # type: ignore[attr-defined]
     print(f"  universe_id       : {report.universe_id}")  # type: ignore[attr-defined]
     print(f"  proposals tried   : {report.n_proposals}")  # type: ignore[attr-defined]
+    print(
+        f"  proposal family   : {report.n_proposals_in_session} "  # type: ignore[attr-defined]
+        f"(IC x{report.ic_threshold_multiplier:.4f})",
+    )
     print(f"  promoted          : {report.n_promoted}")  # type: ignore[attr-defined]
     print(f"  refined           : {report.n_refined}")  # type: ignore[attr-defined]
     print(f"  rejected          : {report.n_rejected}")  # type: ignore[attr-defined]
@@ -974,6 +999,8 @@ def _print_summary(report: object) -> None:
             {
                 "cycle_id": report.cycle_id,  # type: ignore[attr-defined]
                 "n_proposals": report.n_proposals,  # type: ignore[attr-defined]
+                "n_proposals_in_session": report.n_proposals_in_session,  # type: ignore[attr-defined]
+                "ic_threshold_multiplier": report.ic_threshold_multiplier,  # type: ignore[attr-defined]
                 "n_promoted": report.n_promoted,  # type: ignore[attr-defined]
                 "n_rejected": report.n_rejected,  # type: ignore[attr-defined]
             }

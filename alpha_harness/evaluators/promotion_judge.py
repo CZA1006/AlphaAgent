@@ -8,6 +8,10 @@ method signature — no ambient state.
 from __future__ import annotations
 
 from alpha_harness.evaluators.novelty import NoveltyEvaluator
+from alpha_harness.multiple_testing import (
+    DEFAULT_FAMILYWISE_ALPHA,
+    bonferroni_z_threshold_multiplier,
+)
 from alpha_harness.schemas.evaluation import (
     EvaluationBundle,
     EvaluationProfile,
@@ -46,12 +50,18 @@ class PromotionJudge:
         min_fraction_positive_folds: float = 0.6,
         max_tail_concentration: float = 0.5,
         min_holdout_decay_ratio: float = 0.5,
+        multiple_testing_familywise_alpha: float = DEFAULT_FAMILYWISE_ALPHA,
     ) -> None:
         self._novelty = novelty_evaluator or NoveltyEvaluator()
         self._refine_margin = refine_margin
         self._min_frac_positive = min_fraction_positive_folds
         self._max_tail_concentration = max_tail_concentration
         self._min_holdout_decay = min_holdout_decay_ratio
+        self._multiple_testing_alpha = multiple_testing_familywise_alpha
+        bonferroni_z_threshold_multiplier(
+            1,
+            familywise_alpha=multiple_testing_familywise_alpha,
+        )
 
     def judge(
         self,
@@ -80,7 +90,7 @@ class PromotionJudge:
             )
 
         # ── 2. Profile pass ────────────────────────────────────────────
-        failure = self._check_profile(evaluation, profile)
+        failure = self._check_profile(evaluation, request)
         if failure is not None:
             return JudgmentDetail(
                 decision=ExperimentDecision.REJECT,
@@ -137,7 +147,7 @@ class PromotionJudge:
             )
 
         # ── 4. Margin check → REFINE vs PROMOTE ──────────────────────
-        if self._is_borderline(evaluation, profile):
+        if self._is_borderline(evaluation, request):
             return JudgmentDetail(
                 decision=ExperimentDecision.REFINE,
                 notes="Metrics pass but are within the refine margin.",
@@ -168,9 +178,12 @@ class PromotionJudge:
         return None
 
     def _check_profile(
-        self, evaluation: EvaluationBundle, profile: EvaluationProfile
+        self,
+        evaluation: EvaluationBundle,
+        request: EvaluationRequest,
     ) -> FailureRecord | None:
         """Reject if any required metric is missing or below threshold."""
+        profile = request.profile
         for metric in profile.required_metrics:
             value = getattr(evaluation, metric.value, None)
             if value is None:
@@ -178,11 +191,25 @@ class PromotionJudge:
                     category=FailureCategory.WEAK_SIGNAL,
                     detail=f"Required metric '{metric.value}' is missing.",
                 )
-            threshold = profile.thresholds.get(metric.value)
+            base_threshold = profile.thresholds.get(metric.value)
+            threshold = self._session_adjusted_threshold(
+                metric.value,
+                base_threshold,
+                request,
+            )
             if threshold is not None and value < threshold:
+                pressure = ""
+                if threshold != base_threshold:
+                    pressure = (
+                        f" (base={base_threshold:.4f}, "
+                        f"n_proposals_in_session={request.n_proposals_in_session})"
+                    )
                 return FailureRecord(
                     category=FailureCategory.WEAK_SIGNAL,
-                    detail=(f"{metric.value}={value:.4f} < threshold={threshold:.4f}"),
+                    detail=(
+                        f"{metric.value}={value:.4f} < threshold={threshold:.4f}"
+                        f"{pressure}"
+                    ),
                 )
         return None
 
@@ -285,6 +312,7 @@ class PromotionJudge:
                 "min_fraction_positive_folds": self._min_frac_positive,
                 "max_tail_concentration": self._max_tail_concentration,
                 "min_holdout_decay_ratio": self._min_holdout_decay,
+                "multiple_testing_familywise_alpha": self._multiple_testing_alpha,
             },
             walk_forward=wf_dict,
         )
@@ -333,11 +361,34 @@ class PromotionJudge:
             )
         return None
 
-    def _is_borderline(self, evaluation: EvaluationBundle, profile: EvaluationProfile) -> bool:
+    def _session_adjusted_threshold(
+        self,
+        metric_name: str,
+        base_threshold: float | None,
+        request: EvaluationRequest,
+    ) -> float | None:
+        if base_threshold is None or metric_name not in {"ic", "rank_ic"}:
+            return base_threshold
+        multiplier = bonferroni_z_threshold_multiplier(
+            request.n_proposals_in_session,
+            familywise_alpha=self._multiple_testing_alpha,
+        )
+        return base_threshold * multiplier
+
+    def _is_borderline(
+        self,
+        evaluation: EvaluationBundle,
+        request: EvaluationRequest,
+    ) -> bool:
         """Check if any required metric is within the refine margin of its threshold."""
+        profile = request.profile
         for metric in profile.required_metrics:
             value = getattr(evaluation, metric.value, None)
-            threshold = profile.thresholds.get(metric.value)
+            threshold = self._session_adjusted_threshold(
+                metric.value,
+                profile.thresholds.get(metric.value),
+                request,
+            )
             if value is not None and threshold is not None and threshold > 0:
                 margin = (value - threshold) / threshold
                 if margin < self._refine_margin:

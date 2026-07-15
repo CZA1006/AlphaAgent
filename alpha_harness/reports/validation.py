@@ -31,6 +31,10 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from alpha_harness.multiple_testing import (
+    DEFAULT_FAMILYWISE_ALPHA,
+    bonferroni_z_threshold_multiplier,
+)
 from alpha_harness.reports.cycle_report import BudgetSnapshot, snapshot_budget
 from alpha_harness.schemas.experiment import ExperimentDecision, ExperimentRecord
 
@@ -38,7 +42,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_VALIDATION_DIR = Path("artifacts/validations")
 VALIDATION_INDEX_NAME = "_index.jsonl"
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 
 # ── Schema ──────────────────────────────────────────────────────────────────
@@ -92,6 +96,13 @@ class StrictValidationReport(BaseModel):
     started_at: datetime
     finished_at: datetime
     n_proposals: int
+    n_proposals_in_session: int = Field(default=1, ge=1)
+    multiple_testing_familywise_alpha: float = Field(
+        default=DEFAULT_FAMILYWISE_ALPHA,
+        gt=0.0,
+        lt=0.5,
+    )
+    ic_threshold_multiplier: float = Field(default=1.0, ge=1.0)
     n_promoted: int
     n_refined: int
     n_rejected: int
@@ -160,6 +171,8 @@ def build_validation_report(
     finished_at: datetime | None = None,
     notes: str = "",
     budget: Any | None = None,
+    n_proposals_in_session: int | None = None,
+    multiple_testing_familywise_alpha: float = DEFAULT_FAMILYWISE_ALPHA,
 ) -> StrictValidationReport:
     """Aggregate ``records`` into a :class:`StrictValidationReport`."""
     finished = finished_at or datetime.now(UTC)
@@ -215,6 +228,18 @@ def build_validation_report(
             ),
         )
 
+    if n_proposals_in_session is None:
+        recorded_family_sizes = [
+            record.eval_request.n_proposals_in_session
+            for record in records
+            if record.eval_request is not None
+        ]
+        n_proposals_in_session = max(recorded_family_sizes, default=max(1, len(records)))
+    threshold_multiplier = bonferroni_z_threshold_multiplier(
+        n_proposals_in_session,
+        familywise_alpha=multiple_testing_familywise_alpha,
+    )
+
     return StrictValidationReport(
         cycle_id=cycle_id,
         regime_trail_id=regime_trail_id,
@@ -227,6 +252,9 @@ def build_validation_report(
         started_at=started_at,
         finished_at=finished,
         n_proposals=len(records),
+        n_proposals_in_session=n_proposals_in_session,
+        multiple_testing_familywise_alpha=multiple_testing_familywise_alpha,
+        ic_threshold_multiplier=threshold_multiplier,
         n_promoted=counts["promoted"],
         n_refined=counts["refined"],
         n_rejected=counts["rejected"],
@@ -420,6 +448,9 @@ class StrictValidationReportWriter:
                 "started_at": report.started_at.isoformat(),
                 "finished_at": report.finished_at.isoformat(),
                 "n_proposals": report.n_proposals,
+                "n_proposals_in_session": report.n_proposals_in_session,
+                "multiple_testing_familywise_alpha": report.multiple_testing_familywise_alpha,
+                "ic_threshold_multiplier": report.ic_threshold_multiplier,
                 "n_promoted": report.n_promoted,
                 "n_rejected": report.n_rejected,
                 "promoted_factor_ids": list(report.promoted_factor_ids),

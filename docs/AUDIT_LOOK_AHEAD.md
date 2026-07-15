@@ -13,7 +13,7 @@
 | 3 | TAIL holdout label overlap | medium | resolved by window-local labels; regression added 2026-07-15 |
 | 4 | Beta neutralization is estimated in-sample over full window | medium | acknowledged in code |
 | 5 | SP-50 universe is survivorship-biased by construction | medium | acknowledged in universe header |
-| 6 | No multiple-hypothesis correction over proposer cycles | medium | methodology — open |
+| 6 | No multiple-hypothesis pressure over proposer cycles | medium | resolved by schema v6 session thresholds |
 | 7 | DSL rolling operators use `min_periods=1` | low | acknowledged in code |
 | 8 | Sector neutralization uses a static (non-point-in-time) map | low | acknowledged in code |
 | 9 | `SignalQualityEvaluator` recomputes signals per-fold, inflating IC vs the realistic compute-then-slice approach | **CRITICAL** | ✅ fixed in this revision; regression test in `tests/unit/test_finding9_regression.py` |
@@ -137,7 +137,7 @@ bounded for a 2-year window in mega-caps — delistings are rare —
 but the harness should support a point-in-time universe loader for
 serious research (out of scope for the current rounds).
 
-## Finding 6 (medium): no multiple-hypothesis correction
+## Finding 6 (resolved): no multiple-hypothesis pressure
 
 **Where:** the proposer + judge stack as a whole.
 
@@ -148,15 +148,24 @@ false-discovery correction over the cycle.  The Q2 2026 case study's
 4 "both-positive" survivors among 23 evaluations is consistent with
 selection from a no-effect null at conventional FDR levels.
 
-**Mitigation:** the 6-gate judge (walk-forward stability, holdout
-decay, tail concentration, sign consistency) provides indirect
-correction — a factor that clears them all by chance from 18 tries is
-genuinely rare.  But the cumulative regime doesn't track or display
-"effective alpha" given the number of hypotheses tested.
+**Prior mitigation:** the 6-gate judge (walk-forward stability, holdout
+decay, tail concentration, sign consistency) provided indirect correction,
+but the cumulative regime did not track or display the hypothesis-family
+size.
 
-**Fix path:** record `n_proposals_in_session` in the strict-validation
-report and let the judge enforce a tighter threshold when the session
-count is high.  Phase 9-ish work; not blocking.
+**Resolution (2026-07-15).** The predeclared proposal-slot count is now part of
+`EvaluationRequest`, schema-v6 validation reports, memory scopes, and promotion
+trails. The judge applies a deterministic Bonferroni z-critical multiplier to
+IC and rank-IC thresholds only:
+
+`z(1 - 0.05 / N) / z(0.95)`
+
+`N=1` preserves the previous thresholds exactly; `N=18` multiplies them by
+1.6858. Quantile spread remains an economic threshold rather than being
+misrepresented as a significance test. This is an explicit pressure policy,
+not a p-value computed from observed IC. A synthetic 3×6 acceptance run records
+`N=18` even when the proposer returns fewer valid candidates, preventing
+post-hoc relaxation of the family size.
 
 ## Finding 7 (low): `min_periods=1` in DSL rolling operators
 
@@ -322,8 +331,8 @@ the experiment.
    (`docs/CASE_STUDY_HONEST.md` post-fix section), so the corrected
    metrics speak for themselves going forward.
 4. **(resolved)** Verify and surface the window-local holdout purge.
-5. **(medium)** Add `n_proposals_in_session` to validation reports
-   so multiple-hypothesis pressure is visible.
+5. **(resolved)** Record the predeclared proposal family and apply the
+   schema-v6 Bonferroni z-threshold pressure policy.
 6. **(low)** Add point-in-time universe loader path for future
    research; SP-50 is fine for harness-validation purposes.
 

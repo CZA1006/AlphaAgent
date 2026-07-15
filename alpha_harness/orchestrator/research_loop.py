@@ -197,6 +197,14 @@ class ResearchOrchestrator:
         -------
         List of ExperimentRecords, one per hypothesis.
         """
+        session_request = eval_request.model_copy(
+            update={
+                "n_proposals_in_session": max(
+                    eval_request.n_proposals_in_session,
+                    len(hypotheses),
+                ),
+            },
+        )
         results: list[ExperimentRecord] = []
         for i, hypothesis in enumerate(hypotheses):
             logger.info(
@@ -205,7 +213,7 @@ class ResearchOrchestrator:
                 len(hypotheses),
                 hypothesis.id,
             )
-            record = self.run_cycle(hypothesis, eval_request)
+            record = self.run_cycle(hypothesis, session_request)
             results.append(record)
         return results
 

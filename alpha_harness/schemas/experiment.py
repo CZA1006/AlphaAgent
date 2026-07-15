@@ -80,8 +80,11 @@ class PromotionTrail(BaseModel):
     min_fraction_positive_folds: float = 0.6
     max_tail_concentration: float = 0.5
     min_holdout_decay_ratio: float = 0.5
+    n_proposals_in_session: int = Field(default=1, ge=1)
+    multiple_testing_familywise_alpha: float = Field(default=0.05, gt=0.0, lt=0.5)
+    ic_threshold_multiplier: float = Field(default=1.0, ge=1.0)
     # Optional upstream candidate-selection provenance. Empty for normal
-    # single-factor promotion, preserving historical trail hashes.
+    # single-factor promotion.
     selection: dict[str, str | int | float] = Field(default_factory=dict)
 
     @classmethod
@@ -111,6 +114,16 @@ class PromotionTrail(BaseModel):
         label = getattr(evaluation_request, "label", None)
         holdout = getattr(evaluation_request, "holdout", None)
         wf = dict(walk_forward or {})
+        n_proposals = int(getattr(evaluation_request, "n_proposals_in_session", 1))
+        multiple_testing_alpha = float(
+            judge_thresholds.get("multiple_testing_familywise_alpha", 0.05),
+        )
+        from alpha_harness.multiple_testing import bonferroni_z_threshold_multiplier
+
+        threshold_multiplier = bonferroni_z_threshold_multiplier(
+            n_proposals,
+            familywise_alpha=multiple_testing_alpha,
+        )
 
         body = {
             "neutralize": str(getattr(evaluation_request, "neutralize", "none")),
@@ -133,6 +146,9 @@ class PromotionTrail(BaseModel):
             "min_holdout_decay_ratio": float(
                 judge_thresholds.get("min_holdout_decay_ratio", 0.5),
             ),
+            "n_proposals_in_session": n_proposals,
+            "multiple_testing_familywise_alpha": multiple_testing_alpha,
+            "ic_threshold_multiplier": threshold_multiplier,
         }
         if selection:
             body["selection"] = dict(selection)

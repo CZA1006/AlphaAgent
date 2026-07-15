@@ -781,6 +781,8 @@ class TestResearchOrchestrator:
         assert len(records) == 3
         for record in records:
             assert record.decision in list(ExperimentDecision)
+            assert record.eval_request is not None
+            assert record.eval_request.n_proposals_in_session == 3
 
     def test_summary_counts(self) -> None:
         orch = self._build_orchestrator()

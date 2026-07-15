@@ -133,6 +133,20 @@ def test_trail_captures_walk_forward_immutables() -> None:
     assert trail.walk_forward == wf
 
 
+def test_session_family_size_changes_trail_id() -> None:
+    single = PromotionTrail.from_inputs(
+        evaluation_request=_request(),
+        judge_thresholds={},
+    )
+    family = PromotionTrail.from_inputs(
+        evaluation_request=_request(n_proposals_in_session=18),
+        judge_thresholds={},
+    )
+    assert family.trail_id != single.trail_id
+    assert family.n_proposals_in_session == 18
+    assert family.ic_threshold_multiplier == pytest.approx(1.6858164454)
+
+
 def test_trail_id_is_independent_of_runtime_walk_forward_stats() -> None:
     base = {"n_folds": 4, "fold_size_days": 60, "step_days": 20}
     a = PromotionTrail.from_inputs(

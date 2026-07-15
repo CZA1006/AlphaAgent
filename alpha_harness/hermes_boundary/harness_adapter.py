@@ -199,9 +199,17 @@ class HarnessAgentAdapter:
             source="harness_adapter",
             extra_tags=extra_tags,
         )
+        session_request = self._eval_request.model_copy(
+            update={
+                "n_proposals_in_session": max(
+                    self._eval_request.n_proposals_in_session,
+                    request.n_candidates,
+                ),
+            },
+        )
 
         for hypothesis in hypotheses:
-            outcome = self._run_hypothesis(hypothesis)
+            outcome = self._run_hypothesis(hypothesis, eval_request=session_request)
             roots.append(_record_to_response(outcome.root))
             refinements.extend(
                 _record_to_response(child) for child in outcome.children
@@ -219,12 +227,18 @@ class HarnessAgentAdapter:
 
     # ── Internals ────────────────────────────────────────────────────────
 
-    def _run_hypothesis(self, hypothesis: Hypothesis) -> _RunResult:
+    def _run_hypothesis(
+        self,
+        hypothesis: Hypothesis,
+        *,
+        eval_request: EvaluationRequest | None = None,
+    ) -> _RunResult:
         """Run one hypothesis through the orchestrator (+ refinement if any)."""
+        request = eval_request or self._eval_request
         if self._refinement is not None:
-            result = self._refinement.run(hypothesis, self._eval_request)
+            result = self._refinement.run(hypothesis, request)
             return _RunResult(root=result.root, children=list(result.children))
-        record = self._orchestrator.run_cycle(hypothesis, self._eval_request)
+        record = self._orchestrator.run_cycle(hypothesis, request)
         return _RunResult(root=record, children=[])
 
 

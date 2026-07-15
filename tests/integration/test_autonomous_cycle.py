@@ -80,16 +80,16 @@ def test_autonomous_cycle_surfaces_refine_branch(
     """
     # The default ic_threshold=0.02 is too permissive: strong signals clear it
     # outright and weak ones fall below it, leaving no REFINE verdicts. We
-    # deliberately lift the bar just above one of the mock candidates' typical
-    # ICs so it passes the threshold but lands inside the default 20% refine
-    # margin → REFINE → refinement runner fires.
+    # deliberately lift the base bar so its N=3 session-adjusted value lands
+    # just below one mock candidate's typical IC. The candidate passes but stays
+    # inside the default 20% refine margin, so the refinement runner fires.
     exit_code = autonomous_main([
         "--mock-llm",
         "--n-candidates", "3",
         "--n-days", "180",
         "--n-symbols", "8",
         "--seed", "11",
-        "--ic-threshold", "0.08",
+        "--ic-threshold", "0.065",
         "--max-depth", "1",
         "--max-variants-per-step", "2",
         "--max-total-children", "4",

@@ -238,6 +238,11 @@ class TestRunTheme:
         assert outcomes == {CycleOutcome.PROMOTED, CycleOutcome.REJECTED}
         # Registry ends up with at least the two root experiments.
         assert len(experiments.list_all()) >= 2
+        assert all(
+            record.eval_request is not None
+            and record.eval_request.n_proposals_in_session == 2
+            for record in experiments.list_all()
+        )
 
     def test_drops_invalid_dsl_candidates(self) -> None:
         evaluator = _ScriptedEvaluator({"rank(close)": (0.10, 0.12, 0.02)})
