@@ -63,6 +63,13 @@ static auditor also prevents network or LLM access from entering deterministic
 evaluators. It additionally blocks market literals throughout the generic core;
 director topics, context, and post-run transitions are loaded from market packs.
 
+Python callers use the typed `alpha_harness.sdk` facade for validation,
+combination, director planning, autonomous runs, and artifact lookup. SDK paths
+resolve one `MarketPack` and pass its DSL fields explicitly. CLI scripts retain
+their existing output contracts as thin adapters over the same facade. Local
+artifacts remain byte-compatible under `artifacts/` behind `ArtifactStore`;
+there is intentionally no HTTP server in P0.
+
 ## What works today (post Round 4–10)
 
 The full agent loop runs end-to-end on real data and **closes back on itself**:

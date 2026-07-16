@@ -59,6 +59,15 @@ The live alpha hypothesis is the HK IPO order-flow track.
   modules, and typed transition tables. The autonomous researcher accepts any
   registered market; HK IPO behavior is preserved while the US-equities pack
   proves topic selection and promotion transitions without market-id branches.
+- **Typed SDK and artifact boundary (Productization P0 Stage 3)** —
+  `alpha_harness.sdk` now exposes typed validation, combination, planning,
+  autonomous-run, and artifact-query entry points. SDK validation and
+  combination resolve one market pack and explicitly thread only that pack's
+  DSL fields into compilation. `LocalArtifactStore` preserves the existing
+  validation, promotion, trail, autonomous-run, and research-task paths and
+  JSON bytes; legacy readers and writers round-trip through the abstraction.
+  Four mock/synthetic golden-output tests pin the major CLI stdout contracts.
+  P0 adds no HTTP server or serving dependency.
 - **Safe factor DSL** — whitelisted fields + functions, typed AST, no
   `eval`/arbitrary code.  Deterministic, test-covered execution.
 - **Continuous event proximity** — `event_decay(distance, half_life)` maps
