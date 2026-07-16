@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "market_id": "us_equities_daily",
+  "display_name": "US Equities Daily",
+  "universe_file": "configs/universes/sp50.txt",
+  "data": {
+    "loader": "parquet",
+    "base_path": "data/silver/equities"
+  },
+  "extra_dsl_fields": {},
+  "mock_presets": ["default"],
+  "director_topics": [
+    {
+      "topic_id": "us_equities_daily_price_volume",
+      "theme": "US equity daily price and volume signals",
+      "priority": 100,
+      "rationale": "Exercise the market-pack base case using universal OHLCV fields only."
+    }
+  ],
+  "post_run_transitions": {},
+  "sql_templates": {}
+}

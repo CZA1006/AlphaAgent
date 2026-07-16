@@ -1,0 +1,169 @@
+{
+  "schema_version": 1,
+  "market_id": "hk_ipo",
+  "display_name": "Hong Kong IPO Equities",
+  "universe_file": "configs/universes/hk_ipo.txt",
+  "data": {
+    "loader": "bigquery",
+    "project": "bloomberg-database-0629",
+    "project_env": "GCP_PROJECT",
+    "dataset": "hk_ipo_research",
+    "dataset_env": "HK_IPO_DATASET",
+    "tables": {
+      "prices": "ipo_daily_prices",
+      "micro": "micro_features_daily",
+      "event_features": "ipo_event_features_daily",
+      "intraday": "micro_features_intraday_v1_candidate",
+      "ticks": "tick_events_ext"
+    },
+    "join_columns": {
+      "micro": [
+        "ofi",
+        "rel_spread",
+        "realized_vol",
+        "n_trades",
+        "tick_volume",
+        "avg_trade_size",
+        "n_quotes"
+      ],
+      "event_features": [
+        "days_since_listing",
+        "days_since_pricing",
+        "days_to_next_cornerstone_lockup",
+        "days_since_prev_cornerstone_lockup",
+        "next_cornerstone_unlock_shares",
+        "next_cornerstone_unlock_pct_offer",
+        "next_cornerstone_unlock_pct_cap",
+        "days_to_next_greenshoe_expiry",
+        "days_since_prev_greenshoe_expiry",
+        "days_to_next_greenshoe_exercise",
+        "days_since_prev_greenshoe_exercise",
+        "days_to_next_stabilization_end",
+        "days_since_prev_stabilization_end",
+        "days_since_prev_stabilization_start",
+        "is_pre_greenshoe_expiry_5d",
+        "is_near_greenshoe_expiry_5d",
+        "is_near_greenshoe_exercise_5d",
+        "is_pre_cornerstone_lockup_5d",
+        "is_near_cornerstone_lockup_5d",
+        "is_pre_stabilization_end_5d",
+        "is_near_stabilization_end_5d",
+        "is_stabilization_window_active"
+      ],
+      "intraday": [
+        "first_hour_n_trades",
+        "first_hour_tick_volume",
+        "first_hour_ofi",
+        "first_hour_rel_spread",
+        "first_hour_realized_vol",
+        "first_hour_n_quotes",
+        "opening_auction_trade_share",
+        "prior_20d_first_hour_rel_spread",
+        "prior_20d_first_hour_tick_volume",
+        "first_hour_spread_shock",
+        "first_hour_liquidity_withdrawal"
+      ]
+    },
+    "loader_kwargs": {
+      "with_micro_features": true,
+      "with_event_features": true,
+      "with_intraday_features": false,
+      "max_bytes_billed": 1073741824,
+      "tick_max_bytes_billed": 5368709120
+    }
+  },
+  "extra_dsl_fields": {
+    "ofi": "Daily order-flow imbalance from signed tick volume.",
+    "rel_spread": "Daily average relative bid-ask spread.",
+    "realized_vol": "Intraday realized volatility sampled at one-minute intervals.",
+    "n_trades": "Daily trade count.",
+    "tick_volume": "Daily summed tick trade size.",
+    "avg_trade_size": "Daily mean trade size.",
+    "n_quotes": "Daily quote-update count.",
+    "days_since_listing": "Trading-day distance since listing.",
+    "days_since_pricing": "Trading-day distance since IPO pricing.",
+    "days_to_next_cornerstone_lockup": "Days to the next cornerstone lockup expiry.",
+    "next_cornerstone_unlock_pct_offer": "Next cornerstone unlock as a share of the offer.",
+    "days_since_prev_cornerstone_lockup": "Days since the previous cornerstone lockup expiry.",
+    "next_cornerstone_unlock_shares": "Shares in the next cornerstone unlock.",
+    "next_cornerstone_unlock_pct_cap": "Next cornerstone unlock as a share of market cap.",
+    "days_to_next_greenshoe_expiry": "Days to the next greenshoe expiry.",
+    "days_to_next_stabilization_end": "Days to the next stabilization end.",
+    "days_since_prev_greenshoe_expiry": "Days since the previous greenshoe expiry.",
+    "days_to_next_greenshoe_exercise": "Days to the next greenshoe exercise.",
+    "days_since_prev_greenshoe_exercise": "Days since the previous greenshoe exercise.",
+    "days_since_prev_stabilization_end": "Days since the previous stabilization end.",
+    "days_since_prev_stabilization_start": "Days since the previous stabilization start.",
+    "is_pre_greenshoe_expiry_5d": "Indicator for the five days before greenshoe expiry.",
+    "is_pre_cornerstone_lockup_5d": "Indicator for the five days before a cornerstone unlock.",
+    "is_near_greenshoe_expiry_5d": "Indicator for a five-day greenshoe-expiry neighborhood.",
+    "is_near_greenshoe_exercise_5d": "Indicator for a five-day greenshoe-exercise neighborhood.",
+    "is_near_cornerstone_lockup_5d": "Indicator for a five-day cornerstone-unlock neighborhood.",
+    "is_pre_stabilization_end_5d": "Indicator for the five days before stabilization ends.",
+    "is_near_stabilization_end_5d": "Indicator for a five-day stabilization-end neighborhood.",
+    "is_stabilization_window_active": "Indicator for an active stabilization window.",
+    "first_hour_n_trades": "First-hour trade count.",
+    "first_hour_tick_volume": "First-hour summed trade size.",
+    "first_hour_ofi": "First-hour order-flow imbalance.",
+    "first_hour_rel_spread": "First-hour relative spread.",
+    "first_hour_realized_vol": "First-hour realized volatility.",
+    "first_hour_n_quotes": "First-hour quote-update count.",
+    "opening_auction_trade_share": "Opening-auction share of daily trades.",
+    "prior_20d_first_hour_rel_spread": "Lagged 20-day first-hour spread baseline.",
+    "prior_20d_first_hour_tick_volume": "Lagged 20-day first-hour volume baseline.",
+    "first_hour_spread_shock": "First-hour spread relative to its lagged baseline.",
+    "first_hour_liquidity_withdrawal": "First-hour liquidity-withdrawal score."
+  },
+  "mock_presets": ["hk_ipo_events", "hk_ipo_micro"],
+  "director_topics": [
+    {
+      "topic_id": "hk_ipo_event_conditioned_microstructure",
+      "theme": "HK IPO continuous event-decay microstructure signals",
+      "priority": 100,
+      "history_penalty": 5,
+      "rationale": "Use aligned daily, microstructure, and event tables for continuous event-distance interactions.",
+      "extra_guidance": "Retain a daily base microstructure signal and add a continuous event_decay interaction; do not collapse the cross-section with a Boolean event gate.",
+      "data_requirements": ["ipo_daily_prices", "micro_features_daily", "ipo_event_features_daily", "ipo_event_dates_curated"]
+    },
+    {
+      "topic_id": "hk_ipo_event_truth_review",
+      "executor": "event_truth_audit",
+      "theme": "HK IPO event truth and document review",
+      "priority": 85,
+      "rationale": "Audit unresolved event terms before treating data gaps as research outcomes.",
+      "data_requirements": ["event_terms_needs_review", "bloomberg_lockup_anomalies"]
+    },
+    {
+      "topic_id": "hk_ipo_cost_realism_oos",
+      "executor": "replay_promoted",
+      "theme": "HK IPO implementability and cost realism",
+      "priority": 75,
+      "rationale": "Stress promoted candidates for costs, turnover, and holdout decay.",
+      "data_requirements": ["ipo_daily_prices", "micro_features_daily", "ipo_event_features_daily"]
+    },
+    {
+      "topic_id": "hk_ipo_raw_tick_intraday_features",
+      "executor": "raw_tick_materialization_plan",
+      "theme": "HK IPO raw-tick intraday pressure features",
+      "priority": 65,
+      "rationale": "Plan guarded materialization of first-hour and event-window tick features.",
+      "data_requirements": ["tick_manifest_target", "raw_tick_intraday_loop_gap", "nonpositive_tick_values"]
+    }
+  ],
+  "post_run_transitions": {
+    "on_promotion": {
+      "hk_ipo_event_conditioned_microstructure": "hk_ipo_cost_realism_oos"
+    },
+    "on_data_gap": "hk_ipo_event_truth_review",
+    "stop_after_topics": ["hk_ipo_event_truth_review", "hk_ipo_cost_realism_oos", "hk_ipo_raw_tick_intraday_features"]
+  },
+  "sql_templates": {
+    "event_features_daily": "scripts/sql/ipo_event_features_daily.sql",
+    "event_terms_curated": "scripts/sql/ipo_event_terms_curated.sql",
+    "micro_features_daily": "scripts/sql/micro_features_daily.sql",
+    "micro_features_intraday_v1": "scripts/sql/micro_features_intraday_v1.sql",
+    "micro_features_intraday_v1_post_qa": "scripts/sql/micro_features_intraday_v1_post_qa.sql",
+    "raw_tick_nonpositive_qa": "scripts/sql/raw_tick_nonpositive_qa.sql",
+    "tick_manifest_target": "scripts/sql/tick_manifest_target.sql"
+  }
+}

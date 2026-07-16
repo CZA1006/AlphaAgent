@@ -45,6 +45,12 @@ The live alpha hypothesis is the HK IPO order-flow track.
   plus an independent integration smoke job on Python 3.11. The workflow
   uses a frozen lockfile, uv caching, read-only repository permissions, and
   requires no market-data or LLM secrets.
+- **Typed market-pack foundation (Productization P0 Stage 1)** — immutable
+  Pydantic contracts and a read-only JSON registry now describe HK IPO and
+  US-equities data, DSL fields, mock presets, director topics, transitions,
+  and SQL templates. Consumers remain on their existing defaults until each
+  Stage 1 migration is separately regression-checked. A fixed synthetic panel
+  pins the pre-migration data fingerprint and strict promotion trail id.
 - **Safe factor DSL** — whitelisted fields + functions, typed AST, no
   `eval`/arbitrary code.  Deterministic, test-covered execution.
 - **Continuous event proximity** — `event_decay(distance, half_life)` maps
