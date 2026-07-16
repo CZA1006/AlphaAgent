@@ -159,9 +159,7 @@ def main(argv: list[str] | None = None) -> int:
         from alpha_harness.data.loader_factory import create_equities_loader
         from alpha_harness.data.models import DataRequest
 
-        symbols = (
-            args.symbols.split(",") if args.symbols else ["AAPL", "MSFT", "GOOG"]
-        )
+        symbols = args.symbols.split(",") if args.symbols else ["AAPL", "MSFT", "GOOG"]
         try:
             start = date.fromisoformat(args.start_date)
             end = date.fromisoformat(args.end_date)
@@ -185,7 +183,10 @@ def main(argv: list[str] | None = None) -> int:
         if meta.bars_returned == 0:
             logger.error(
                 "No data returned from %s for symbols %s in %s..%s",
-                args.data_source, symbols, start, end,
+                args.data_source,
+                symbols,
+                start,
+                end,
             )
             return 1
         logger.info(

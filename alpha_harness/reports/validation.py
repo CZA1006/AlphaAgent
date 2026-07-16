@@ -243,9 +243,7 @@ def build_validation_report(
         if isinstance(complement_meta, dict):
             n_complement_candidates += 1
         base_recipe_id = (
-            complement_meta.get("base_recipe_id")
-            if isinstance(complement_meta, dict)
-            else None
+            complement_meta.get("base_recipe_id") if isinstance(complement_meta, dict) else None
         )
         candidate_expression = (
             complement_meta.get("candidate_expression")

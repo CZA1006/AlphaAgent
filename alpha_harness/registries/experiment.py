@@ -35,6 +35,4 @@ class ExperimentRegistry(InMemoryRegistry[ExperimentRecord]):
         Mirrors the SQL-backed registry's method so retrieval / context
         code can call either implementation interchangeably.
         """
-        return sorted(
-            self.list_all(), key=lambda e: e.created_at, reverse=True
-        )[:limit]
+        return sorted(self.list_all(), key=lambda e: e.created_at, reverse=True)[:limit]

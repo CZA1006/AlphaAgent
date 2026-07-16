@@ -211,7 +211,10 @@ def _feature_multiset(node: CanonNode) -> dict[FeatureKey, int]:
 
 
 def _walk_features(
-    node: CanonNode, counts: dict[FeatureKey, int], *, depth: int,
+    node: CanonNode,
+    counts: dict[FeatureKey, int],
+    *,
+    depth: int,
 ) -> None:
     kind = node[0]
     key: FeatureKey

@@ -127,7 +127,8 @@ class HarnessAgentAdapter:
         )
 
     def translate_to_response(
-        self, experiment_id: str,
+        self,
+        experiment_id: str,
     ) -> ResearchCycleResponse:
         """Build an agent-friendly response from a stored experiment."""
         record = self._experiments.get(experiment_id)
@@ -144,7 +145,8 @@ class HarnessAgentAdapter:
     # ── Single-cycle entry point ─────────────────────────────────────────
 
     def run_cycle(
-        self, request: ResearchCycleRequest,
+        self,
+        request: ResearchCycleRequest,
     ) -> ResearchCycleResponse:
         """Run a single research cycle from a typed request.
 
@@ -194,7 +196,8 @@ class HarnessAgentAdapter:
         )
         logger.info(
             "Theme cycle: theme=%r n_candidates=%d",
-            request.theme, request.n_candidates,
+            request.theme,
+            request.n_candidates,
         )
         proposal_result = self._proposer.propose(proposal_request)
 
@@ -235,9 +238,7 @@ class HarnessAgentAdapter:
                 precompiled_factor=precompiled,
             )
             roots.append(_record_to_response(outcome.root))
-            refinements.extend(
-                _record_to_response(child) for child in outcome.children
-            )
+            refinements.extend(_record_to_response(child) for child in outcome.children)
 
         return ThemeCycleResponse(
             theme=request.theme,
@@ -284,7 +285,8 @@ def _coerce_asset_class(raw: str) -> AssetClass:
         return AssetClass(raw)
     except ValueError:
         logger.warning(
-            "Unknown asset_class %r; falling back to us_equity.", raw,
+            "Unknown asset_class %r; falling back to us_equity.",
+            raw,
         )
         return AssetClass.US_EQUITY
 
@@ -341,9 +343,7 @@ def _record_to_response(record: ExperimentRecord) -> ResearchCycleResponse:
         hypothesis_id=record.hypothesis.id,
         factor_name=record.factor.name,
         outcome=_decision_to_outcome(record.decision),
-        failure_category=(
-            record.failure.category.value if record.failure else None
-        ),
+        failure_category=(record.failure.category.value if record.failure else None),
         failure_detail=(record.failure.detail if record.failure else ""),
         notes=record.notes,
         ic=record.evaluation.ic,

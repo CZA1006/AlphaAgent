@@ -103,7 +103,9 @@ class TestFullResearchCycle:
     """End-to-end: hypothesis -> compile -> execute -> evaluate -> judge -> persist."""
 
     def test_single_cycle_returns_experiment_record(
-        self, price_panel: pd.DataFrame, relaxed_profile: EvaluationProfile,
+        self,
+        price_panel: pd.DataFrame,
+        relaxed_profile: EvaluationProfile,
     ) -> None:
         """A single cycle produces a valid ExperimentRecord with all fields."""
         judge = PromotionJudge(refine_margin=0.20)
@@ -137,7 +139,9 @@ class TestFullResearchCycle:
         assert hyp_reg.get(hypothesis.id) is not None
 
     def test_hypothesis_status_updated_after_cycle(
-        self, price_panel: pd.DataFrame, relaxed_profile: EvaluationProfile,
+        self,
+        price_panel: pd.DataFrame,
+        relaxed_profile: EvaluationProfile,
     ) -> None:
         """The hypothesis status transitions from DRAFT through TESTING to a final state."""
         judge = PromotionJudge(refine_margin=0.20)
@@ -161,7 +165,9 @@ class TestFullResearchCycle:
             assert saved_hyp.status == HypothesisStatus.ARCHIVED
 
     def test_strict_profile_rejects(
-        self, price_panel: pd.DataFrame, strict_profile: EvaluationProfile,
+        self,
+        price_panel: pd.DataFrame,
+        strict_profile: EvaluationProfile,
     ) -> None:
         """With unreachably strict thresholds, the signal is rejected."""
         judge = PromotionJudge(refine_margin=0.20)
@@ -174,7 +180,9 @@ class TestFullResearchCycle:
         assert record.decision == ExperimentDecision.REJECT
 
     def test_invalid_expression_records_failure(
-        self, price_panel: pd.DataFrame, relaxed_profile: EvaluationProfile,
+        self,
+        price_panel: pd.DataFrame,
+        relaxed_profile: EvaluationProfile,
     ) -> None:
         """An unparseable expression fails gracefully and records the error."""
         judge = PromotionJudge(refine_margin=0.20)
@@ -194,7 +202,9 @@ class TestFullResearchCycle:
         assert exp_reg.get(record.id) is not None
 
     def test_batch_cycle(
-        self, price_panel: pd.DataFrame, relaxed_profile: EvaluationProfile,
+        self,
+        price_panel: pd.DataFrame,
+        relaxed_profile: EvaluationProfile,
     ) -> None:
         """Batch mode evaluates multiple hypotheses and persists all results."""
         judge = PromotionJudge(refine_margin=0.20)
@@ -219,7 +229,9 @@ class TestFullResearchCycle:
         assert len(ids) == 3
 
     def test_multiple_expressions_produce_different_metrics(
-        self, price_panel: pd.DataFrame, relaxed_profile: EvaluationProfile,
+        self,
+        price_panel: pd.DataFrame,
+        relaxed_profile: EvaluationProfile,
     ) -> None:
         """Different factor expressions produce different evaluation metrics."""
         judge = PromotionJudge(refine_margin=0.20)
@@ -227,10 +239,12 @@ class TestFullResearchCycle:
         eval_req = _make_eval_request(price_panel, relaxed_profile)
 
         r1 = orch.run_cycle(
-            Hypothesis(text="rank(ts_mean(close, 5))"), eval_req,
+            Hypothesis(text="rank(ts_mean(close, 5))"),
+            eval_req,
         )
         r2 = orch.run_cycle(
-            Hypothesis(text="rank(ts_mean(close, 40))"), eval_req,
+            Hypothesis(text="rank(ts_mean(close, 40))"),
+            eval_req,
         )
 
         # Different windows → different IC values (both should be non-None)
@@ -240,7 +254,9 @@ class TestFullResearchCycle:
         assert r1.evaluation.ic != r2.evaluation.ic
 
     def test_round_trip_fidelity(
-        self, price_panel: pd.DataFrame, relaxed_profile: EvaluationProfile,
+        self,
+        price_panel: pd.DataFrame,
+        relaxed_profile: EvaluationProfile,
     ) -> None:
         """All ExperimentRecord fields survive registry round-trip."""
         judge = PromotionJudge(refine_margin=0.20)
@@ -296,9 +312,14 @@ class TestCLIScript:
         """CLI with a custom expression runs successfully."""
         from scripts.run_research_cycle import main
 
-        exit_code = main([
-            "--expression", "zscore(ts_mean(close, 10))",
-            "--n-days", "120",
-            "--seed", "99",
-        ])
+        exit_code = main(
+            [
+                "--expression",
+                "zscore(ts_mean(close, 10))",
+                "--n-days",
+                "120",
+                "--seed",
+                "99",
+            ]
+        )
         assert exit_code == 0

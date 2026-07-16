@@ -408,8 +408,7 @@ def run_autonomous_research(
                     started_at=started,
                     finished_at=finished,
                     stderr_tail=(
-                        f"research command timed out after "
-                        f"{config.timeout_seconds}s: {exc}"
+                        f"research command timed out after {config.timeout_seconds}s: {exc}"
                     ),
                     stop_reason="timeout",
                 )
@@ -436,14 +435,10 @@ def run_autonomous_research(
         if returncode != 0:
             status: Literal["planned", "executed", "failed", "no_progress", "stopped"] = "failed"
             stop_reason = f"research command exited with {returncode}"
-        elif (
-            config.validation_no_write
-            and selected.executor
-            not in {
-                ResearchExecutorKind.EVENT_TRUTH_AUDIT,
-                ResearchExecutorKind.RAW_TICK_MATERIALIZATION_PLAN,
-            }
-        ):
+        elif config.validation_no_write and selected.executor not in {
+            ResearchExecutorKind.EVENT_TRUTH_AUDIT,
+            ResearchExecutorKind.RAW_TICK_MATERIALIZATION_PLAN,
+        }:
             status = "executed"
             stop_reason = "validation_no_write enabled; validation index was not updated"
         elif not new_rows and not new_task_rows:

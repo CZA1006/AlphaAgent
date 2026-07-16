@@ -735,8 +735,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     if args.composite_complements and not composite_anchors:
         print(
-            "error: --composite-complements requires at least one valid "
-            "promoted composite anchor",
+            "error: --composite-complements requires at least one valid promoted composite anchor",
             file=sys.stderr,
         )
         return 2

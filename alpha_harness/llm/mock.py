@@ -36,13 +36,9 @@ class MockLLMClient:
         model: str = "mock/model",
     ) -> None:
         if responses is None and handler is None:
-            raise ValueError(
-                "MockLLMClient requires either `responses` or `handler`."
-            )
+            raise ValueError("MockLLMClient requires either `responses` or `handler`.")
         if responses is not None and handler is not None:
-            raise ValueError(
-                "MockLLMClient takes `responses` *or* `handler`, not both."
-            )
+            raise ValueError("MockLLMClient takes `responses` *or* `handler`, not both.")
         self._queue: list[str] = list(responses) if responses else []
         self._handler = handler
         self._model = model

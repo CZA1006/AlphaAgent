@@ -77,13 +77,13 @@ _COLUMN_MAP = {
 # ``rank(ofi) * rank(-realized_vol)``).  All nullable — a stock-day with
 # no tick coverage simply gets NaN and is skipped by the evaluator.
 _MICRO_COLUMNS = (
-    "ofi",              # order-flow imbalance (Lee-Ready signed volume)
-    "rel_spread",       # average relative bid-ask spread
-    "realized_vol",     # 1-minute-sampled intraday realized vol
-    "n_trades",         # trade count
-    "tick_volume",      # summed trade size
-    "avg_trade_size",   # mean trade size
-    "n_quotes",         # quote-update count (provision intensity)
+    "ofi",  # order-flow imbalance (Lee-Ready signed volume)
+    "rel_spread",  # average relative bid-ask spread
+    "realized_vol",  # 1-minute-sampled intraday realized vol
+    "n_trades",  # trade count
+    "tick_volume",  # summed trade size
+    "avg_trade_size",  # mean trade size
+    "n_quotes",  # quote-update count (provision intensity)
 )
 
 # Candidate intraday v1 features from the operator-approved raw-tick
@@ -152,7 +152,7 @@ def _make_job_config(
 
     from google.cloud import bigquery
 
-    params = []
+    params: list[bigquery.ArrayQueryParameter | bigquery.ScalarQueryParameter] = []
     for name, type_, value, mode in specs:
         if mode == "array":
             params.append(bigquery.ArrayQueryParameter(name, type_, value))
@@ -254,14 +254,11 @@ class BigQueryEquitiesLoader:
                 "ON p.stock_code = m.stock_code AND p.date = m.trading_date",
             )
         if self._with_event_features:
-            fq_events = (
-                f"`{self._project}.{self._dataset}.{self._event_features_table}`"
-            )
+            fq_events = f"`{self._project}.{self._dataset}.{self._event_features_table}`"
             event_cols = ", ".join(f"ef.{c}" for c in _EVENT_FEATURE_COLUMNS)
             select_cols.append(event_cols)
             joins.append(
-                f"LEFT JOIN {fq_events} ef "
-                "ON p.stock_code = ef.stock_code AND p.date = ef.date",
+                f"LEFT JOIN {fq_events} ef ON p.stock_code = ef.stock_code AND p.date = ef.date",
             )
         if self._with_intraday:
             fq_intraday = f"`{self._project}.{self._dataset}.{self._intraday_table}`"
@@ -308,8 +305,19 @@ class BigQueryEquitiesLoader:
         When micro features were joined in, they ride through as extra
         DSL-addressable columns appended after ``frequency``.
         """
-        base_cols = ["symbol", "timestamp", "open", "high", "low", "close",
-                     "volume", "vwap", "adjustment", "source", "frequency"]
+        base_cols = [
+            "symbol",
+            "timestamp",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "vwap",
+            "adjustment",
+            "source",
+            "frequency",
+        ]
         micro_present = [c for c in _MICRO_COLUMNS if c in raw.columns]
         event_present = [c for c in _EVENT_FEATURE_COLUMNS if c in raw.columns]
         intraday_present = [c for c in _INTRADAY_COLUMNS if c in raw.columns]

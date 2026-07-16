@@ -36,20 +36,24 @@ DEFAULT_EVAL_REQUEST = EvaluationRequest(
 # ── render() round-trip ─────────────────────────────────────────────────────
 
 
-@pytest.mark.parametrize("expr", [
-    "close",
-    "rank(close)",
-    "ts_mean(close, 20)",
-    "rank(ts_mean(close, 20))",
-    "ts_delta(close, 5) / ts_std(close, 20)",
-    "rank(close) + zscore(volume)",
-])
+@pytest.mark.parametrize(
+    "expr",
+    [
+        "close",
+        "rank(close)",
+        "ts_mean(close, 20)",
+        "rank(ts_mean(close, 20))",
+        "ts_delta(close, 5) / ts_std(close, 20)",
+        "rank(close) + zscore(volume)",
+    ],
+)
 def test_render_roundtrip_is_parseable(expr: str):
     ast = parse_expression(expr)
     rendered = render(ast)
     # Must parse and canonicalize to the same structural form.
     reparsed = parse_expression(rendered)
     from alpha_harness.factors.canonical import canonicalize
+
     assert canonicalize(ast) == canonicalize(reparsed)
 
 
@@ -126,10 +130,13 @@ class _ScriptedEvaluator:
     def evaluate(self, factor: FactorSpec, request: EvaluationRequest) -> EvaluationBundle:
         self.calls.append(factor.expression)
         ic, rank_ic, spread = self._mapping.get(
-            factor.expression, self._default,
+            factor.expression,
+            self._default,
         )
         return EvaluationBundle(
-            ic=ic, rank_ic=rank_ic, quantile_spread=spread,
+            ic=ic,
+            rank_ic=rank_ic,
+            quantile_spread=spread,
         )
 
 
@@ -203,11 +210,14 @@ def test_runner_respects_max_variants_per_step():
         default=(0.0, 0.0, 0.0),
     )
     cfg = RefinementConfig(
-        max_depth=1, max_variants_per_step=2, max_total_children=10,
+        max_depth=1,
+        max_variants_per_step=2,
+        max_total_children=10,
     )
     runner, _ = _build_runner(evaluator, config=cfg)
     result = runner.run(
-        Hypothesis(text="rank(ts_mean(close, 20))"), DEFAULT_EVAL_REQUEST,
+        Hypothesis(text="rank(ts_mean(close, 20))"),
+        DEFAULT_EVAL_REQUEST,
     )
     assert len(result.children) <= 2
 
@@ -220,11 +230,14 @@ def test_runner_respects_max_total_children():
         default=everyone_borderline,
     )
     cfg = RefinementConfig(
-        max_depth=5, max_variants_per_step=3, max_total_children=4,
+        max_depth=5,
+        max_variants_per_step=3,
+        max_total_children=4,
     )
     runner, _ = _build_runner(evaluator, config=cfg)
     result = runner.run(
-        Hypothesis(text="rank(ts_mean(close, 20))"), DEFAULT_EVAL_REQUEST,
+        Hypothesis(text="rank(ts_mean(close, 20))"),
+        DEFAULT_EVAL_REQUEST,
     )
     assert len(result.children) <= 4
 
@@ -233,7 +246,9 @@ def test_runner_records_lineage_chain_through_depth():
     everyone_borderline = (0.023, 0.035, 0.006)
     evaluator = _ScriptedEvaluator(mapping={}, default=everyone_borderline)
     cfg = RefinementConfig(
-        max_depth=2, max_variants_per_step=1, max_total_children=3,
+        max_depth=2,
+        max_variants_per_step=1,
+        max_total_children=3,
     )
     runner, _ = _build_runner(evaluator, config=cfg)
     root = Hypothesis(text="rank(ts_mean(close, 20))")
@@ -273,7 +288,9 @@ def test_end_to_end_refine_flow_with_lineage_memory():
     memory = MemoryRegistry()
     cfg = RefinementConfig(max_depth=1, max_variants_per_step=3)
     runner, _experiments = _build_runner(
-        evaluator, config=cfg, memory_registry=memory,
+        evaluator,
+        config=cfg,
+        memory_registry=memory,
     )
     root = Hypothesis(text="rank(ts_mean(close, 20))")
     result = runner.run(root, DEFAULT_EVAL_REQUEST)
@@ -337,8 +354,7 @@ def test_runner_uses_injected_novelty_evaluator():
     # At least one mutation should have been rejected by the injected novelty
     # evaluator with a duplicate-style reason.
     assert any(
-        "duplicate" in reason or "Duplicate" in reason
-        for _expr, reason in result.skipped
+        "duplicate" in reason or "Duplicate" in reason for _expr, reason in result.skipped
     ), f"Expected some skip with duplicate reason; got {result.skipped!r}"
 
 

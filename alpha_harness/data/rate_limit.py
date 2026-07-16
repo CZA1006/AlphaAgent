@@ -63,13 +63,9 @@ class RateLimiter:
 
     def __post_init__(self) -> None:
         if self.max_requests < 1:
-            raise ValueError(
-                f"max_requests must be >= 1, got {self.max_requests}"
-            )
+            raise ValueError(f"max_requests must be >= 1, got {self.max_requests}")
         if self.window_seconds <= 0:
-            raise ValueError(
-                f"window_seconds must be > 0, got {self.window_seconds}"
-            )
+            raise ValueError(f"window_seconds must be > 0, got {self.window_seconds}")
 
     def acquire(self) -> None:
         """Block until issuing a request would not violate the rate limit."""
@@ -145,7 +141,7 @@ def request_with_retry(
         raise ValueError(f"max_retries must be >= 0, got {max_retries}")
 
     last_429: httpx.Response | None = None
-    max_wait = backoff_base_seconds * (2 ** max_retries)
+    max_wait = backoff_base_seconds * (2**max_retries)
 
     for attempt in range(max_retries + 1):
         if rate_limiter is not None:
@@ -191,4 +187,4 @@ def _compute_backoff(
             return float(min(max_wait, float(retry_after_header)))
         except ValueError:
             pass  # fall through to exponential
-    return float(min(max_wait, base * (2 ** attempt)))
+    return float(min(max_wait, base * (2**attempt)))

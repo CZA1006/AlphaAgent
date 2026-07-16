@@ -65,9 +65,6 @@ class InMemoryRegistry(Generic[T]):
     def search(self, **filters: str) -> list[T]:
         results: list[T] = []
         for entity in self._store.values():
-            if all(
-                str(getattr(entity, field, None)) == value
-                for field, value in filters.items()
-            ):
+            if all(str(getattr(entity, field, None)) == value for field, value in filters.items()):
                 results.append(entity)
         return results

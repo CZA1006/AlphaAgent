@@ -88,11 +88,9 @@ class SqlHypothesisRegistry:
 
         all_records = self.list_all()
         return [
-            h for h in all_records
-            if all(
-                str(getattr(h, field, None)) == value
-                for field, value in filters.items()
-            )
+            h
+            for h in all_records
+            if all(str(getattr(h, field, None)) == value for field, value in filters.items())
         ]
 
     # ── Domain-specific queries ──────────────────────────────────────
@@ -114,11 +112,7 @@ class SqlHypothesisRegistry:
 
     def list_recent(self, limit: int = 20) -> list[Hypothesis]:
         """Return the most recent hypotheses."""
-        stmt = (
-            select(hypotheses.c.data)
-            .order_by(desc(hypotheses.c.created_at))
-            .limit(limit)
-        )
+        stmt = select(hypotheses.c.data).order_by(desc(hypotheses.c.created_at)).limit(limit)
         with self._engine.connect() as conn:
             rows = conn.execute(stmt).fetchall()
         return [Hypothesis.model_validate_json(r[0]) for r in rows]

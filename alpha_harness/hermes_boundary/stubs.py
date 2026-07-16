@@ -53,9 +53,7 @@ class StubAgentRuntimeAdapter:
             goal=CycleGoal.EXPLORE,
         )
 
-    def translate_to_response(
-        self, experiment_id: str
-    ) -> ResearchCycleResponse:
+    def translate_to_response(self, experiment_id: str) -> ResearchCycleResponse:
         """Look up the experiment and build a simplified response."""
         record = self._experiments.get(experiment_id)
         if record is None:
@@ -73,12 +71,8 @@ class StubAgentRuntimeAdapter:
             hypothesis_id=record.hypothesis.id,
             factor_name=record.factor.name,
             outcome=outcome,
-            failure_category=(
-                record.failure.category.value if record.failure else None
-            ),
-            failure_detail=(
-                record.failure.detail if record.failure else ""
-            ),
+            failure_category=(record.failure.category.value if record.failure else None),
+            failure_detail=(record.failure.detail if record.failure else ""),
             notes=record.notes,
             ic=record.evaluation.ic,
             rank_ic=record.evaluation.rank_ic,
@@ -100,9 +94,7 @@ class StubMemoryProvider:
         """Persist via the harness registry."""
         return self._registry.save(entry)
 
-    def retrieve_by_tags(
-        self, tags: list[str], limit: int = 10
-    ) -> list[MemoryEntry]:
+    def retrieve_by_tags(self, tags: list[str], limit: int = 10) -> list[MemoryEntry]:
         """Retrieve entries matching any tag."""
         results: list[MemoryEntry] = []
         for tag in tags:
@@ -119,9 +111,7 @@ class StubMemoryProvider:
     def retrieve_recent(self, limit: int = 10) -> list[MemoryEntry]:
         """Retrieve most recent entries by creation time."""
         all_entries = self._registry.list_all()
-        sorted_entries = sorted(
-            all_entries, key=lambda e: e.created_at, reverse=True
-        )
+        sorted_entries = sorted(all_entries, key=lambda e: e.created_at, reverse=True)
         return sorted_entries[:limit]
 
 
@@ -169,14 +159,9 @@ class StubContextInjector:
         # Recent experiment summaries
         recent_summaries: list[str] = []
         all_experiments = self._experiments.list_all()
-        recent = sorted(
-            all_experiments, key=lambda e: e.created_at, reverse=True
-        )[:5]
+        recent = sorted(all_experiments, key=lambda e: e.created_at, reverse=True)[:5]
         for exp in recent:
-            summary = (
-                f"{exp.factor.name}: {exp.decision.value}"
-                f" (ic={exp.evaluation.ic})"
-            )
+            summary = f"{exp.factor.name}: {exp.decision.value} (ic={exp.evaluation.ic})"
             if chars_used + len(summary) > char_budget:
                 break
             recent_summaries.append(summary)

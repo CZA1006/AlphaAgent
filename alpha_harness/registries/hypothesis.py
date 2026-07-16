@@ -23,6 +23,4 @@ class HypothesisRegistry(InMemoryRegistry[Hypothesis]):
         Mirrors :class:`SqlHypothesisRegistry.list_recent` so the shared
         protocol is satisfied by both backends.
         """
-        return sorted(
-            self.list_all(), key=lambda h: h.created_at, reverse=True
-        )[:limit]
+        return sorted(self.list_all(), key=lambda h: h.created_at, reverse=True)[:limit]

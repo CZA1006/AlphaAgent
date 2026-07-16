@@ -65,8 +65,11 @@ def _make_record(
         hypothesis=hypothesis,
         factor=factor,
         evaluation=EvaluationBundle(
-            ic=ic, rank_ic=rank_ic, sharpe=sharpe,
-            n_periods=100, n_assets=50,
+            ic=ic,
+            rank_ic=rank_ic,
+            sharpe=sharpe,
+            n_periods=100,
+            n_assets=50,
         ),
         decision=decision,
         failure=failure,
@@ -82,49 +85,57 @@ def _seed_registry() -> tuple[ExperimentRegistry, datetime]:
     registry = ExperimentRegistry()
 
     # Exact-canonical duplicate of the query
-    registry.save(_make_record(
-        expression="rank(ts_mean(close, 20))",
-        factor_name="mom_rank_20",
-        tags=["momentum"],
-        hypothesis_tags=["equities"],
-        decision=ExperimentDecision.PROMOTE_CANDIDATE,
-        created_at=now - timedelta(days=5),
-    ))
+    registry.save(
+        _make_record(
+            expression="rank(ts_mean(close, 20))",
+            factor_name="mom_rank_20",
+            tags=["momentum"],
+            hypothesis_tags=["equities"],
+            decision=ExperimentDecision.PROMOTE_CANDIDATE,
+            created_at=now - timedelta(days=5),
+        )
+    )
     # Near-duplicate (different window)
-    registry.save(_make_record(
-        expression="rank(ts_mean(close, 30))",
-        factor_name="mom_rank_30",
-        tags=["momentum"],
-        decision=ExperimentDecision.REFINE,
-        created_at=now - timedelta(days=10),
-    ))
+    registry.save(
+        _make_record(
+            expression="rank(ts_mean(close, 30))",
+            factor_name="mom_rank_30",
+            tags=["momentum"],
+            decision=ExperimentDecision.REFINE,
+            created_at=now - timedelta(days=10),
+        )
+    )
     # Tag-overlap only, unrelated expression
-    registry.save(_make_record(
-        expression="ts_std(volume, 10)",
-        factor_name="vol_std_10",
-        tags=["momentum", "volume"],
-        decision=ExperimentDecision.REJECT,
-        failure=FailureRecord(
-            category=FailureCategory.WEAK_SIGNAL, detail="ic too low"
-        ),
-        created_at=now - timedelta(days=2),
-    ))
+    registry.save(
+        _make_record(
+            expression="ts_std(volume, 10)",
+            factor_name="vol_std_10",
+            tags=["momentum", "volume"],
+            decision=ExperimentDecision.REJECT,
+            failure=FailureRecord(category=FailureCategory.WEAK_SIGNAL, detail="ic too low"),
+            created_at=now - timedelta(days=2),
+        )
+    )
     # Completely unrelated, also different asset class
-    registry.save(_make_record(
-        expression="zscore(close)",
-        factor_name="crypto_z",
-        tags=["crypto_only"],
-        asset_class=AssetClass.CRYPTO,
-        decision=ExperimentDecision.PROMOTE_CANDIDATE,
-        created_at=now - timedelta(days=1),
-    ))
+    registry.save(
+        _make_record(
+            expression="zscore(close)",
+            factor_name="crypto_z",
+            tags=["crypto_only"],
+            asset_class=AssetClass.CRYPTO,
+            decision=ExperimentDecision.PROMOTE_CANDIDATE,
+            created_at=now - timedelta(days=1),
+        )
+    )
     # Very old but structurally identical
-    registry.save(_make_record(
-        expression="rank(ts_mean(close, 20))",
-        factor_name="mom_rank_old",
-        decision=ExperimentDecision.PROMOTE_CANDIDATE,
-        created_at=now - timedelta(days=365),
-    ))
+    registry.save(
+        _make_record(
+            expression="rank(ts_mean(close, 20))",
+            factor_name="mom_rank_old",
+            decision=ExperimentDecision.PROMOTE_CANDIDATE,
+            created_at=now - timedelta(days=365),
+        )
+    )
     return registry, now
 
 
@@ -135,9 +146,7 @@ class TestRanking:
     def test_exact_ast_match_ranks_first(self) -> None:
         registry, now = _seed_registry()
         retriever = RelatedExperimentRetriever(registry)
-        query_factor = FactorSpec(
-            name="candidate", expression="rank(ts_mean(close, 20))"
-        )
+        query_factor = FactorSpec(name="candidate", expression="rank(ts_mean(close, 20))")
         query = RelatedQuery(factor=query_factor, top_n=3)
 
         results = retriever.search(query, now=now)
@@ -162,9 +171,7 @@ class TestRanking:
         """ts_mean(close, 20) vs ts_mean(close, 30) — same shape, different window."""
         registry, now = _seed_registry()
         retriever = RelatedExperimentRetriever(registry)
-        query_factor = FactorSpec(
-            name="q", expression="rank(ts_mean(close, 20))"
-        )
+        query_factor = FactorSpec(name="q", expression="rank(ts_mean(close, 20))")
         query = RelatedQuery(factor=query_factor, top_n=5)
 
         results = retriever.search(query, now=now)
@@ -175,9 +182,7 @@ class TestRanking:
         """Two canonically-identical records — newer should rank higher."""
         registry, now = _seed_registry()
         retriever = RelatedExperimentRetriever(registry)
-        query_factor = FactorSpec(
-            name="q", expression="rank(ts_mean(close, 20))"
-        )
+        query_factor = FactorSpec(name="q", expression="rank(ts_mean(close, 20))")
         query = RelatedQuery(
             factor=query_factor,
             top_n=5,
@@ -185,12 +190,8 @@ class TestRanking:
         )
 
         results = retriever.search(query, now=now)
-        fresh_idx = next(
-            i for i, r in enumerate(results) if r.factor_name == "mom_rank_20"
-        )
-        stale_idx = next(
-            i for i, r in enumerate(results) if r.factor_name == "mom_rank_old"
-        )
+        fresh_idx = next(i for i, r in enumerate(results) if r.factor_name == "mom_rank_20")
+        stale_idx = next(i for i, r in enumerate(results) if r.factor_name == "mom_rank_old")
         assert fresh_idx < stale_idx
 
     def test_tag_only_query_returns_tagged_records(self) -> None:
@@ -208,9 +209,7 @@ class TestRanking:
         """Verify the score equals the declared linear combination."""
         registry, now = _seed_registry()
         retriever = RelatedExperimentRetriever(registry)
-        weights = ScoreWeights(
-            ast_similarity=0.5, tag_overlap=0.3, recency=0.2
-        )
+        weights = ScoreWeights(ast_similarity=0.5, tag_overlap=0.3, recency=0.2)
         query = RelatedQuery(
             factor=FactorSpec(name="q", expression="rank(ts_mean(close, 20))"),
             tags=("momentum",),
@@ -382,9 +381,11 @@ class TestIntegrationWithOrchestrator:
             orchestrator.run_cycle(Hypothesis(text=text), request)
 
         retriever = RelatedExperimentRetriever(exp_registry)
-        results = retriever.search(RelatedQuery(
-            factor=FactorSpec(name="q", expression="rank(ts_mean(close, 20))"),
-            top_n=2,
-        ))
+        results = retriever.search(
+            RelatedQuery(
+                factor=FactorSpec(name="q", expression="rank(ts_mean(close, 20))"),
+                top_n=2,
+            )
+        )
         assert len(results) == 2
         assert results[0].ast_similarity == 1.0

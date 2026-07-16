@@ -28,7 +28,6 @@ def test_event_proximity_uses_nearest_available_event() -> None:
     assert _event_proximity_bucket(row) == "0_5"
     assert _event_proximity_bucket(pd.Series({"days_to_next_cornerstone_lockup": 12.0})) == "6_30"
     assert (
-        _event_proximity_bucket(pd.Series({"days_to_next_cornerstone_lockup": 45.0}))
-        == "31_plus"
+        _event_proximity_bucket(pd.Series({"days_to_next_cornerstone_lockup": 45.0})) == "31_plus"
     )
     assert _event_proximity_bucket(pd.Series(dtype=float)) == "no_event"

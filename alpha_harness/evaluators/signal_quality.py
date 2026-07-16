@@ -254,12 +254,11 @@ def evaluate_precomputed_signal(
     # silently ignoring the holdout split.  Same dispatch as the class
     # method: when TAIL with positive fraction, recurse with holdout
     # disabled on the in-sample and holdout halves, then merge.
-    if (
-        request.holdout.strategy is HoldoutStrategy.TAIL
-        and request.holdout.holdout_fraction > 0
-    ):
+    if request.holdout.strategy is HoldoutStrategy.TAIL and request.holdout.holdout_fraction > 0:
         return _evaluate_precomputed_with_holdout(
-            signal=signal, df=df, request=request,
+            signal=signal,
+            df=df,
+            request=request,
         )
 
     groups = df["symbol"] if "symbol" in df.columns else None
@@ -534,9 +533,7 @@ class SignalQualityEvaluator:
         if factor.composite_recipe is not None:
             full_signal = execute_composite(factor.composite_recipe, full_df)
         else:
-            ast: dict[str, Any] = (
-                factor.operator_tree or parse_expression(factor.expression)
-            )
+            ast: dict[str, Any] = factor.operator_tree or parse_expression(factor.expression)
             full_signal = DslExecutor(full_df).execute(ast)
 
         # ── 2. Filter df + signal to the evaluation window ────────────
@@ -623,8 +620,7 @@ class SignalQualityEvaluator:
             "holdout_start": str(split_start),
             "holdout_end": str(request.eval_end),
             "holdout_days": holdout_days,
-            "embargo_bars": request.label.lag_bars
-            + request.label.forecast_horizon_bars,
+            "embargo_bars": request.label.lag_bars + request.label.forecast_horizon_bars,
             "embargo_mode": "window_local_forward_returns",
             "ic": held_out.ic,
             "rank_ic": ho_rank,

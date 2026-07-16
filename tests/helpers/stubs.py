@@ -23,9 +23,7 @@ class StubSignalQualityEvaluator:
     an ``EvaluationBundle`` without real price data.
     """
 
-    def evaluate(
-        self, factor: FactorSpec, request: EvaluationRequest
-    ) -> EvaluationBundle:
+    def evaluate(self, factor: FactorSpec, request: EvaluationRequest) -> EvaluationBundle:
         metrics = self._compute_stub_metrics(factor)
         return EvaluationBundle(
             ic=metrics.get(MetricName.IC),
@@ -42,9 +40,7 @@ class StubSignalQualityEvaluator:
             metadata={"evaluator": "signal_quality", "mode": "stub"},
         )
 
-    def _compute_stub_metrics(
-        self, factor: FactorSpec
-    ) -> dict[MetricName, float]:
+    def _compute_stub_metrics(self, factor: FactorSpec) -> dict[MetricName, float]:
         """Deterministic synthetic values derived from the factor name."""
         seed = sum(ord(c) for c in factor.name) % 100
         base = seed / 100.0

@@ -8,14 +8,13 @@ memory remain the source of truth; the report is a self-contained
 audit mirror.
 """
 
+from alpha_harness.combination import CombinationRecipe, recipe_id_for
 from alpha_harness.reports.combination import (
     COMBINATION_INDEX_NAME,
     DEFAULT_COMBINATION_DIR,
-    CombinationRecipe,
     CombinationReport,
     CombinationReportWriter,
     build_combination_report,
-    recipe_id_for,
 )
 from alpha_harness.reports.combination import (
     read_index as read_combination_index,

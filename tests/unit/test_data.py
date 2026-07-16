@@ -34,7 +34,11 @@ def test_bar_defaults() -> None:
     b = Bar(
         symbol="AAPL",
         timestamp=datetime(2023, 6, 15, 20, 0, tzinfo=UTC),
-        open=180.0, high=182.0, low=179.0, close=181.5, volume=50_000_000.0,
+        open=180.0,
+        high=182.0,
+        low=179.0,
+        close=181.5,
+        volume=50_000_000.0,
     )
     assert b.frequency == BarFrequency.DAILY
     assert b.vwap is None
@@ -45,7 +49,11 @@ def test_equity_bar_adjustment() -> None:
     b = EquityBar(
         symbol="MSFT",
         timestamp=datetime(2023, 6, 15, 20, 0, tzinfo=UTC),
-        open=330.0, high=335.0, low=329.0, close=334.0, volume=25_000_000.0,
+        open=330.0,
+        high=335.0,
+        low=329.0,
+        close=334.0,
+        volume=25_000_000.0,
         adjustment=AdjustmentType.RAW,
     )
     assert b.adjustment == AdjustmentType.RAW
@@ -55,7 +63,10 @@ def test_crypto_bar_exchange() -> None:
     b = CryptoBar(
         symbol="BTC/USDT",
         timestamp=datetime(2023, 6, 15, 0, 0, tzinfo=UTC),
-        open=25000.0, high=25500.0, low=24800.0, close=25200.0,
+        open=25000.0,
+        high=25500.0,
+        low=24800.0,
+        close=25200.0,
         volume=1200.0,
         exchange="binance",
     )
@@ -157,15 +168,17 @@ def _polygon_response(symbol: str, n_bars: int = 3) -> dict[str, object]:
     base_ms = 1672531200000  # 2023-01-01 00:00:00 UTC
     results: list[dict[str, object]] = []
     for i in range(n_bars):
-        results.append({
-            "t": base_ms + i * 86_400_000,
-            "o": 100.0 + i,
-            "h": 101.0 + i,
-            "l": 99.0 + i,
-            "c": 100.5 + i,
-            "v": 1_000_000.0 + i * 100_000,
-            "vw": 100.3 + i,
-        })
+        results.append(
+            {
+                "t": base_ms + i * 86_400_000,
+                "o": 100.0 + i,
+                "h": 101.0 + i,
+                "l": 99.0 + i,
+                "c": 100.5 + i,
+                "v": 1_000_000.0 + i * 100_000,
+                "vw": 100.3 + i,
+            }
+        )
     return {
         "ticker": symbol,
         "queryCount": n_bars,
@@ -189,9 +202,7 @@ class TestPolygonEquitiesLoader:
         mock_client = MagicMock()
         mock_client.get.return_value = mock_response
 
-        loader = PolygonEquitiesLoader(
-            api_key="test_key", client=mock_client
-        )
+        loader = PolygonEquitiesLoader(api_key="test_key", client=mock_client)
         req = DataRequest(
             symbols=["AAPL"],
             start=date(2023, 1, 1),
@@ -203,8 +214,16 @@ class TestPolygonEquitiesLoader:
         assert meta.symbols_returned == 1
         assert meta.source == "polygon"
         assert set(df.columns) >= {
-            "symbol", "timestamp", "open", "high", "low", "close",
-            "volume", "vwap", "adjustment", "source",
+            "symbol",
+            "timestamp",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "vwap",
+            "adjustment",
+            "source",
         }
         assert df["symbol"].iloc[0] == "AAPL"
         assert df["source"].iloc[0] == "polygon"
@@ -247,7 +266,9 @@ class TestPolygonEquitiesLoader:
 
         mock_response = MagicMock()
         mock_response.json.return_value = {
-            "results": [], "status": "OK", "queryCount": 0,
+            "results": [],
+            "status": "OK",
+            "queryCount": 0,
         }
         mock_response.raise_for_status = MagicMock()
 
@@ -355,7 +376,8 @@ class TestCcxtCryptoLoader:
         ]
 
         loader = CcxtCryptoLoader(
-            exchange_id="binance", exchange_instance=mock_exchange,
+            exchange_id="binance",
+            exchange_instance=mock_exchange,
         )
         req = DataRequest(
             symbols=["BTC/USDT"],
@@ -368,8 +390,16 @@ class TestCcxtCryptoLoader:
         assert meta.symbols_returned == 1
         assert meta.source == "ccxt:binance"
         assert set(df.columns) >= {
-            "symbol", "timestamp", "open", "high", "low", "close",
-            "volume", "exchange", "quote_currency", "source",
+            "symbol",
+            "timestamp",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "exchange",
+            "quote_currency",
+            "source",
         }
         assert df["symbol"].iloc[0] == "BTC/USDT"
         assert df["exchange"].iloc[0] == "binance"
@@ -381,12 +411,15 @@ class TestCcxtCryptoLoader:
 
         mock_exchange = MagicMock()
         mock_exchange.fetch_ohlcv.side_effect = [
-            _mock_ohlcv(3), [],  # BTC/USDT
-            _mock_ohlcv(2), [],  # ETH/USDT
+            _mock_ohlcv(3),
+            [],  # BTC/USDT
+            _mock_ohlcv(2),
+            [],  # ETH/USDT
         ]
 
         loader = CcxtCryptoLoader(
-            exchange_id="binance", exchange_instance=mock_exchange,
+            exchange_id="binance",
+            exchange_instance=mock_exchange,
         )
         req = DataRequest(
             symbols=["BTC/USDT", "ETH/USDT"],
@@ -406,7 +439,8 @@ class TestCcxtCryptoLoader:
         mock_exchange.fetch_ohlcv.return_value = []
 
         loader = CcxtCryptoLoader(
-            exchange_id="coinbase", exchange_instance=mock_exchange,
+            exchange_id="coinbase",
+            exchange_instance=mock_exchange,
         )
         req = DataRequest(
             symbols=["UNKNOWN/USDT"],
@@ -426,7 +460,8 @@ class TestCcxtCryptoLoader:
         mock_exchange.fetch_ohlcv.side_effect = RuntimeError("rate limit")
 
         loader = CcxtCryptoLoader(
-            exchange_id="binance", exchange_instance=mock_exchange,
+            exchange_id="binance",
+            exchange_instance=mock_exchange,
         )
         req = DataRequest(
             symbols=["BTC/USDT"],
@@ -446,7 +481,8 @@ class TestCcxtCryptoLoader:
         mock_exchange.fetch_ohlcv.side_effect = [_mock_ohlcv(1), []]
 
         loader = CcxtCryptoLoader(
-            exchange_id="binance", exchange_instance=mock_exchange,
+            exchange_id="binance",
+            exchange_instance=mock_exchange,
         )
         req = DataRequest(
             symbols=["ETH/BTC"],
@@ -465,17 +501,20 @@ class TestParquetStore:
         """Save equities DataFrame, verify files on disk."""
         from alpha_harness.data.parquet_store import ParquetStore
 
-        df = pd.DataFrame({
-            "symbol": ["AAPL", "AAPL", "MSFT"],
-            "timestamp": pd.to_datetime(
-                ["2023-01-01", "2023-01-02", "2023-01-01"], utc=True,
-            ),
-            "open": [100.0, 101.0, 200.0],
-            "high": [102.0, 103.0, 202.0],
-            "low": [99.0, 100.0, 199.0],
-            "close": [101.0, 102.0, 201.0],
-            "volume": [1e6, 1.1e6, 2e6],
-        })
+        df = pd.DataFrame(
+            {
+                "symbol": ["AAPL", "AAPL", "MSFT"],
+                "timestamp": pd.to_datetime(
+                    ["2023-01-01", "2023-01-02", "2023-01-01"],
+                    utc=True,
+                ),
+                "open": [100.0, 101.0, 200.0],
+                "high": [102.0, 103.0, 202.0],
+                "low": [99.0, 100.0, 199.0],
+                "close": [101.0, 102.0, 201.0],
+                "volume": [1e6, 1.1e6, 2e6],
+            }
+        )
 
         store = ParquetStore(str(tmp_path / "equities"))
         n = store.save_equities(df)
@@ -493,18 +532,21 @@ class TestParquetStore:
         """Save crypto DataFrame, verify exchange subdirectory."""
         from alpha_harness.data.parquet_store import ParquetStore
 
-        df = pd.DataFrame({
-            "symbol": ["BTC/USDT", "BTC/USDT"],
-            "timestamp": pd.to_datetime(
-                ["2023-01-01", "2023-01-02"], utc=True,
-            ),
-            "open": [30000.0, 30100.0],
-            "high": [30500.0, 30600.0],
-            "low": [29500.0, 29600.0],
-            "close": [30200.0, 30300.0],
-            "volume": [500.0, 600.0],
-            "exchange": ["binance", "binance"],
-        })
+        df = pd.DataFrame(
+            {
+                "symbol": ["BTC/USDT", "BTC/USDT"],
+                "timestamp": pd.to_datetime(
+                    ["2023-01-01", "2023-01-02"],
+                    utc=True,
+                ),
+                "open": [30000.0, 30100.0],
+                "high": [30500.0, 30600.0],
+                "low": [29500.0, 29600.0],
+                "close": [30200.0, 30300.0],
+                "volume": [500.0, 600.0],
+                "exchange": ["binance", "binance"],
+            }
+        )
 
         store = ParquetStore(str(tmp_path / "crypto"))
         n = store.save_crypto(df, exchange="binance")
@@ -530,18 +572,21 @@ class TestParquetStore:
         from alpha_harness.data.parquet_store import ParquetStore
 
         # Create and save
-        df = pd.DataFrame({
-            "symbol": ["AAPL"] * 3,
-            "timestamp": pd.to_datetime(
-                ["2023-01-02", "2023-01-03", "2023-01-04"], utc=True,
-            ),
-            "open": [100.0, 101.0, 102.0],
-            "high": [102.0, 103.0, 104.0],
-            "low": [99.0, 100.0, 101.0],
-            "close": [101.0, 102.0, 103.0],
-            "volume": [1e6, 1.1e6, 1.2e6],
-            "vwap": [100.5, 101.5, 102.5],
-        })
+        df = pd.DataFrame(
+            {
+                "symbol": ["AAPL"] * 3,
+                "timestamp": pd.to_datetime(
+                    ["2023-01-02", "2023-01-03", "2023-01-04"],
+                    utc=True,
+                ),
+                "open": [100.0, 101.0, 102.0],
+                "high": [102.0, 103.0, 104.0],
+                "low": [99.0, 100.0, 101.0],
+                "close": [101.0, 102.0, 103.0],
+                "volume": [1e6, 1.1e6, 1.2e6],
+                "vwap": [100.5, 101.5, 102.5],
+            }
+        )
         outdir = str(tmp_path / "equities")
         ParquetStore(outdir).save_equities(df)
 

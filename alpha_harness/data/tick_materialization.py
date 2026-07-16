@@ -291,7 +291,7 @@ def execute_raw_tick_materialization(
                     code="post_write_qa_error",
                     severity=ResearchTaskIssueSeverity.BLOCKING,
                     detail=str(exc),
-                )
+                ),
             ],
             summary=base_summary,
             notes="The candidate table exists, but acceptance failed closed.",
@@ -324,8 +324,10 @@ def execute_raw_tick_materialization(
                 detail="BigQuery did not report an expiration timestamp for the candidate table.",
             )
         )
-    elif metadata is not None and metadata.expires_at is not None and (
-        metadata.expires_at.tzinfo is None or metadata.expires_at.utcoffset() is None
+    elif (
+        metadata is not None
+        and metadata.expires_at is not None
+        and (metadata.expires_at.tzinfo is None or metadata.expires_at.utcoffset() is None)
     ):
         issues.append(
             ResearchTaskIssue(
@@ -389,9 +391,7 @@ def execute_raw_tick_materialization(
                 detail="Calendar rows without any first-hour tick-derived feature need review.",
             )
         )
-    has_blocking = any(
-        issue.severity is ResearchTaskIssueSeverity.BLOCKING for issue in issues
-    )
+    has_blocking = any(issue.severity is ResearchTaskIssueSeverity.BLOCKING for issue in issues)
     return ResearchTaskReport(
         task_id=task_id,
         executor=EXECUTION_EXECUTOR_NAME,

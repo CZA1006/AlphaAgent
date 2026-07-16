@@ -12,9 +12,9 @@ from pydantic import BaseModel, Field
 class MembershipSource(StrEnum):
     """Where universe membership comes from."""
 
-    STATIC_LIST = "static_list"          # fixed ticker list (toy / testing)
-    INDEX_CONSTITUENT = "index_const"    # e.g. S&P 500 as-of date
-    LIQUIDITY_FILTER = "liquidity"       # top-N by volume / market cap
+    STATIC_LIST = "static_list"  # fixed ticker list (toy / testing)
+    INDEX_CONSTITUENT = "index_const"  # e.g. S&P 500 as-of date
+    LIQUIDITY_FILTER = "liquidity"  # top-N by volume / market cap
     EXCHANGE_LISTED = "exchange_listed"  # all symbols on an exchange
 
 

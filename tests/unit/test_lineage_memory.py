@@ -101,7 +101,8 @@ def test_lineage_entry_missing_metrics_render_as_dash():
 
 def test_lineage_entry_failure_is_surfaced():
     failure = FailureRecord(
-        category=FailureCategory.WEAK_SIGNAL, detail="ic too low",
+        category=FailureCategory.WEAK_SIGNAL,
+        detail="ic too low",
     )
     record = _make_record(
         decision=ExperimentDecision.REJECT,
@@ -119,14 +120,18 @@ def test_lineage_entry_failure_is_surfaced():
 class _PromoteEvaluator:
     def evaluate(self, factor, request):
         return EvaluationBundle(
-            ic=0.08, rank_ic=0.08, quantile_spread=0.02,
+            ic=0.08,
+            rank_ic=0.08,
+            quantile_spread=0.02,
         )
 
 
 class _WeakEvaluator:
     def evaluate(self, factor, request):
         return EvaluationBundle(
-            ic=0.0001, rank_ic=0.0001, quantile_spread=0.0,
+            ic=0.0001,
+            rank_ic=0.0001,
+            quantile_spread=0.0,
         )
 
 
@@ -158,7 +163,8 @@ def _build_orchestrator(
 def test_orchestrator_without_memory_registry_does_not_write():
     orch, experiments, _ = _build_orchestrator(_PromoteEvaluator())
     record = orch.run_cycle(
-        Hypothesis(text="rank(close)"), DEFAULT_EVAL_REQUEST,
+        Hypothesis(text="rank(close)"),
+        DEFAULT_EVAL_REQUEST,
     )
     assert record.decision == ExperimentDecision.PROMOTE_CANDIDATE
     # No memory registry → nothing raised; experiment still persisted.
@@ -195,7 +201,8 @@ def test_lineage_retrieval_by_experiment_id():
     orch, _, _ = _build_orchestrator(_WeakEvaluator(), memory_registry=memory)
 
     record = orch.run_cycle(
-        Hypothesis(text="rank(close)"), DEFAULT_EVAL_REQUEST,
+        Hypothesis(text="rank(close)"),
+        DEFAULT_EVAL_REQUEST,
     )
     hits = memory.list_by_experiment(record.id)
     assert len(hits) == 1

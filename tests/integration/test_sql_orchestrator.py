@@ -176,7 +176,9 @@ def test_refinement_lineage_persists_to_sql(sql_config: BackendConfig) -> None:
     runner = RefinementRunner(
         orch,
         config=RefinementConfig(
-            max_depth=1, max_variants_per_step=2, max_total_children=2,
+            max_depth=1,
+            max_variants_per_step=2,
+            max_total_children=2,
         ),
     )
 

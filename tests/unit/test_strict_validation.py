@@ -402,16 +402,20 @@ def test_load_replay_hypotheses_reconstructs_complement_factor(tmp_path: Path) -
         method=base.method,
         components=[*base.components, "rank(high - low)"],
     )
-    report = _minimal_report("source-complement").model_copy(update={
-        "factors": [FactorThumbnail(
-            factor_id="complement-1",
-            expression=f"<composite:{augmented.recipe_id}>",
-            decision=ExperimentDecision.PROMOTE_CANDIDATE.value,
-            complement_base_recipe_id=base.recipe_id,
-            complement_candidate_expression="rank(high - low)",
-            composite_recipe=augmented,
-        )],
-    })
+    report = _minimal_report("source-complement").model_copy(
+        update={
+            "factors": [
+                FactorThumbnail(
+                    factor_id="complement-1",
+                    expression=f"<composite:{augmented.recipe_id}>",
+                    decision=ExperimentDecision.PROMOTE_CANDIDATE.value,
+                    complement_base_recipe_id=base.recipe_id,
+                    complement_candidate_expression="rank(high - low)",
+                    composite_recipe=augmented,
+                )
+            ],
+        }
+    )
     StrictValidationReportWriter(tmp_path).write(report)
     [candidate] = _load_replay_hypotheses(
         validation_dir=tmp_path,

@@ -1,5 +1,7 @@
 # AlphaAgent
 
+[![CI](https://github.com/CZA1006/AlphaAgent/actions/workflows/ci.yml/badge.svg)](https://github.com/CZA1006/AlphaAgent/actions/workflows/ci.yml)
+
 AlphaAgent is a quant-native research system built on top of the Hermes runtime substrate.
 
 The goal is **not** to build a generic agent that imitates a human analyst step by step. The goal is to build a **self-improving alpha research harness** that can:

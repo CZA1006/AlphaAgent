@@ -142,11 +142,12 @@ def _build_record(
             "content_sha256": _sha256(content),
             "prompt_tokens": int(usage.get("prompt_tokens", 0)),
             "completion_tokens": int(usage.get("completion_tokens", 0)),
-            "total_tokens": int(usage.get(
-                "total_tokens",
-                int(usage.get("prompt_tokens", 0))
-                + int(usage.get("completion_tokens", 0)),
-            )),
+            "total_tokens": int(
+                usage.get(
+                    "total_tokens",
+                    int(usage.get("prompt_tokens", 0)) + int(usage.get("completion_tokens", 0)),
+                )
+            ),
         }
         cost = usage.get("cost")
         if isinstance(cost, int | float) and not isinstance(cost, bool) and cost >= 0:
@@ -202,7 +203,9 @@ DEFAULT_CALL_LOG_DIR = Path("artifacts/llm_calls")
 
 def default_log_path(cycle_id: str, base_dir: Path | str | None = None) -> Path:
     """Return the canonical JSONL path for a given cycle id."""
-    root = Path(base_dir) if base_dir else Path(
-        os.environ.get("ALPHA_AGENT_LLM_LOG_DIR", str(DEFAULT_CALL_LOG_DIR))
+    root = (
+        Path(base_dir)
+        if base_dir
+        else Path(os.environ.get("ALPHA_AGENT_LLM_LOG_DIR", str(DEFAULT_CALL_LOG_DIR)))
     )
     return root / f"{cycle_id}.jsonl"

@@ -16,17 +16,17 @@ from alpha_harness.retrieval import RelatedExperiment
 # Documented arities & semantics per function.  Authoritative source is
 # ``dsl_parser._function_arity`` — we duplicate here for the prompt only.
 _FUNCTION_DOCS: dict[str, str] = {
-    "lag":       "lag(series, window)        — value from `window` bars ago",
-    "ts_mean":   "ts_mean(series, window)    — rolling mean over `window` bars",
-    "ts_std":    "ts_std(series, window)     — rolling standard deviation",
-    "ts_sum":    "ts_sum(series, window)     — rolling sum",
-    "ts_min":    "ts_min(series, window)     — rolling minimum",
-    "ts_max":    "ts_max(series, window)     — rolling maximum",
-    "ts_delta":  "ts_delta(series, window)   — series - lag(series, window)",
-    "ts_lag":    "ts_lag(series, window)     — alias of lag",
+    "lag": "lag(series, window)        — value from `window` bars ago",
+    "ts_mean": "ts_mean(series, window)    — rolling mean over `window` bars",
+    "ts_std": "ts_std(series, window)     — rolling standard deviation",
+    "ts_sum": "ts_sum(series, window)     — rolling sum",
+    "ts_min": "ts_min(series, window)     — rolling minimum",
+    "ts_max": "ts_max(series, window)     — rolling maximum",
+    "ts_delta": "ts_delta(series, window)   — series - lag(series, window)",
+    "ts_lag": "ts_lag(series, window)     — alias of lag",
     "event_decay": "event_decay(distance, half_life) — proximity weight; missing event = 0",
-    "rank":      "rank(series)               — cross-sectional rank in [0,1]",
-    "zscore":    "zscore(series)             — cross-sectional z-score",
+    "rank": "rank(series)               — cross-sectional rank in [0,1]",
+    "zscore": "zscore(series)             — cross-sectional z-score",
 }
 
 # Short glossary for fields whose meaning isn't self-evident.  OHLCV are
@@ -35,13 +35,13 @@ _FUNCTION_DOCS: dict[str, str] = {
 # so the model uses them sensibly.  Fields without an entry are listed
 # bare.
 _FIELD_DOCS: dict[str, str] = {
-    "ofi":            "order-flow imbalance: signed volume / total volume in [-1,1] (>0 net buy)",
-    "rel_spread":     "average relative bid-ask spread (liquidity / trading cost)",
-    "realized_vol":   "intraday realized volatility from 1-minute sampled prices",
-    "n_trades":       "number of trades that day (activity)",
-    "tick_volume":    "summed trade size that day",
+    "ofi": "order-flow imbalance: signed volume / total volume in [-1,1] (>0 net buy)",
+    "rel_spread": "average relative bid-ask spread (liquidity / trading cost)",
+    "realized_vol": "intraday realized volatility from 1-minute sampled prices",
+    "n_trades": "number of trades that day (activity)",
+    "tick_volume": "summed trade size that day",
     "avg_trade_size": "mean trade size (small = retail, large = institutional)",
-    "n_quotes":       "number of quote updates (liquidity-provision intensity)",
+    "n_quotes": "number of quote updates (liquidity-provision intensity)",
     "days_since_listing": "calendar days since listing date",
     "days_since_pricing": "calendar days since IPO pricing date",
     "days_to_next_cornerstone_lockup": "days until next cornerstone lockup expiry",
@@ -76,8 +76,7 @@ def build_system_prompt() -> str:
     )
 
     function_lines = "\n".join(
-        f"    - {_FUNCTION_DOCS.get(name, name)}"
-        for name in sorted(ALLOWED_FUNCTIONS)
+        f"    - {_FUNCTION_DOCS.get(name, name)}" for name in sorted(ALLOWED_FUNCTIONS)
     )
 
     return (
@@ -179,10 +178,7 @@ def build_user_prompt(request: ProposalRequest) -> str:
     if request.extra_guidance.strip():
         sections.append(f"\n## Extra guidance\n{request.extra_guidance.strip()}")
 
-    sections.append(
-        "\nReturn a single JSON object with the required schema and nothing "
-        "else."
-    )
+    sections.append("\nReturn a single JSON object with the required schema and nothing else.")
     return "\n".join(sections)
 
 
@@ -196,19 +192,18 @@ def build_repair_prompt(
     see exactly which candidates failed and why.
     """
     lines = [
-        (
-            f"{len(dropped)} of the previous candidates failed DSL validation "
-            f"and were discarded:"
-        ),
+        (f"{len(dropped)} of the previous candidates failed DSL validation and were discarded:"),
     ]
     for expression, reason in dropped:
         lines.append(f"  - {expression!r}  →  {reason}")
-    lines.extend([
-        "",
-        f"Propose {n_needed} fresh candidates that satisfy the DSL grammar "
-        "described in the system prompt.  Do not repeat any of the failing "
-        "expressions above.  Return the same JSON shape as before.",
-    ])
+    lines.extend(
+        [
+            "",
+            f"Propose {n_needed} fresh candidates that satisfy the DSL grammar "
+            "described in the system prompt.  Do not repeat any of the failing "
+            "expressions above.  Return the same JSON shape as before.",
+        ]
+    )
     return "\n".join(lines)
 
 
@@ -226,10 +221,7 @@ def _format_related(related: list[RelatedExperiment]) -> str:
             metric_bits.append(f"rank_ic={item.rank_ic:.3f}")
         metric = f" [{', '.join(metric_bits)}]" if metric_bits else ""
 
-        failure = (
-            f" failure={item.failure_category}"
-            if item.failure_category else ""
-        )
+        failure = f" failure={item.failure_category}" if item.failure_category else ""
 
         lines.append(
             f"  - {item.factor_name}: `{item.expression}`"

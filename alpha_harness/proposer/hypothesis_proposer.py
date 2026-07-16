@@ -89,9 +89,7 @@ class HypothesisProposer:
     def propose(self, request: ProposalRequest) -> ProposalResult:
         """Return a bounded, DSL-validated set of candidate hypotheses."""
         if request.n_candidates < 1:
-            raise ValueError(
-                f"n_candidates must be >= 1, got {request.n_candidates}"
-            )
+            raise ValueError(f"n_candidates must be >= 1, got {request.n_candidates}")
 
         # Round 1 — initial generation.
         system = LLMMessage(role="system", content=build_system_prompt())
@@ -200,46 +198,56 @@ class HypothesisProposer:
         for raw in raw_proposals:
             expression = (raw.expression or "").strip()
             if not expression:
-                dropped.append(DroppedProposal(
-                    expression="",
-                    rationale=raw.rationale,
-                    reason="Empty expression.",
-                ))
+                dropped.append(
+                    DroppedProposal(
+                        expression="",
+                        rationale=raw.rationale,
+                        reason="Empty expression.",
+                    )
+                )
                 continue
 
             if expression in seen:
-                dropped.append(DroppedProposal(
-                    expression=expression,
-                    rationale=raw.rationale,
-                    reason="Duplicate of an earlier accepted candidate.",
-                ))
+                dropped.append(
+                    DroppedProposal(
+                        expression=expression,
+                        rationale=raw.rationale,
+                        reason="Duplicate of an earlier accepted candidate.",
+                    )
+                )
                 continue
 
             probe = Hypothesis(text=expression, rationale=raw.rationale)
             try:
                 factor = self._compiler.compile(probe)
             except DslCompilationError as exc:
-                dropped.append(DroppedProposal(
-                    expression=expression,
-                    rationale=raw.rationale,
-                    reason=str(exc),
-                ))
+                dropped.append(
+                    DroppedProposal(
+                        expression=expression,
+                        rationale=raw.rationale,
+                        reason=str(exc),
+                    )
+                )
                 continue
 
             base_recipe_id = (raw.base_recipe_id or "").strip() or None
             if anchor_map and base_recipe_id is None:
-                dropped.append(DroppedProposal(
-                    expression=expression,
-                    rationale=raw.rationale,
-                    reason="Complement mode requires a base_recipe_id.",
-                ))
+                dropped.append(
+                    DroppedProposal(
+                        expression=expression,
+                        rationale=raw.rationale,
+                        reason="Complement mode requires a base_recipe_id.",
+                    )
+                )
                 continue
             if base_recipe_id is not None and base_recipe_id not in anchor_map:
-                dropped.append(DroppedProposal(
-                    expression=expression,
-                    rationale=raw.rationale,
-                    reason=f"Unknown base_recipe_id {base_recipe_id!r}.",
-                ))
+                dropped.append(
+                    DroppedProposal(
+                        expression=expression,
+                        rationale=raw.rationale,
+                        reason=f"Unknown base_recipe_id {base_recipe_id!r}.",
+                    )
+                )
                 continue
             if base_recipe_id is not None:
                 anchor = anchor_map[base_recipe_id]
@@ -252,26 +260,30 @@ class HypothesisProposer:
                     similarity_threshold=0.85,
                 ).check_novelty(factor)
                 if not novelty.is_novel:
-                    dropped.append(DroppedProposal(
-                        expression=expression,
-                        rationale=raw.rationale,
-                        reason=(
-                            "Candidate is not structurally novel versus its base "
-                            f"basket: {novelty.detail}"
-                        ),
-                    ))
+                    dropped.append(
+                        DroppedProposal(
+                            expression=expression,
+                            rationale=raw.rationale,
+                            reason=(
+                                "Candidate is not structurally novel versus its base "
+                                f"basket: {novelty.detail}"
+                            ),
+                        )
+                    )
                     continue
 
             seen.add(expression)
             tags = list(raw.tags)
             if base_recipe_id is not None:
                 tags.extend(["complement", f"base_recipe:{base_recipe_id}"])
-            candidates.append(ProposalCandidate(
-                expression=expression,
-                rationale=raw.rationale,
-                name=(raw.name or factor.name).strip() or factor.name,
-                tags=list(dict.fromkeys(tags)),
-                base_recipe_id=base_recipe_id,
-            ))
+            candidates.append(
+                ProposalCandidate(
+                    expression=expression,
+                    rationale=raw.rationale,
+                    name=(raw.name or factor.name).strip() or factor.name,
+                    tags=list(dict.fromkeys(tags)),
+                    base_recipe_id=base_recipe_id,
+                )
+            )
 
         return _ValidationOutcome(candidates=candidates, dropped=dropped)

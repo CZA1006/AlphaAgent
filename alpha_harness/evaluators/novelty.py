@@ -72,9 +72,7 @@ class NoveltyEvaluator:
 
         self._static: list[_Existing] = []
         for factor_id, expression in existing_expressions or []:
-            self._static.append(
-                (factor_id, expression, _try_canonicalize_expression(expression))
-            )
+            self._static.append((factor_id, expression, _try_canonicalize_expression(expression)))
 
     # ── Public API ────────────────────────────────────────────────────────
 
@@ -88,9 +86,7 @@ class NoveltyEvaluator:
 
         for factor_id, expression, canon in self._iter_existing():
             found_any = True
-            score = _score(
-                factor.expression, candidate_canon, expression, canon
-            )
+            score = _score(factor.expression, candidate_canon, expression, canon)
             if score > best_score:
                 best_score = score
                 best_id = factor_id

@@ -30,8 +30,10 @@ class FakeClock:
 def test_rate_limiter_does_not_sleep_under_cap() -> None:
     clock = FakeClock()
     rl = RateLimiter(
-        max_requests=5, window_seconds=60.0,
-        clock=clock.time, sleep=clock.sleep,
+        max_requests=5,
+        window_seconds=60.0,
+        clock=clock.time,
+        sleep=clock.sleep,
     )
     for _ in range(5):
         rl.acquire()
@@ -41,8 +43,10 @@ def test_rate_limiter_does_not_sleep_under_cap() -> None:
 def test_rate_limiter_sleeps_when_over_cap() -> None:
     clock = FakeClock()
     rl = RateLimiter(
-        max_requests=2, window_seconds=60.0,
-        clock=clock.time, sleep=clock.sleep,
+        max_requests=2,
+        window_seconds=60.0,
+        clock=clock.time,
+        sleep=clock.sleep,
     )
     rl.acquire()  # t=0
     clock.now = 10.0
@@ -111,11 +115,13 @@ def test_request_with_retry_succeeds_on_first_try() -> None:
 
 
 def test_request_with_retry_recovers_after_429() -> None:
-    client = _mock_client([
-        httpx.Response(429, headers={"Retry-After": "1"}),
-        httpx.Response(429),
-        httpx.Response(200, json={"ok": True}),
-    ])
+    client = _mock_client(
+        [
+            httpx.Response(429, headers={"Retry-After": "1"}),
+            httpx.Response(429),
+            httpx.Response(200, json={"ok": True}),
+        ]
+    )
     sleeps: list[float] = []
 
     resp = request_with_retry(
@@ -133,10 +139,12 @@ def test_request_with_retry_recovers_after_429() -> None:
 
 
 def test_request_with_retry_returns_last_429_when_exhausted() -> None:
-    client = _mock_client([
-        httpx.Response(429),
-        httpx.Response(429),
-    ])
+    client = _mock_client(
+        [
+            httpx.Response(429),
+            httpx.Response(429),
+        ]
+    )
     sleeps: list[float] = []
 
     resp = request_with_retry(
@@ -160,13 +168,18 @@ def test_request_with_retry_respects_rate_limiter() -> None:
 
     clock = FakeClock()
     rl = RateLimiter(
-        max_requests=1, window_seconds=60.0,
-        clock=clock.time, sleep=clock.sleep,
+        max_requests=1,
+        window_seconds=60.0,
+        clock=clock.time,
+        sleep=clock.sleep,
     )
 
     request_with_retry(
-        client, url="https://api.polygon.io/test", params=None,
-        rate_limiter=rl, sleep=lambda _s: None,
+        client,
+        url="https://api.polygon.io/test",
+        params=None,
+        rate_limiter=rl,
+        sleep=lambda _s: None,
     )
     # One request in the limiter's window.
     assert len(rl._timestamps) == 1

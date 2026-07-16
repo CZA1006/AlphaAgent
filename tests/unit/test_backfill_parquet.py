@@ -69,18 +69,20 @@ def test_ships_with_sp50_universe() -> None:
 def _write_parquet(path: Path, start: date, end: date) -> None:
     """Helper: write a minimal per-symbol Parquet file covering [start, end]."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    df = pd.DataFrame({
-        "symbol": ["AAPL", "AAPL"],
-        "timestamp": [
-            datetime.combine(start, datetime.min.time()).replace(tzinfo=UTC),
-            datetime.combine(end, datetime.min.time()).replace(tzinfo=UTC),
-        ],
-        "open": [1.0, 2.0],
-        "high": [1.5, 2.5],
-        "low": [0.5, 1.5],
-        "close": [1.2, 2.2],
-        "volume": [100.0, 200.0],
-    })
+    df = pd.DataFrame(
+        {
+            "symbol": ["AAPL", "AAPL"],
+            "timestamp": [
+                datetime.combine(start, datetime.min.time()).replace(tzinfo=UTC),
+                datetime.combine(end, datetime.min.time()).replace(tzinfo=UTC),
+            ],
+            "open": [1.0, 2.0],
+            "high": [1.5, 2.5],
+            "low": [0.5, 1.5],
+            "close": [1.2, 2.2],
+            "volume": [100.0, 200.0],
+        }
+    )
     df.to_parquet(path, index=False)
 
 
@@ -110,11 +112,13 @@ def test_select_missing_tolerates_small_end_gap(tmp_path: Path) -> None:
     _write_parquet(
         tmp_path / "AAPL.parquet",
         date(2023, 1, 1),
-        date(2024, 5, 28),   # 4 days short of requested end
+        date(2024, 5, 28),  # 4 days short of requested end
     )
     missing = select_missing(
-        ["AAPL"], output_dir=tmp_path,
-        start=date(2023, 6, 1), end=date(2024, 6, 1),
+        ["AAPL"],
+        output_dir=tmp_path,
+        start=date(2023, 6, 1),
+        end=date(2024, 6, 1),
     )
     assert missing == []
 
@@ -124,11 +128,13 @@ def test_select_missing_rejects_large_end_gap(tmp_path: Path) -> None:
     _write_parquet(
         tmp_path / "AAPL.parquet",
         date(2023, 1, 1),
-        date(2024, 5, 1),    # 31 days short — well past the 7-day slack
+        date(2024, 5, 1),  # 31 days short — well past the 7-day slack
     )
     missing = select_missing(
-        ["AAPL"], output_dir=tmp_path,
-        start=date(2023, 6, 1), end=date(2024, 6, 1),
+        ["AAPL"],
+        output_dir=tmp_path,
+        start=date(2023, 6, 1),
+        end=date(2024, 6, 1),
     )
     assert missing == ["AAPL"]
 
@@ -137,8 +143,10 @@ def test_select_missing_handles_corrupt_file(tmp_path: Path) -> None:
     bad = tmp_path / "BAD.parquet"
     bad.write_bytes(b"not a parquet file")
     missing = select_missing(
-        ["BAD"], output_dir=tmp_path,
-        start=date(2023, 1, 1), end=date(2023, 6, 1),
+        ["BAD"],
+        output_dir=tmp_path,
+        start=date(2023, 1, 1),
+        end=date(2023, 6, 1),
     )
     assert missing == ["BAD"]
 
@@ -166,35 +174,55 @@ class FakeLoader:
         sym = request.symbols[0]
         self.calls.append(sym)
         if sym in self.empty_symbols:
-            df = pd.DataFrame(columns=[
-                "symbol", "timestamp", "open", "high", "low", "close",
-                "volume", "vwap", "adjustment", "source", "frequency",
-            ])
+            df = pd.DataFrame(
+                columns=[
+                    "symbol",
+                    "timestamp",
+                    "open",
+                    "high",
+                    "low",
+                    "close",
+                    "volume",
+                    "vwap",
+                    "adjustment",
+                    "source",
+                    "frequency",
+                ]
+            )
             return df, DataResult(
-                symbols_requested=1, symbols_returned=0, bars_returned=0,
-                start=request.start, end=request.end, source="fake",
+                symbols_requested=1,
+                symbols_returned=0,
+                bars_returned=0,
+                start=request.start,
+                end=request.end,
+                source="fake",
             )
 
         days = [request.start + timedelta(days=i) for i in range(3)]
-        df = pd.DataFrame({
-            "symbol": [sym] * 3,
-            "timestamp": [
-                datetime.combine(d, datetime.min.time()).replace(tzinfo=UTC)
-                for d in days
-            ],
-            "open": [1.0, 1.1, 1.2],
-            "high": [1.3, 1.4, 1.5],
-            "low": [0.9, 1.0, 1.1],
-            "close": [1.2, 1.3, 1.4],
-            "volume": [1e6, 1.1e6, 1.2e6],
-            "vwap": [1.1, 1.2, 1.3],
-            "adjustment": [adjustment.value] * 3,
-            "source": ["fake"] * 3,
-            "frequency": [BarFrequency.DAILY.value] * 3,
-        })
+        df = pd.DataFrame(
+            {
+                "symbol": [sym] * 3,
+                "timestamp": [
+                    datetime.combine(d, datetime.min.time()).replace(tzinfo=UTC) for d in days
+                ],
+                "open": [1.0, 1.1, 1.2],
+                "high": [1.3, 1.4, 1.5],
+                "low": [0.9, 1.0, 1.1],
+                "close": [1.2, 1.3, 1.4],
+                "volume": [1e6, 1.1e6, 1.2e6],
+                "vwap": [1.1, 1.2, 1.3],
+                "adjustment": [adjustment.value] * 3,
+                "source": ["fake"] * 3,
+                "frequency": [BarFrequency.DAILY.value] * 3,
+            }
+        )
         return df, DataResult(
-            symbols_requested=1, symbols_returned=1, bars_returned=3,
-            start=request.start, end=request.end, source="fake",
+            symbols_requested=1,
+            symbols_returned=1,
+            bars_returned=3,
+            start=request.start,
+            end=request.end,
+            source="fake",
         )
 
 
@@ -241,12 +269,14 @@ def test_backfill_output_is_readable_by_local_loader(tmp_path: Path) -> None:
     )
 
     local = LocalEquitiesLoader(base_path=str(tmp_path))
-    df, meta = local.load_bars(DataRequest(
-        symbols=["AAPL", "MSFT"],
-        start=date(2024, 1, 1),
-        end=date(2024, 1, 5),
-        frequency=BarFrequency.DAILY,
-    ))
+    df, meta = local.load_bars(
+        DataRequest(
+            symbols=["AAPL", "MSFT"],
+            start=date(2024, 1, 1),
+            end=date(2024, 1, 5),
+            frequency=BarFrequency.DAILY,
+        )
+    )
     assert meta.symbols_returned == 2
     assert meta.bars_returned == 6  # 3 bars per symbol, 2 symbols
     assert set(df["symbol"].unique()) == {"AAPL", "MSFT"}

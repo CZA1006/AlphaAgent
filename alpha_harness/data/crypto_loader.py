@@ -124,8 +124,17 @@ class LocalCryptoLoader:
         else:
             result_df = pd.DataFrame(
                 columns=[
-                    "symbol", "timestamp", "open", "high", "low", "close",
-                    "volume", "exchange", "quote_currency", "source", "frequency",
+                    "symbol",
+                    "timestamp",
+                    "open",
+                    "high",
+                    "low",
+                    "close",
+                    "volume",
+                    "exchange",
+                    "quote_currency",
+                    "source",
+                    "frequency",
                 ],
             )
 

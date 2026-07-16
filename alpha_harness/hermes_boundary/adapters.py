@@ -47,9 +47,7 @@ class AgentRuntimeAdapter(Protocol):
         """Parse raw agent output into a typed research cycle request."""
         ...
 
-    def translate_to_response(
-        self, experiment_id: str
-    ) -> ResearchCycleResponse:
+    def translate_to_response(self, experiment_id: str) -> ResearchCycleResponse:
         """Build an agent-friendly response from a completed experiment."""
         ...
 

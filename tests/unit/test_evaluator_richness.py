@@ -45,15 +45,17 @@ def _panel(n_days: int = 80, symbols: tuple[str, ...] = ("A", "B", "C", "D")) ->
         base = 100.0
         for i in range(n_days):
             base *= 1.0 + rng.normal(0.0, 0.01)
-            rows.append({
-                "symbol": sym,
-                "timestamp": start + timedelta(days=i),
-                "open": base,
-                "high": base * 1.01,
-                "low": base * 0.99,
-                "close": base,
-                "volume": 1_000_000.0 + rng.normal(0, 10_000),
-            })
+            rows.append(
+                {
+                    "symbol": sym,
+                    "timestamp": start + timedelta(days=i),
+                    "open": base,
+                    "high": base * 1.01,
+                    "low": base * 0.99,
+                    "close": base,
+                    "volume": 1_000_000.0 + rng.normal(0, 10_000),
+                }
+            )
     return pd.DataFrame(rows)
 
 
@@ -128,11 +130,13 @@ def test_beta_neutralization_does_not_read_future_returns() -> None:
     rng = np.random.default_rng(17)
     market = rng.normal(0.0, 0.01, size=n)
     loadings = {"A": 0.7, "B": 1.2, "C": 1.8}
-    returns = pd.Series([
-        loadings[symbol] * market[day] + rng.normal(0.0, 0.001)
-        for day in range(n)
-        for symbol in ("A", "B", "C")
-    ])
+    returns = pd.Series(
+        [
+            loadings[symbol] * market[day] + rng.normal(0.0, 0.001)
+            for day in range(n)
+            for symbol in ("A", "B", "C")
+        ]
+    )
 
     baseline = neutralize_forward_returns(
         returns,
@@ -404,8 +408,11 @@ def _hypothesis() -> Hypothesis:
 
 def _bundle_passing() -> EvaluationBundle:
     return EvaluationBundle(
-        ic=0.05, rank_ic=0.06, quantile_spread=0.01,
-        n_periods=120, n_assets=20,
+        ic=0.05,
+        rank_ic=0.06,
+        quantile_spread=0.01,
+        n_periods=120,
+        n_assets=20,
     )
 
 

@@ -24,10 +24,10 @@ from pydantic import BaseModel, Field
 class CycleGoal(StrEnum):
     """What the agent wants the harness to do in this cycle."""
 
-    EXPLORE = "explore"          # test a new hypothesis
-    REFINE = "refine"            # iterate on an existing hypothesis
-    AUDIT = "audit"              # re-evaluate an existing factor with new data
-    SUMMARISE = "summarise"      # produce a research summary (no new evaluation)
+    EXPLORE = "explore"  # test a new hypothesis
+    REFINE = "refine"  # iterate on an existing hypothesis
+    AUDIT = "audit"  # re-evaluate an existing factor with new data
+    SUMMARISE = "summarise"  # produce a research summary (no new evaluation)
 
 
 class ResearchCycleRequest(BaseModel):
@@ -47,7 +47,7 @@ class ResearchCycleRequest(BaseModel):
     hypothesis_rationale: str = ""
     asset_class: str = "us_equity"
     goal: CycleGoal = CycleGoal.EXPLORE
-    parent_hypothesis_id: str | None = None     # for REFINE cycles
+    parent_hypothesis_id: str | None = None  # for REFINE cycles
     tags: list[str] = Field(default_factory=list)
     requested_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
@@ -80,7 +80,7 @@ class ResearchCycleResponse(BaseModel):
     hypothesis_id: str
     factor_name: str
     outcome: CycleOutcome
-    failure_category: str | None = None    # from FailureCategory enum
+    failure_category: str | None = None  # from FailureCategory enum
     failure_detail: str = ""
     notes: str = ""
 
@@ -160,4 +160,4 @@ class MemoryContext(BaseModel):
     active_hypotheses_count: int = 0
     promoted_factors_count: int = 0
     total_experiments: int = 0
-    token_budget_used: int = 0     # approximate tokens consumed by this context
+    token_budget_used: int = 0  # approximate tokens consumed by this context

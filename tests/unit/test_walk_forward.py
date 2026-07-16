@@ -269,9 +269,7 @@ def test_aggregate_metadata_uses_all_folds_not_first_fold() -> None:
     )
 
     assert out.metadata["ic_by_horizon"] == pytest.approx({"5": 0.06, "10": 0.02})
-    assert out.metadata["rank_ic_by_horizon"] == pytest.approx(
-        {"5": 0.06, "10": 0.02}
-    )
+    assert out.metadata["rank_ic_by_horizon"] == pytest.approx({"5": 0.06, "10": 0.02})
     assert out.metadata["ic_sign_consistent_horizons"] == 2
     assert out.metadata["portfolio"]["tail_concentration"] == pytest.approx(0.7)
     assert out.metadata["portfolio"]["episode_top3_positive_share"] == pytest.approx(0.8)

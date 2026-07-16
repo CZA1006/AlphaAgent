@@ -38,14 +38,16 @@ def _record(
         hypothesis=Hypothesis(text=expression, rationale="r"),
         factor=FactorSpec(id=factor_id, name="f", expression=expression),
         evaluation=EvaluationBundle(
-            ic=ic, rank_ic=rank_ic, quantile_spread=0.008,
-            net_quantile_spread=0.007, turnover=0.42,
-            n_periods=200, n_assets=20,
+            ic=ic,
+            rank_ic=rank_ic,
+            quantile_spread=0.008,
+            net_quantile_spread=0.007,
+            turnover=0.42,
+            n_periods=200,
+            n_assets=20,
         ),
         decision=decision,
-        failure=(
-            FailureRecord(category=failure) if failure is not None else None
-        ),
+        failure=(FailureRecord(category=failure) if failure is not None else None),
     )
 
 
@@ -76,11 +78,14 @@ def test_skips_non_promoted_decisions(tmp_path: Path) -> None:
         ExperimentDecision.REFINE,
         ExperimentDecision.ARCHIVE_ONLY,
     ):
-        out = writer.maybe_write(_record(
-            decision=decision,
-            failure=FailureCategory.WEAK_SIGNAL
-            if decision == ExperimentDecision.REJECT else None,
-        ))
+        out = writer.maybe_write(
+            _record(
+                decision=decision,
+                failure=FailureCategory.WEAK_SIGNAL
+                if decision == ExperimentDecision.REJECT
+                else None,
+            )
+        )
         assert out is None
     assert not index_path(tmp_path).exists()
     assert list(tmp_path.iterdir()) == []
@@ -115,9 +120,7 @@ def test_corrupt_index_lines_are_skipped(tmp_path: Path) -> None:
     path = index_path(tmp_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        '{"factor_id": "good", "ic": 0.01}\n'
-        "this is not json\n"
-        '{"factor_id": "good2", "ic": 0.02}\n'
+        '{"factor_id": "good", "ic": 0.01}\nthis is not json\n{"factor_id": "good2", "ic": 0.02}\n'
     )
     entries = read_index(tmp_path)
     assert [e["factor_id"] for e in entries] == ["good", "good2"]
@@ -127,8 +130,7 @@ def test_atomic_write_leaves_no_tmp_behind(tmp_path: Path) -> None:
     writer = PromotedArtifactWriter(tmp_path)
     writer.maybe_write(_record(factor_id="fct_atomic"))
     stray = [
-        p.name for p in tmp_path.iterdir()
-        if p.name.endswith(".tmp") or p.name.startswith(".")
+        p.name for p in tmp_path.iterdir() if p.name.endswith(".tmp") or p.name.startswith(".")
     ]
     assert stray == []
 
@@ -147,7 +149,8 @@ def test_artifact_payload_includes_reproducibility_keys(tmp_path: Path) -> None:
 
 
 def test_list_factors_cli_prints_table(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     writer = PromotedArtifactWriter(tmp_path)
     writer.maybe_write(_record(factor_id="fct_low", ic=0.01, rank_ic=0.01))
@@ -163,13 +166,18 @@ def test_list_factors_cli_prints_table(
 
 
 def test_list_factors_cli_json_output(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     writer = PromotedArtifactWriter(tmp_path)
     writer.maybe_write(_record(factor_id="fct_j"))
-    rc = list_main([
-        "--promoted-dir", str(tmp_path), "--json",
-    ])
+    rc = list_main(
+        [
+            "--promoted-dir",
+            str(tmp_path),
+            "--json",
+        ]
+    )
     out = capsys.readouterr().out
     assert rc == 0
     payload = json.loads(out)
@@ -177,7 +185,8 @@ def test_list_factors_cli_json_output(
 
 
 def test_list_factors_empty_zoo_returns_zero(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     rc = list_main(["--promoted-dir", str(tmp_path)])
     assert rc == 0
@@ -186,7 +195,8 @@ def test_list_factors_empty_zoo_returns_zero(
 
 
 def test_list_factors_since_filters_older_entries(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     # Hand-craft index file with explicit old + new promoted_at timestamps.
     idx = index_path(tmp_path)
@@ -197,9 +207,14 @@ def test_list_factors_since_filters_older_entries(
         '{"factor_id":"new","factor_name":"n","rank_ic":0.2,'
         '"promoted_at":"2030-01-01T00:00:00+00:00"}\n'
     )
-    rc = list_main([
-        "--promoted-dir", str(tmp_path), "--since", "2025-01-01",
-    ])
+    rc = list_main(
+        [
+            "--promoted-dir",
+            str(tmp_path),
+            "--since",
+            "2025-01-01",
+        ]
+    )
     out = capsys.readouterr().out
     assert rc == 0
     assert "new" in out

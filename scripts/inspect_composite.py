@@ -94,7 +94,8 @@ def _iter_composites(
 
 
 def _resolve_recipe(
-    promoted_dir: Path, recipe_id: str,
+    promoted_dir: Path,
+    recipe_id: str,
 ) -> tuple[dict[str, Any], dict[str, Any]] | None:
     """Find the most recent artifact whose composite_recipe.recipe_id matches."""
     for row, payload in _iter_composites(promoted_dir):
@@ -104,7 +105,8 @@ def _resolve_recipe(
 
 
 def _ancestry(
-    promoted_dir: Path, payload: dict[str, Any],
+    promoted_dir: Path,
+    payload: dict[str, Any],
 ) -> list[dict[str, Any]]:
     """Walk parent_factor_id up to the root; return list newest → oldest.
 
@@ -148,10 +150,8 @@ def render_list(promoted_dir: Path) -> str:
     lines = [
         f"Promoted composites in {promoted_dir} (newest first):",
         "",
-        f"  {'recipe_id':<16}  {'method':<14}  {'n':>2}  "
-        f"{'ic':>8}  {'rank_ic':>8}  promoted_at",
-        f"  {'-' * 16}  {'-' * 14}  {'-' * 2}  "
-        f"{'-' * 8}  {'-' * 8}  {'-' * 25}",
+        f"  {'recipe_id':<16}  {'method':<14}  {'n':>2}  {'ic':>8}  {'rank_ic':>8}  promoted_at",
+        f"  {'-' * 16}  {'-' * 14}  {'-' * 2}  {'-' * 8}  {'-' * 8}  {'-' * 25}",
     ]
     for row, payload in composites:
         recipe = payload["composite_recipe"]

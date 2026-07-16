@@ -34,9 +34,7 @@ DEFAULT_SQL_PATH = Path("scripts/sql/micro_features_intraday_v1.sql")
 DEFAULT_POST_QA_SQL_PATH = Path("scripts/sql/micro_features_intraday_v1_post_qa.sql")
 
 
-def _bigquery_runners(
-    *, project: str, dataset: str, max_bytes_billed: int
-) -> tuple[Any, Any, Any]:
+def _bigquery_runners(*, project: str, dataset: str, max_bytes_billed: int) -> tuple[Any, Any, Any]:
     from google.api_core.exceptions import NotFound
     from google.cloud import bigquery
 
@@ -117,9 +115,7 @@ def main(argv: list[str] | None = None) -> int:
             plan_report=plan_report,
             rendered_sql=rendered_sql,
             approved_sql_sha256=args.approve_sql_sha256,
-            acknowledge_external_scan_cost_unknown=(
-                args.acknowledge_external_scan_cost_unknown
-            ),
+            acknowledge_external_scan_cost_unknown=(args.acknowledge_external_scan_cost_unknown),
             project=project,
             dataset=dataset,
             end_date=args.end_date,

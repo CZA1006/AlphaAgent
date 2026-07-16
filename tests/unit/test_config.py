@@ -53,7 +53,11 @@ def test_from_env_rejects_unknown_value(monkeypatch: pytest.MonkeyPatch):
 
 def test_postgres_settings_build_url():
     s = PostgresSettings(
-        user="u", password="p", host="h", port="5432", database="db",
+        user="u",
+        password="p",
+        host="h",
+        port="5432",
+        database="db",
     )
     assert s.url == "postgresql+psycopg://u:p@h:5432/db"
 

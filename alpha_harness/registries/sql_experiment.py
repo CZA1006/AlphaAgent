@@ -91,18 +91,14 @@ class SqlExperimentRegistry:
         # Fallback: load all and filter in Python
         all_records = self.list_all()
         return [
-            e for e in all_records
-            if all(
-                str(getattr(e, field, None)) == value
-                for field, value in filters.items()
-            )
+            e
+            for e in all_records
+            if all(str(getattr(e, field, None)) == value for field, value in filters.items())
         ]
 
     # ── Domain-specific queries ──────────────────────────────────────
 
-    def list_by_decision(
-        self, decision: ExperimentDecision
-    ) -> list[ExperimentRecord]:
+    def list_by_decision(self, decision: ExperimentDecision) -> list[ExperimentRecord]:
         """Return all experiments with a given decision."""
         stmt = (
             select(experiments.c.data)
@@ -113,18 +109,14 @@ class SqlExperimentRegistry:
             rows = conn.execute(stmt).fetchall()
         return [ExperimentRecord.model_validate_json(r[0]) for r in rows]
 
-    def list_by_hypothesis(
-        self, hypothesis_id: str
-    ) -> list[ExperimentRecord]:
+    def list_by_hypothesis(self, hypothesis_id: str) -> list[ExperimentRecord]:
         """Return all experiments derived from a specific hypothesis.
 
         Requires deserializing all records because hypothesis_id is inside
         the JSON blob.  For production-scale usage, add a denormalized
         ``hypothesis_id`` column.
         """
-        return [
-            e for e in self.list_all() if e.hypothesis.id == hypothesis_id
-        ]
+        return [e for e in self.list_all() if e.hypothesis.id == hypothesis_id]
 
     def list_promoted(self) -> list[ExperimentRecord]:
         """Return all experiments that were promoted."""
@@ -136,11 +128,7 @@ class SqlExperimentRegistry:
 
     def list_recent(self, limit: int = 20) -> list[ExperimentRecord]:
         """Return the most recent experiments."""
-        stmt = (
-            select(experiments.c.data)
-            .order_by(desc(experiments.c.created_at))
-            .limit(limit)
-        )
+        stmt = select(experiments.c.data).order_by(desc(experiments.c.created_at)).limit(limit)
         with self._engine.connect() as conn:
             rows = conn.execute(stmt).fetchall()
         return [ExperimentRecord.model_validate_json(r[0]) for r in rows]

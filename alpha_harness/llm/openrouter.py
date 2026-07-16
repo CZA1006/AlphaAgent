@@ -78,8 +78,7 @@ class OpenRouterClient:
 
         if response.status_code >= 400:
             raise OpenRouterError(
-                f"OpenRouter returned {response.status_code}: "
-                f"{_truncate(response.text, 500)}"
+                f"OpenRouter returned {response.status_code}: {_truncate(response.text, 500)}"
             )
 
         try:
@@ -98,9 +97,7 @@ class OpenRouterClient:
             "model": request.model or self._config.model,
             "messages": [m.model_dump() for m in request.messages],
             "temperature": (
-                request.temperature
-                if request.temperature is not None
-                else self._config.temperature
+                request.temperature if request.temperature is not None else self._config.temperature
             ),
         }
         if request.max_tokens is not None:
@@ -137,9 +134,7 @@ def _parse_response(body: dict[str, Any]) -> LLMResponse:
     message = first.get("message") or {}
     content = message.get("content")
     if not isinstance(content, str):
-        raise OpenRouterError(
-            f"Response choice had no string content: {first!r}"
-        )
+        raise OpenRouterError(f"Response choice had no string content: {first!r}")
 
     usage_raw = body.get("usage") or {}
     usage: dict[str, int | float | bool] = {}

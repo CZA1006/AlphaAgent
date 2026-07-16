@@ -60,8 +60,16 @@ def generate_price_panel(
     """
     if symbols is None:
         symbols = [
-            "AAPL", "MSFT", "GOOG", "AMZN", "META",
-            "NVDA", "TSLA", "JPM", "V", "UNH",
+            "AAPL",
+            "MSFT",
+            "GOOG",
+            "AMZN",
+            "META",
+            "NVDA",
+            "TSLA",
+            "JPM",
+            "V",
+            "UNH",
         ]
     if start_date is None:
         start_date = datetime(2024, 1, 2, tzinfo=UTC)
@@ -95,15 +103,17 @@ def generate_price_panel(
 
             volume = float(rng.integers(100_000, 10_000_000))
 
-            rows.append({
-                "symbol": symbol,
-                "timestamp": ts,
-                "open": round(float(open_price), 4),
-                "high": round(float(high), 4),
-                "low": round(float(low), 4),
-                "close": round(float(close), 4),
-                "volume": volume,
-            })
+            rows.append(
+                {
+                    "symbol": symbol,
+                    "timestamp": ts,
+                    "open": round(float(open_price), 4),
+                    "high": round(float(high), 4),
+                    "low": round(float(low), 4),
+                    "close": round(float(close), 4),
+                    "volume": volume,
+                }
+            )
             price = close
 
     df = pd.DataFrame(rows)

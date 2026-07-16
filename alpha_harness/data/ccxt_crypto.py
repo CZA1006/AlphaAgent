@@ -122,8 +122,16 @@ class CcxtCryptoLoader:
         else:
             result_df = pd.DataFrame(
                 columns=[
-                    "symbol", "timestamp", "open", "high", "low", "close",
-                    "volume", "exchange", "quote_currency", "source",
+                    "symbol",
+                    "timestamp",
+                    "open",
+                    "high",
+                    "low",
+                    "close",
+                    "volume",
+                    "exchange",
+                    "quote_currency",
+                    "source",
                     "frequency",
                 ],
             )
@@ -184,21 +192,21 @@ class CcxtCryptoLoader:
                 ts_ms = int(candle[0])
                 if ts_ms >= end_ms:
                     break
-                all_rows.append({
-                    "symbol": symbol,
-                    "timestamp": datetime.fromtimestamp(
-                        ts_ms / 1000, tz=UTC
-                    ),
-                    "open": float(candle[1]),
-                    "high": float(candle[2]),
-                    "low": float(candle[3]),
-                    "close": float(candle[4]),
-                    "volume": float(candle[5]),
-                    "exchange": exchange_name,
-                    "quote_currency": quote_currency,
-                    "source": f"ccxt:{exchange_name}",
-                    "frequency": frequency.value,
-                })
+                all_rows.append(
+                    {
+                        "symbol": symbol,
+                        "timestamp": datetime.fromtimestamp(ts_ms / 1000, tz=UTC),
+                        "open": float(candle[1]),
+                        "high": float(candle[2]),
+                        "low": float(candle[3]),
+                        "close": float(candle[4]),
+                        "volume": float(candle[5]),
+                        "exchange": exchange_name,
+                        "quote_currency": quote_currency,
+                        "source": f"ccxt:{exchange_name}",
+                        "frequency": frequency.value,
+                    }
+                )
 
             # Advance past the last candle to avoid duplicates
             last_ts = int(candles[-1][0])
@@ -209,9 +217,7 @@ class CcxtCryptoLoader:
         return pd.DataFrame(all_rows)
 
 
-def _create_exchange(
-    exchange_id: str, config: dict[str, object] | None
-) -> object:
+def _create_exchange(exchange_id: str, config: dict[str, object] | None) -> object:
     """Create a ccxt exchange instance.
 
     Defers the ccxt import so the module can be imported without ccxt

@@ -135,10 +135,12 @@ class TestPrompts:
 
     def test_complement_prompt_requires_typed_anchor_target(self) -> None:
         anchor = _anchor()
-        prompt = build_user_prompt(ProposalRequest(
-            theme="add diversifying signal",
-            composite_anchors=[anchor],
-        ))
+        prompt = build_user_prompt(
+            ProposalRequest(
+                theme="add diversifying signal",
+                composite_anchors=[anchor],
+            )
+        )
         assert "Mandatory composite-complement task" in prompt
         assert anchor.recipe.recipe_id in prompt
         assert "base_recipe_id" in prompt
@@ -150,14 +152,21 @@ class TestPrompts:
 
 class TestProposeValidation:
     def test_valid_candidates_pass_through(self) -> None:
-        mock = MockLLMClient(responses=[_batch(
-            {"expression": "rank(ts_mean(close, 20))", "rationale": "mom"},
-            {"expression": "zscore(volume)", "rationale": "volume surprise"},
-        )])
+        mock = MockLLMClient(
+            responses=[
+                _batch(
+                    {"expression": "rank(ts_mean(close, 20))", "rationale": "mom"},
+                    {"expression": "zscore(volume)", "rationale": "volume surprise"},
+                )
+            ]
+        )
         proposer = HypothesisProposer(mock, max_rounds=1)
-        result = proposer.propose(ProposalRequest(
-            theme="momentum", n_candidates=2,
-        ))
+        result = proposer.propose(
+            ProposalRequest(
+                theme="momentum",
+                n_candidates=2,
+            )
+        )
 
         assert len(result.candidates) == 2
         exprs = [c.expression for c in result.candidates]
@@ -166,17 +175,24 @@ class TestProposeValidation:
         assert result.dropped == []
 
     def test_invalid_expressions_are_dropped_with_reason(self) -> None:
-        mock = MockLLMClient(responses=[_batch(
-            {"expression": "rank(ts_mean(close, 20))", "rationale": "ok"},
-            {"expression": "banned_fn(close)", "rationale": "bad — unknown fn"},
-            {"expression": "ts_mean(close, -5)", "rationale": "bad — neg window"},
-            {"expression": "close +", "rationale": "bad — syntax"},
-            {"expression": "", "rationale": "bad — empty"},
-        )])
+        mock = MockLLMClient(
+            responses=[
+                _batch(
+                    {"expression": "rank(ts_mean(close, 20))", "rationale": "ok"},
+                    {"expression": "banned_fn(close)", "rationale": "bad — unknown fn"},
+                    {"expression": "ts_mean(close, -5)", "rationale": "bad — neg window"},
+                    {"expression": "close +", "rationale": "bad — syntax"},
+                    {"expression": "", "rationale": "bad — empty"},
+                )
+            ]
+        )
         proposer = HypothesisProposer(mock, max_rounds=1)
-        result = proposer.propose(ProposalRequest(
-            theme="momentum", n_candidates=5,
-        ))
+        result = proposer.propose(
+            ProposalRequest(
+                theme="momentum",
+                n_candidates=5,
+            )
+        )
 
         assert len(result.candidates) == 1
         assert result.candidates[0].expression == "rank(ts_mean(close, 20))"
@@ -188,26 +204,38 @@ class TestProposeValidation:
 
     def test_every_returned_candidate_compiles(self) -> None:
         """Acceptance test — no returned candidate may fail the compiler."""
-        mock = MockLLMClient(responses=[_batch(
-            {"expression": "ts_mean(close, 10)", "rationale": "a"},
-            {"expression": "some_junk!!", "rationale": "b"},
-            {"expression": "rank(close - ts_mean(close, 5))", "rationale": "c"},
-        )])
+        mock = MockLLMClient(
+            responses=[
+                _batch(
+                    {"expression": "ts_mean(close, 10)", "rationale": "a"},
+                    {"expression": "some_junk!!", "rationale": "b"},
+                    {"expression": "rank(close - ts_mean(close, 5))", "rationale": "c"},
+                )
+            ]
+        )
         proposer = HypothesisProposer(mock, max_rounds=1)
-        result = proposer.propose(ProposalRequest(
-            theme="reversion", n_candidates=3,
-        ))
+        result = proposer.propose(
+            ProposalRequest(
+                theme="reversion",
+                n_candidates=3,
+            )
+        )
 
         compiler = FactorDslCompiler()
         from alpha_harness.schemas.hypothesis import Hypothesis
+
         for c in result.candidates:
             compiler.compile(Hypothesis(text=c.expression))  # must not raise
 
     def test_duplicate_expressions_dropped(self) -> None:
-        mock = MockLLMClient(responses=[_batch(
-            {"expression": "rank(close)", "rationale": "a"},
-            {"expression": "rank(close)", "rationale": "b — dup"},
-        )])
+        mock = MockLLMClient(
+            responses=[
+                _batch(
+                    {"expression": "rank(close)", "rationale": "a"},
+                    {"expression": "rank(close)", "rationale": "b — dup"},
+                )
+            ]
+        )
         result = HypothesisProposer(mock, max_rounds=1).propose(
             ProposalRequest(theme="x", n_candidates=5)
         )
@@ -216,11 +244,15 @@ class TestProposeValidation:
         assert "Duplicate" in result.dropped[0].reason
 
     def test_respects_n_candidates_cap(self) -> None:
-        mock = MockLLMClient(responses=[_batch(
-            {"expression": "rank(close)",  "rationale": "1"},
-            {"expression": "zscore(close)", "rationale": "2"},
-            {"expression": "ts_mean(close, 5)", "rationale": "3"},
-        )])
+        mock = MockLLMClient(
+            responses=[
+                _batch(
+                    {"expression": "rank(close)", "rationale": "1"},
+                    {"expression": "zscore(close)", "rationale": "2"},
+                    {"expression": "ts_mean(close, 5)", "rationale": "3"},
+                )
+            ]
+        )
         result = HypothesisProposer(mock, max_rounds=1).propose(
             ProposalRequest(theme="x", n_candidates=2)
         )
@@ -229,18 +261,20 @@ class TestProposeValidation:
     def test_zero_candidates_rejected(self) -> None:
         mock = MockLLMClient(responses=[_batch()])
         with pytest.raises(ValueError, match="n_candidates"):
-            HypothesisProposer(mock).propose(
-                ProposalRequest(theme="x", n_candidates=0)
-            )
+            HypothesisProposer(mock).propose(ProposalRequest(theme="x", n_candidates=0))
 
     def test_complement_mode_requires_known_novel_base_target(self) -> None:
         anchor = _anchor()
-        mock = MockLLMClient(responses=[_batch(
-            {"expression": "rank(realized_vol)", "base_recipe_id": anchor.recipe.recipe_id},
-            {"expression": "rank(close)"},
-            {"expression": "rank(vwap)", "base_recipe_id": "unknown"},
-            {"expression": "rank(volume)", "base_recipe_id": anchor.recipe.recipe_id},
-        )])
+        mock = MockLLMClient(
+            responses=[
+                _batch(
+                    {"expression": "rank(realized_vol)", "base_recipe_id": anchor.recipe.recipe_id},
+                    {"expression": "rank(close)"},
+                    {"expression": "rank(vwap)", "base_recipe_id": "unknown"},
+                    {"expression": "rank(volume)", "base_recipe_id": anchor.recipe.recipe_id},
+                )
+            ]
+        )
         result = HypothesisProposer(mock, max_rounds=1).propose(
             ProposalRequest(
                 theme="complements",
@@ -248,9 +282,7 @@ class TestProposeValidation:
                 composite_anchors=[anchor],
             )
         )
-        assert [candidate.expression for candidate in result.candidates] == [
-            "rank(realized_vol)"
-        ]
+        assert [candidate.expression for candidate in result.candidates] == ["rank(realized_vol)"]
         candidate = result.candidates[0]
         assert candidate.base_recipe_id == anchor.recipe.recipe_id
         assert "complement" in candidate.tags
@@ -266,16 +298,18 @@ class TestProposeValidation:
 class TestRepairRound:
     def test_repair_round_fills_gap(self) -> None:
         """Round 1 under-delivers; round 2 repairs it."""
-        mock = MockLLMClient(responses=[
-            _batch(
-                {"expression": "rank(close)", "rationale": "ok"},
-                {"expression": "mystery_fn(close)", "rationale": "bad"},
-            ),
-            _batch(
-                {"expression": "ts_mean(volume, 10)", "rationale": "fixed"},
-                {"expression": "zscore(close)", "rationale": "also fresh"},
-            ),
-        ])
+        mock = MockLLMClient(
+            responses=[
+                _batch(
+                    {"expression": "rank(close)", "rationale": "ok"},
+                    {"expression": "mystery_fn(close)", "rationale": "bad"},
+                ),
+                _batch(
+                    {"expression": "ts_mean(volume, 10)", "rationale": "fixed"},
+                    {"expression": "zscore(close)", "rationale": "also fresh"},
+                ),
+            ]
+        )
         result = HypothesisProposer(mock, max_rounds=2).propose(
             ProposalRequest(theme="momentum", n_candidates=3)
         )
@@ -284,12 +318,14 @@ class TestRepairRound:
         assert len(mock.calls) == 2
 
     def test_repair_skipped_when_round_one_satisfies(self) -> None:
-        mock = MockLLMClient(responses=[
-            _batch(
-                {"expression": "rank(close)", "rationale": "a"},
-                {"expression": "zscore(close)", "rationale": "b"},
-            ),
-        ])
+        mock = MockLLMClient(
+            responses=[
+                _batch(
+                    {"expression": "rank(close)", "rationale": "a"},
+                    {"expression": "zscore(close)", "rationale": "b"},
+                ),
+            ]
+        )
         result = HypothesisProposer(mock, max_rounds=2).propose(
             ProposalRequest(theme="x", n_candidates=2)
         )
@@ -297,12 +333,14 @@ class TestRepairRound:
         assert len(mock.calls) == 1
 
     def test_max_rounds_one_disables_repair(self) -> None:
-        mock = MockLLMClient(responses=[
-            _batch(
-                {"expression": "rank(close)", "rationale": "a"},
-                {"expression": "garbage_op(close)", "rationale": "bad"},
-            ),
-        ])
+        mock = MockLLMClient(
+            responses=[
+                _batch(
+                    {"expression": "rank(close)", "rationale": "a"},
+                    {"expression": "garbage_op(close)", "rationale": "bad"},
+                ),
+            ]
+        )
         result = HypothesisProposer(mock, max_rounds=1).propose(
             ProposalRequest(theme="x", n_candidates=5)
         )
@@ -312,16 +350,18 @@ class TestRepairRound:
         assert len(result.candidates) == 1
 
     def test_repair_does_not_reintroduce_duplicates(self) -> None:
-        mock = MockLLMClient(responses=[
-            _batch(
-                {"expression": "rank(close)", "rationale": "a"},
-                {"expression": "bogus_fn()", "rationale": "bad"},
-            ),
-            _batch(
-                {"expression": "rank(close)", "rationale": "dup on repair"},
-                {"expression": "ts_std(close, 10)", "rationale": "new"},
-            ),
-        ])
+        mock = MockLLMClient(
+            responses=[
+                _batch(
+                    {"expression": "rank(close)", "rationale": "a"},
+                    {"expression": "bogus_fn()", "rationale": "bad"},
+                ),
+                _batch(
+                    {"expression": "rank(close)", "rationale": "dup on repair"},
+                    {"expression": "ts_std(close, 10)", "rationale": "new"},
+                ),
+            ]
+        )
         result = HypothesisProposer(mock, max_rounds=2).propose(
             ProposalRequest(theme="x", n_candidates=3)
         )
@@ -347,16 +387,22 @@ class TestRepairRound:
 class TestIntegrationWithResearchLoop:
     def test_full_theme_to_experiment_path(self) -> None:
         """Theme → proposer → hypotheses → orchestrator → experiment records."""
-        mock = MockLLMClient(responses=[_batch(
-            {"expression": "rank(ts_mean(close, 10))", "rationale": "mom"},
-            {"expression": "ts_std(close, 20)",        "rationale": "vol"},
-            {"expression": "not_a_real_fn(close)",     "rationale": "bad"},
-        )])
+        mock = MockLLMClient(
+            responses=[
+                _batch(
+                    {"expression": "rank(ts_mean(close, 10))", "rationale": "mom"},
+                    {"expression": "ts_std(close, 20)", "rationale": "vol"},
+                    {"expression": "not_a_real_fn(close)", "rationale": "bad"},
+                )
+            ]
+        )
         proposer = HypothesisProposer(mock, max_rounds=1)
-        result = proposer.propose(ProposalRequest(
-            theme="cross-sectional momentum",
-            n_candidates=3,
-        ))
+        result = proposer.propose(
+            ProposalRequest(
+                theme="cross-sectional momentum",
+                n_candidates=3,
+            )
+        )
 
         # Only the two valid ones should have been converted.
         hypotheses = result.to_hypotheses(asset_class=AssetClass.US_EQUITY)

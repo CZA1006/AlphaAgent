@@ -494,8 +494,7 @@ class ResearchDirector:
                 ),
                 extra_guidance=tick_guidance,
                 validation_command=(
-                    "uv run --extra gcp python -m "
-                    "scripts.plan_hk_ipo_raw_tick_materialization"
+                    "uv run --extra gcp python -m scripts.plan_hk_ipo_raw_tick_materialization"
                 ),
                 validation_args=[],
                 data_requirements=[

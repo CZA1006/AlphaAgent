@@ -128,9 +128,7 @@ class PolygonEquitiesLoader:
                 "Using split-and-dividend adjusted prices."
             )
 
-        multiplier, timespan = _FREQUENCY_MAP.get(
-            request.frequency, (1, "day")
-        )
+        multiplier, timespan = _FREQUENCY_MAP.get(request.frequency, (1, "day"))
 
         frames: list[pd.DataFrame] = []
         symbols_found = 0
@@ -162,8 +160,17 @@ class PolygonEquitiesLoader:
         else:
             result_df = pd.DataFrame(
                 columns=[
-                    "symbol", "timestamp", "open", "high", "low", "close",
-                    "volume", "vwap", "adjustment", "source", "frequency",
+                    "symbol",
+                    "timestamp",
+                    "open",
+                    "high",
+                    "low",
+                    "close",
+                    "volume",
+                    "vwap",
+                    "adjustment",
+                    "source",
+                    "frequency",
                 ],
             )
 
@@ -192,8 +199,7 @@ class PolygonEquitiesLoader:
     ) -> pd.DataFrame:
         """Fetch all pages of bars for one symbol."""
         url = (
-            f"{self._base_url}/v2/aggs/ticker/{symbol}"
-            f"/range/{multiplier}/{timespan}/{start}/{end}"
+            f"{self._base_url}/v2/aggs/ticker/{symbol}/range/{multiplier}/{timespan}/{start}/{end}"
         )
         params: dict[str, str | int | bool] = {
             "adjusted": str(adjusted).lower(),
@@ -217,19 +223,21 @@ class PolygonEquitiesLoader:
 
             results = body.get("results", [])
             for r in results:
-                all_rows.append({
-                    "symbol": symbol,
-                    "timestamp": _ms_to_utc(int(r["t"])),
-                    "open": float(r["o"]),
-                    "high": float(r["h"]),
-                    "low": float(r["l"]),
-                    "close": float(r["c"]),
-                    "volume": float(r["v"]),
-                    "vwap": float(r["vw"]) if "vw" in r else None,
-                    "adjustment": adjustment.value,
-                    "source": "polygon",
-                    "frequency": frequency.value,
-                })
+                all_rows.append(
+                    {
+                        "symbol": symbol,
+                        "timestamp": _ms_to_utc(int(r["t"])),
+                        "open": float(r["o"]),
+                        "high": float(r["h"]),
+                        "low": float(r["l"]),
+                        "close": float(r["c"]),
+                        "volume": float(r["v"]),
+                        "vwap": float(r["vw"]) if "vw" in r else None,
+                        "adjustment": adjustment.value,
+                        "source": "polygon",
+                        "frequency": frequency.value,
+                    }
+                )
 
             # Follow pagination
             next_url: str | None = body.get("next_url")

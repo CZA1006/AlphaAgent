@@ -88,9 +88,7 @@ class TestFactorDslCompiler:
     def test_rejects_invalid_event_decay_half_life(self, half_life: str) -> None:
         with pytest.raises(DslCompilationError, match="half-life"):
             FactorDslCompiler().compile(
-                Hypothesis(
-                    text=f"event_decay(days_to_next_greenshoe_expiry, {half_life})"
-                )
+                Hypothesis(text=f"event_decay(days_to_next_greenshoe_expiry, {half_life})")
             )
 
     def test_preserves_hypothesis_id(self) -> None:
@@ -115,8 +113,16 @@ class TestFactorDslCompiler:
 
     def test_all_ts_functions_compile(self) -> None:
         compiler = FactorDslCompiler()
-        for func in ("ts_mean", "ts_std", "ts_sum", "ts_min", "ts_max",
-                      "ts_delta", "ts_lag", "lag"):
+        for func in (
+            "ts_mean",
+            "ts_std",
+            "ts_sum",
+            "ts_min",
+            "ts_max",
+            "ts_delta",
+            "ts_lag",
+            "lag",
+        ):
             h = Hypothesis(text=f"rank({func}(close, 10))")
             factor = compiler.compile(h)
             assert factor.operator_tree is not None

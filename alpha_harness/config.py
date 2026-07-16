@@ -85,8 +85,7 @@ class BackendConfig:
     def __post_init__(self) -> None:
         if self.backend not in _VALID_BACKENDS:
             raise ValueError(
-                f"Invalid backend {self.backend!r}; "
-                f"expected one of {_VALID_BACKENDS}.",
+                f"Invalid backend {self.backend!r}; expected one of {_VALID_BACKENDS}.",
             )
 
     # ── Constructors ────────────────────────────────────────────────────
@@ -130,8 +129,7 @@ def _coerce_backend(raw: str) -> Backend:
     normalised = raw.strip().lower()
     if normalised not in _VALID_BACKENDS:
         raise ValueError(
-            f"Invalid backend {raw!r}; "
-            f"expected one of {_VALID_BACKENDS}.",
+            f"Invalid backend {raw!r}; expected one of {_VALID_BACKENDS}.",
         )
     # The membership check above narrows ``normalised`` to ``Backend``.
     if normalised == "memory":

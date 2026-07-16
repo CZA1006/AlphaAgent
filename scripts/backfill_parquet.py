@@ -151,7 +151,10 @@ def select_missing(
         if _parquet_covers_range(path, start, end):
             logger.info(
                 "cache-hit %s — %s already covers %s..%s",
-                sym, path, start, end,
+                sym,
+                path,
+                start,
+                end,
             )
             continue
         missing.append(sym)
@@ -273,7 +276,10 @@ def main(argv: list[str] | None = None) -> int:
         help="Refetch every symbol even if its Parquet file already covers the range.",
     )
     parser.add_argument(
-        "-v", "--verbose", action="count", default=1,
+        "-v",
+        "--verbose",
+        action="count",
+        default=1,
         help="Increase log verbosity (-v=INFO, -vv=DEBUG).",
     )
     args = parser.parse_args(argv)
@@ -294,12 +300,23 @@ def main(argv: list[str] | None = None) -> int:
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
-    targets = symbols if args.force else select_missing(
-        symbols, output_dir=args.output_dir, start=start, end=end,
+    targets = (
+        symbols
+        if args.force
+        else select_missing(
+            symbols,
+            output_dir=args.output_dir,
+            start=start,
+            end=end,
+        )
     )
     logger.info(
         "universe=%d  targets=%d  cached=%d  window=%s..%s",
-        len(symbols), len(targets), len(symbols) - len(targets), start, end,
+        len(symbols),
+        len(targets),
+        len(symbols) - len(targets),
+        start,
+        end,
     )
 
     written, empty = backfill(

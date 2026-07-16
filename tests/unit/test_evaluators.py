@@ -73,15 +73,19 @@ def _make_perfect_signal_panel() -> pd.DataFrame:
     frames: list[pd.DataFrame] = []
     for sym, g in zip(symbols, growth_rates, strict=True):
         close = 100.0 * np.power(1 + g, np.arange(n_dates, dtype=float))
-        frames.append(pd.DataFrame({
-            "timestamp": timestamps,
-            "symbol": sym,
-            "close": close,
-            "open": close,
-            "high": close,
-            "low": close,
-            "volume": [1e6] * n_dates,
-        }))
+        frames.append(
+            pd.DataFrame(
+                {
+                    "timestamp": timestamps,
+                    "symbol": sym,
+                    "close": close,
+                    "open": close,
+                    "high": close,
+                    "low": close,
+                    "volume": [1e6] * n_dates,
+                }
+            )
+        )
 
     return pd.concat(frames, ignore_index=True)
 
@@ -100,15 +104,19 @@ def _make_flat_panel() -> pd.DataFrame:
     for sym in symbols:
         # All symbols have the same growth rate
         close = 100.0 * np.power(1.02, np.arange(n_dates, dtype=float))
-        frames.append(pd.DataFrame({
-            "timestamp": timestamps,
-            "symbol": sym,
-            "close": close,
-            "open": close,
-            "high": close,
-            "low": close,
-            "volume": [1e6] * n_dates,
-        }))
+        frames.append(
+            pd.DataFrame(
+                {
+                    "timestamp": timestamps,
+                    "symbol": sym,
+                    "close": close,
+                    "open": close,
+                    "high": close,
+                    "low": close,
+                    "volume": [1e6] * n_dates,
+                }
+            )
+        )
 
     return pd.concat(frames, ignore_index=True)
 
@@ -508,12 +516,8 @@ class TestStubSignalQualityEvaluator:
         evaluator = StubSignalQualityEvaluator()
         request = _default_eval_request()
 
-        bundle_a = evaluator.evaluate(
-            FactorSpec(name="alpha", expression="close"), request
-        )
-        bundle_b = evaluator.evaluate(
-            FactorSpec(name="beta", expression="close"), request
-        )
+        bundle_a = evaluator.evaluate(FactorSpec(name="alpha", expression="close"), request)
+        bundle_b = evaluator.evaluate(FactorSpec(name="beta", expression="close"), request)
 
         assert bundle_a.ic != bundle_b.ic or bundle_a.sharpe != bundle_b.sharpe
 
@@ -569,9 +573,7 @@ class TestNoveltyEvaluator:
         """Whitespace-only differences should still flag as duplicates."""
         existing = [("f001", "ts_mean(close, 20)")]
         evaluator = NoveltyEvaluator(existing_expressions=existing)
-        factor = FactorSpec(
-            name="dup", expression=" ts_mean( close , 20 ) "
-        )
+        factor = FactorSpec(name="dup", expression=" ts_mean( close , 20 ) ")
 
         verdict = evaluator.check_novelty(factor)
         assert verdict.is_novel is False
@@ -605,9 +607,7 @@ class TestNoveltyEvaluator:
         from alpha_harness.schemas.experiment import ExperimentRecord
 
         registry = ExperimentRegistry()
-        seed_factor = FactorSpec(
-            name="seed_rank_close", expression="rank(close)"
-        )
+        seed_factor = FactorSpec(name="seed_rank_close", expression="rank(close)")
         seed_record = ExperimentRecord(
             hypothesis=Hypothesis(text="rank(close)"),
             factor=seed_factor,
@@ -644,8 +644,11 @@ class TestPromotionJudge:
         factor = FactorSpec(name="strong", expression="rank(close)")
         request = _default_eval_request()
         evaluation = EvaluationBundle(
-            ic=0.08, rank_ic=0.10, quantile_spread=0.02,
-            n_periods=100, n_assets=50,
+            ic=0.08,
+            rank_ic=0.10,
+            quantile_spread=0.02,
+            n_periods=100,
+            n_assets=50,
         )
 
         detail = judge.judge(hypothesis, factor, evaluation, request)
@@ -657,8 +660,11 @@ class TestPromotionJudge:
         factor = FactorSpec(name="weak", expression="noise()")
         request = _default_eval_request()
         evaluation = EvaluationBundle(
-            ic=0.001, rank_ic=0.002, quantile_spread=0.0001,
-            n_periods=100, n_assets=50,
+            ic=0.001,
+            rank_ic=0.002,
+            quantile_spread=0.0001,
+            n_periods=100,
+            n_assets=50,
         )
 
         detail = judge.judge(hypothesis, factor, evaluation, request)
@@ -672,7 +678,9 @@ class TestPromotionJudge:
         factor = FactorSpec(name="sparse", expression="close")
         request = _default_eval_request()
         evaluation = EvaluationBundle(
-            ic=0.05, rank_ic=0.06, quantile_spread=0.01,
+            ic=0.05,
+            rank_ic=0.06,
+            quantile_spread=0.01,
             n_periods=10,  # below min_periods=60
             n_assets=50,
         )
@@ -683,16 +691,17 @@ class TestPromotionJudge:
         assert detail.failure.category == FailureCategory.DATA_INSUFFICIENT
 
     def test_rejects_duplicate(self) -> None:
-        novelty = NoveltyEvaluator(
-            existing_expressions=[("f001", "rank(close)")]
-        )
+        novelty = NoveltyEvaluator(existing_expressions=[("f001", "rank(close)")])
         judge = PromotionJudge(novelty_evaluator=novelty)
         hypothesis = Hypothesis(text="same idea")
         factor = FactorSpec(name="dup", expression="rank(close)")
         request = _default_eval_request()
         evaluation = EvaluationBundle(
-            ic=0.08, rank_ic=0.10, quantile_spread=0.02,
-            n_periods=100, n_assets=50,
+            ic=0.08,
+            rank_ic=0.10,
+            quantile_spread=0.02,
+            n_periods=100,
+            n_assets=50,
         )
 
         detail = judge.judge(hypothesis, factor, evaluation, request)
@@ -708,8 +717,11 @@ class TestPromotionJudge:
         request = _default_eval_request()
         # Default thresholds: ic=0.02, rank_ic=0.03, quantile_spread=0.005
         evaluation = EvaluationBundle(
-            ic=0.022, rank_ic=0.035, quantile_spread=0.0055,
-            n_periods=100, n_assets=50,
+            ic=0.022,
+            rank_ic=0.035,
+            quantile_spread=0.0055,
+            n_periods=100,
+            n_assets=50,
         )
 
         detail = judge.judge(hypothesis, factor, evaluation, request)
@@ -721,9 +733,11 @@ class TestPromotionJudge:
         factor = FactorSpec(name="partial", expression="close")
         request = _default_eval_request()
         evaluation = EvaluationBundle(
-            ic=0.05, rank_ic=None,  # missing required metric
+            ic=0.05,
+            rank_ic=None,  # missing required metric
             quantile_spread=0.01,
-            n_periods=100, n_assets=50,
+            n_periods=100,
+            n_assets=50,
         )
 
         detail = judge.judge(hypothesis, factor, evaluation, request)

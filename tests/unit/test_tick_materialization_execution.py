@@ -23,9 +23,7 @@ DATASET = "dataset"
 END_DATE = date(2026, 6, 26)
 STARTED = datetime(2026, 7, 14, tzinfo=UTC)
 SQL_TEMPLATE = Path("scripts/sql/micro_features_intraday_v1.sql").read_text(encoding="utf-8")
-SOURCE_QA_TEMPLATE = Path("scripts/sql/raw_tick_nonpositive_qa.sql").read_text(
-    encoding="utf-8"
-)
+SOURCE_QA_TEMPLATE = Path("scripts/sql/raw_tick_nonpositive_qa.sql").read_text(encoding="utf-8")
 POST_QA_TEMPLATE = Path("scripts/sql/micro_features_intraday_v1_post_qa.sql").read_text(
     encoding="utf-8"
 )
@@ -126,7 +124,7 @@ def test_execute_materialization_passes_exact_post_write_contract() -> None:
         post_qa_sql=_render(POST_QA_TEMPLATE),
         statement_runner=lambda sql: observed.update(statement=sql),
         metadata_runner=_metadata,
-        query_runner=lambda sql: (observed.update(query=sql) or [_qa_row()]),
+        query_runner=lambda sql: observed.update(query=sql) or [_qa_row()],
         max_bytes_billed=10_000,
         started_at=STARTED,
     )

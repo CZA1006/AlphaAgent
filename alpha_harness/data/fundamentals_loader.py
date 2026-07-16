@@ -165,10 +165,7 @@ class LocalFundamentalsLoader:
         )
 
         # Filter to only records published by as_of
-        pit_records = [
-            r for r in all_records
-            if r.published_at.date() <= as_of
-        ]
+        pit_records = [r for r in all_records if r.published_at.date() <= as_of]
 
         # Keep only the latest period_end per (symbol, field)
         latest: dict[tuple[str, str], FundamentalRecord] = {}

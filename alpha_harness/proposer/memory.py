@@ -291,13 +291,15 @@ def load_composite_anchors(
         if recipe.recipe_id in seen_recipes:
             continue
         seen_recipes.add(recipe.recipe_id)
-        anchors.append(CompositeAnchor(
-            factor_id=factor_id,
-            recipe=recipe,
-            ic=_optional_float(row.get("ic")),
-            rank_ic=_optional_float(row.get("rank_ic")),
-            promoted_at=str(row.get("promoted_at", "")),
-        ))
+        anchors.append(
+            CompositeAnchor(
+                factor_id=factor_id,
+                recipe=recipe,
+                ic=_optional_float(row.get("ic")),
+                rank_ic=_optional_float(row.get("rank_ic")),
+                promoted_at=str(row.get("promoted_at", "")),
+            )
+        )
         if len(anchors) >= limit:
             break
     return anchors

@@ -15,10 +15,7 @@ class MemoryRegistry(InMemoryRegistry[MemoryEntry]):
 
     def list_by_experiment(self, experiment_id: str) -> list[MemoryEntry]:
         """Return all memory entries linked to a specific experiment."""
-        return [
-            m for m in self.list_all()
-            if experiment_id in m.source_experiment_ids
-        ]
+        return [m for m in self.list_all() if experiment_id in m.source_experiment_ids]
 
     def list_by_tag(self, tag: str) -> list[MemoryEntry]:
         """Return all memory entries matching a tag."""

@@ -34,9 +34,7 @@ class TestProtocol:
         assert isinstance(mock, LLMClient)
 
     def test_openrouter_client_satisfies_protocol(self) -> None:
-        transport = httpx.MockTransport(
-            lambda r: httpx.Response(200, json={})
-        )
+        transport = httpx.MockTransport(lambda r: httpx.Response(200, json={}))
         client = OpenRouterClient(
             OpenRouterConfig(api_key="sk-test"),
             http_client=httpx.Client(transport=transport),
@@ -79,15 +77,15 @@ class TestOpenRouterConfig:
 
     def test_bad_temperature_raises(self) -> None:
         with pytest.raises(LLMConfigError, match="OPENROUTER_TEMPERATURE"):
-            OpenRouterConfig.from_env(
-                {"OPENROUTER_API_KEY": "sk", "OPENROUTER_TEMPERATURE": "hot"}
-            )
+            OpenRouterConfig.from_env({"OPENROUTER_API_KEY": "sk", "OPENROUTER_TEMPERATURE": "hot"})
 
     def test_base_url_trailing_slash_stripped(self) -> None:
-        cfg = OpenRouterConfig.from_env({
-            "OPENROUTER_API_KEY": "sk",
-            "OPENROUTER_BASE_URL": "https://example.com/v1/",
-        })
+        cfg = OpenRouterConfig.from_env(
+            {
+                "OPENROUTER_API_KEY": "sk",
+                "OPENROUTER_BASE_URL": "https://example.com/v1/",
+            }
+        )
         assert cfg.base_url == "https://example.com/v1"
 
 
@@ -131,33 +129,27 @@ class TestOpenRouterClient:
         http = httpx.Client(transport=_mock_transport(body=_ok_body("hello world")))
         client = OpenRouterClient(OpenRouterConfig(api_key="sk"), http_client=http)
 
-        response = client.complete(
-            LLMRequest(messages=[LLMMessage(role="user", content="hi")])
-        )
+        response = client.complete(LLMRequest(messages=[LLMMessage(role="user", content="hi")]))
 
         assert response.content == "hello world"
         assert response.model == "anthropic/claude-3.5-sonnet"
         assert response.finish_reason == "stop"
-        assert response.usage == {
-            "prompt_tokens": 5, "completion_tokens": 2, "total_tokens": 7
-        }
+        assert response.usage == {"prompt_tokens": 5, "completion_tokens": 2, "total_tokens": 7}
 
     def test_complete_preserves_provider_reported_cost(self) -> None:
         body = _ok_body()
         body["usage"]["cost"] = 0.000321
         http = httpx.Client(transport=_mock_transport(body=body))
 
-        response = OpenRouterClient(
-            OpenRouterConfig(api_key="sk"), http_client=http
-        ).complete(LLMRequest(messages=[LLMMessage(role="user", content="hi")]))
+        response = OpenRouterClient(OpenRouterConfig(api_key="sk"), http_client=http).complete(
+            LLMRequest(messages=[LLMMessage(role="user", content="hi")])
+        )
 
         assert response.usage["cost"] == pytest.approx(0.000321)
 
     def test_sends_auth_and_attribution_headers(self) -> None:
         captured: list[httpx.Request] = []
-        http = httpx.Client(
-            transport=_mock_transport(body=_ok_body(), captured=captured)
-        )
+        http = httpx.Client(transport=_mock_transport(body=_ok_body(), captured=captured))
         cfg = OpenRouterConfig(
             api_key="sk-123",
             http_referer="https://alpha.test",
@@ -175,20 +167,20 @@ class TestOpenRouterClient:
 
     def test_payload_uses_request_overrides(self) -> None:
         captured: list[httpx.Request] = []
-        http = httpx.Client(
-            transport=_mock_transport(body=_ok_body(), captured=captured)
-        )
+        http = httpx.Client(transport=_mock_transport(body=_ok_body(), captured=captured))
         client = OpenRouterClient(
             OpenRouterConfig(api_key="sk", model="default/model", temperature=0.2),
             http_client=http,
         )
-        client.complete(LLMRequest(
-            messages=[LLMMessage(role="user", content="hi")],
-            model="override/model",
-            temperature=0.9,
-            max_tokens=256,
-            response_format={"type": "json_object"},
-        ))
+        client.complete(
+            LLMRequest(
+                messages=[LLMMessage(role="user", content="hi")],
+                model="override/model",
+                temperature=0.9,
+                max_tokens=256,
+                response_format={"type": "json_object"},
+            )
+        )
 
         body = json.loads(captured[0].content)
         assert body["model"] == "override/model"
@@ -197,37 +189,25 @@ class TestOpenRouterClient:
         assert body["response_format"] == {"type": "json_object"}
 
     def test_http_error_wrapped(self) -> None:
-        http = httpx.Client(
-            transport=_mock_transport(status=500, text="boom")
-        )
+        http = httpx.Client(transport=_mock_transport(status=500, text="boom"))
         client = OpenRouterClient(OpenRouterConfig(api_key="sk"), http_client=http)
 
         with pytest.raises(OpenRouterError, match="500"):
-            client.complete(
-                LLMRequest(messages=[LLMMessage(role="user", content="hi")])
-            )
+            client.complete(LLMRequest(messages=[LLMMessage(role="user", content="hi")]))
 
     def test_malformed_body_raises(self) -> None:
-        http = httpx.Client(
-            transport=_mock_transport(status=200, text="not json")
-        )
+        http = httpx.Client(transport=_mock_transport(status=200, text="not json"))
         client = OpenRouterClient(OpenRouterConfig(api_key="sk"), http_client=http)
 
         with pytest.raises(OpenRouterError, match="non-JSON"):
-            client.complete(
-                LLMRequest(messages=[LLMMessage(role="user", content="hi")])
-            )
+            client.complete(LLMRequest(messages=[LLMMessage(role="user", content="hi")]))
 
     def test_empty_choices_raises(self) -> None:
-        http = httpx.Client(
-            transport=_mock_transport(body={"choices": []})
-        )
+        http = httpx.Client(transport=_mock_transport(body={"choices": []}))
         client = OpenRouterClient(OpenRouterConfig(api_key="sk"), http_client=http)
 
         with pytest.raises(OpenRouterError, match="no choices"):
-            client.complete(
-                LLMRequest(messages=[LLMMessage(role="user", content="hi")])
-            )
+            client.complete(LLMRequest(messages=[LLMMessage(role="user", content="hi")]))
 
     def test_context_manager_closes_owned_client(self) -> None:
         with OpenRouterClient(OpenRouterConfig(api_key="sk")) as client:
@@ -253,9 +233,7 @@ class TestMockLLMClient:
             mock.complete(req)
 
     def test_handler_sees_request(self) -> None:
-        mock = MockLLMClient(
-            handler=lambda req: f"echo:{req.messages[-1].content}"
-        )
+        mock = MockLLMClient(handler=lambda req: f"echo:{req.messages[-1].content}")
         req = LLMRequest(messages=[LLMMessage(role="user", content="ping")])
         assert mock.complete(req).content == "echo:ping"
 
@@ -286,13 +264,17 @@ class ProposalSchema(BaseModel):
 
 class TestRequestStructured:
     def test_happy_path_parses_and_validates(self) -> None:
-        mock = MockLLMClient(responses=[
-            json.dumps({
-                "hypothesis": "ts_mean(close, 20)",
-                "rationale": "momentum",
-                "confidence": 0.7,
-            }),
-        ])
+        mock = MockLLMClient(
+            responses=[
+                json.dumps(
+                    {
+                        "hypothesis": "ts_mean(close, 20)",
+                        "rationale": "momentum",
+                        "confidence": 0.7,
+                    }
+                ),
+            ]
+        )
         result = request_structured(
             mock,
             [LLMMessage(role="user", content="propose")],
@@ -303,21 +285,25 @@ class TestRequestStructured:
         assert result.confidence == 0.7
 
     def test_sets_json_response_format(self) -> None:
-        mock = MockLLMClient(responses=[
-            json.dumps({"hypothesis": "x", "confidence": 0.5})
-        ])
+        mock = MockLLMClient(responses=[json.dumps({"hypothesis": "x", "confidence": 0.5})])
         request_structured(
-            mock, [LLMMessage(role="user", content="q")], ProposalSchema,
+            mock,
+            [LLMMessage(role="user", content="q")],
+            ProposalSchema,
         )
         assert mock.calls[0].response_format == {"type": "json_object"}
 
     def test_retries_on_invalid_json(self) -> None:
-        mock = MockLLMClient(responses=[
-            "not json at all",
-            json.dumps({"hypothesis": "x", "confidence": 0.5}),
-        ])
+        mock = MockLLMClient(
+            responses=[
+                "not json at all",
+                json.dumps({"hypothesis": "x", "confidence": 0.5}),
+            ]
+        )
         result = request_structured(
-            mock, [LLMMessage(role="user", content="q")], ProposalSchema,
+            mock,
+            [LLMMessage(role="user", content="q")],
+            ProposalSchema,
             max_attempts=3,
         )
         assert result.hypothesis == "x"
@@ -328,12 +314,16 @@ class TestRequestStructured:
         assert "not valid JSON" in second_msgs[-1].content
 
     def test_retries_on_schema_violation(self) -> None:
-        mock = MockLLMClient(responses=[
-            json.dumps({"hypothesis": "x", "confidence": 5.0}),  # > 1.0
-            json.dumps({"hypothesis": "x", "confidence": 0.5}),
-        ])
+        mock = MockLLMClient(
+            responses=[
+                json.dumps({"hypothesis": "x", "confidence": 5.0}),  # > 1.0
+                json.dumps({"hypothesis": "x", "confidence": 0.5}),
+            ]
+        )
         result = request_structured(
-            mock, [LLMMessage(role="user", content="q")], ProposalSchema,
+            mock,
+            [LLMMessage(role="user", content="q")],
+            ProposalSchema,
             max_attempts=3,
         )
         assert result.confidence == 0.5
@@ -344,18 +334,24 @@ class TestRequestStructured:
         mock = MockLLMClient(responses=["nope", "still nope"])
         with pytest.raises(StructuredLLMError) as excinfo:
             request_structured(
-                mock, [LLMMessage(role="user", content="q")], ProposalSchema,
+                mock,
+                [LLMMessage(role="user", content="q")],
+                ProposalSchema,
                 max_attempts=2,
             )
         assert len(excinfo.value.attempts) == 2
         assert len(mock.calls) == 2
 
     def test_strips_markdown_fences(self) -> None:
-        mock = MockLLMClient(responses=[
-            "```json\n" + json.dumps({"hypothesis": "x", "confidence": 0.5}) + "\n```",
-        ])
+        mock = MockLLMClient(
+            responses=[
+                "```json\n" + json.dumps({"hypothesis": "x", "confidence": 0.5}) + "\n```",
+            ]
+        )
         result = request_structured(
-            mock, [LLMMessage(role="user", content="q")], ProposalSchema,
+            mock,
+            [LLMMessage(role="user", content="q")],
+            ProposalSchema,
         )
         assert result.hypothesis == "x"
 
@@ -363,6 +359,8 @@ class TestRequestStructured:
         mock = MockLLMClient(responses=["x"])
         with pytest.raises(ValueError, match="max_attempts"):
             request_structured(
-                mock, [LLMMessage(role="user", content="q")], ProposalSchema,
+                mock,
+                [LLMMessage(role="user", content="q")],
+                ProposalSchema,
                 max_attempts=0,
             )

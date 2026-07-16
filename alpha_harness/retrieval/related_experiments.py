@@ -44,8 +44,7 @@ from alpha_harness.schemas.hypothesis import AssetClass
 class ExperimentSource(Protocol):
     """Minimal structural interface the retriever needs from a registry."""
 
-    def list_all(self) -> list[ExperimentRecord]:
-        ...
+    def list_all(self) -> list[ExperimentRecord]: ...
 
 
 # ── Typed result ─────────────────────────────────────────────────────────────
@@ -209,9 +208,7 @@ class RelatedExperimentRetriever:
             ic=ev.ic,
             rank_ic=ev.rank_ic,
             sharpe=ev.sharpe,
-            failure_category=(
-                record.failure.category.value if record.failure else None
-            ),
+            failure_category=(record.failure.category.value if record.failure else None),
             notes=record.notes,
         )
 
@@ -223,8 +220,7 @@ def _passes_filters(record: ExperimentRecord, query: RelatedQuery) -> bool:
     if query.decisions is not None and record.decision not in query.decisions:
         return False
     return not (
-        query.asset_class is not None
-        and record.hypothesis.asset_class != query.asset_class
+        query.asset_class is not None and record.hypothesis.asset_class != query.asset_class
     )
 
 
@@ -246,9 +242,7 @@ def _canonicalize_query_factor(factor: FactorSpec | None) -> CanonNode | None:
         return None
 
 
-def _ast_similarity_score(
-    candidate_canon: CanonNode | None, other: FactorSpec
-) -> float:
+def _ast_similarity_score(candidate_canon: CanonNode | None, other: FactorSpec) -> float:
     """Similarity between the query factor and a candidate's factor."""
     if candidate_canon is None:
         return 0.0
@@ -275,9 +269,7 @@ def _tag_jaccard(a: frozenset[str], b: frozenset[str]) -> float:
     return intersection / union if union else 0.0
 
 
-def _recency_score(
-    created_at: datetime, now: datetime, half_life_days: float
-) -> float:
+def _recency_score(created_at: datetime, now: datetime, half_life_days: float) -> float:
     """Exponential decay: score halves every ``half_life_days`` of age."""
     if half_life_days <= 0:
         return 0.0

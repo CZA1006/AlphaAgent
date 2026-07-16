@@ -55,16 +55,12 @@ class FactorDslCompiler:
         try:
             ast = parse_expression(expression)
         except DslParseError as e:
-            raise DslCompilationError(
-                f"Failed to parse expression {expression!r}: {e}"
-            ) from e
+            raise DslCompilationError(f"Failed to parse expression {expression!r}: {e}") from e
 
         # Validate AST (reuse the already-parsed tree, no double parse)
         errors = validate_ast(ast)
         if errors:
-            raise DslCompilationError(
-                f"Validation errors in {expression!r}: {'; '.join(errors)}"
-            )
+            raise DslCompilationError(f"Validation errors in {expression!r}: {'; '.join(errors)}")
 
         return FactorSpec(
             name=name,

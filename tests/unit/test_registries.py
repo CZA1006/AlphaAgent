@@ -1,6 +1,5 @@
 """Tests for registry implementations — base protocol and domain registries."""
 
-
 from alpha_harness.registries.base import InMemoryRegistry
 from alpha_harness.registries.experiment import ExperimentRegistry
 from alpha_harness.registries.factor import FactorRegistry
@@ -137,43 +136,55 @@ def test_skill_registry_list_promoted():
 
 def test_memory_registry_list_by_category():
     reg = MemoryRegistry()
-    reg.save(MemoryEntry(
-        category=MemoryCategory.SUCCESS_PATTERN,
-        content="momentum works in low-vol regimes",
-    ))
-    reg.save(MemoryEntry(
-        category=MemoryCategory.FAILURE_PATTERN,
-        content="reversion fails in trending markets",
-    ))
-    reg.save(MemoryEntry(
-        category=MemoryCategory.SUCCESS_PATTERN,
-        content="quality factor stable across subperiods",
-    ))
+    reg.save(
+        MemoryEntry(
+            category=MemoryCategory.SUCCESS_PATTERN,
+            content="momentum works in low-vol regimes",
+        )
+    )
+    reg.save(
+        MemoryEntry(
+            category=MemoryCategory.FAILURE_PATTERN,
+            content="reversion fails in trending markets",
+        )
+    )
+    reg.save(
+        MemoryEntry(
+            category=MemoryCategory.SUCCESS_PATTERN,
+            content="quality factor stable across subperiods",
+        )
+    )
     assert len(reg.list_by_category(MemoryCategory.SUCCESS_PATTERN)) == 2
     assert len(reg.list_by_category(MemoryCategory.FAILURE_PATTERN)) == 1
 
 
 def test_memory_registry_list_by_experiment():
     reg = MemoryRegistry()
-    reg.save(MemoryEntry(
-        category=MemoryCategory.EXPERIMENT_LINEAGE,
-        content="derived from exp_001",
-        source_experiment_ids=["exp_001", "exp_002"],
-    ))
-    reg.save(MemoryEntry(
-        category=MemoryCategory.META_POLICY,
-        content="unrelated note",
-    ))
+    reg.save(
+        MemoryEntry(
+            category=MemoryCategory.EXPERIMENT_LINEAGE,
+            content="derived from exp_001",
+            source_experiment_ids=["exp_001", "exp_002"],
+        )
+    )
+    reg.save(
+        MemoryEntry(
+            category=MemoryCategory.META_POLICY,
+            content="unrelated note",
+        )
+    )
     assert len(reg.list_by_experiment("exp_001")) == 1
     assert len(reg.list_by_experiment("exp_999")) == 0
 
 
 def test_memory_registry_list_by_tag():
     reg = MemoryRegistry()
-    reg.save(MemoryEntry(
-        category=MemoryCategory.SUCCESS_PATTERN,
-        content="tagged",
-        tags=["momentum", "us_equity"],
-    ))
+    reg.save(
+        MemoryEntry(
+            category=MemoryCategory.SUCCESS_PATTERN,
+            content="tagged",
+            tags=["momentum", "us_equity"],
+        )
+    )
     assert len(reg.list_by_tag("momentum")) == 1
     assert len(reg.list_by_tag("crypto")) == 0

@@ -70,11 +70,9 @@ class SqlMemoryRegistry:
 
         all_records = self.list_all()
         return [
-            m for m in all_records
-            if all(
-                str(getattr(m, field, None)) == value
-                for field, value in filters.items()
-            )
+            m
+            for m in all_records
+            if all(str(getattr(m, field, None)) == value for field, value in filters.items())
         ]
 
     # ── Domain-specific queries ──────────────────────────────────────
@@ -97,10 +95,7 @@ class SqlMemoryRegistry:
         Lineage memory is small (a few entries per experiment), so this is
         fine at current scale.
         """
-        return [
-            m for m in self.list_all()
-            if experiment_id in m.source_experiment_ids
-        ]
+        return [m for m in self.list_all() if experiment_id in m.source_experiment_ids]
 
     def list_by_tag(self, tag: str) -> list[MemoryEntry]:
         return [m for m in self.list_all() if tag in m.tags]

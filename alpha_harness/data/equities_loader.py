@@ -104,8 +104,17 @@ class LocalEquitiesLoader:
         else:
             result_df = pd.DataFrame(
                 columns=[
-                    "symbol", "timestamp", "open", "high", "low", "close",
-                    "volume", "vwap", "adjustment", "source", "frequency",
+                    "symbol",
+                    "timestamp",
+                    "open",
+                    "high",
+                    "low",
+                    "close",
+                    "volume",
+                    "vwap",
+                    "adjustment",
+                    "source",
+                    "frequency",
                 ],
             )
 

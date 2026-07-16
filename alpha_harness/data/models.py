@@ -36,9 +36,9 @@ class BarFrequency(StrEnum):
 class AdjustmentType(StrEnum):
     """How prices are adjusted."""
 
-    RAW = "raw"                      # no adjustments
-    SPLIT_ADJUSTED = "split"         # stock-split adjusted
-    SPLIT_AND_DIVIDEND = "split_div" # split + dividend adjusted
+    RAW = "raw"  # no adjustments
+    SPLIT_ADJUSTED = "split"  # stock-split adjusted
+    SPLIT_AND_DIVIDEND = "split_div"  # split + dividend adjusted
 
 
 # ── Bar models ───────────────────────────────────────────────────────────────
@@ -52,15 +52,15 @@ class Bar(BaseModel):
     """
 
     symbol: str
-    timestamp: datetime          # bar close time, always UTC-aware
+    timestamp: datetime  # bar close time, always UTC-aware
     open: float
     high: float
     low: float
     close: float
     volume: float
-    vwap: float | None = None    # volume-weighted average price (if available)
+    vwap: float | None = None  # volume-weighted average price (if available)
     trade_count: int | None = None
-    source: str = ""             # e.g. "polygon", "ccxt:binance", "local_csv"
+    source: str = ""  # e.g. "polygon", "ccxt:binance", "local_csv"
     frequency: BarFrequency = BarFrequency.DAILY
 
 
@@ -85,7 +85,7 @@ class CryptoBar(Bar):
         is mandatory for production use; it defaults to empty only for tests.
     """
 
-    exchange: str = ""           # e.g. "binance", "coinbase", "bybit"
+    exchange: str = ""  # e.g. "binance", "coinbase", "bybit"
     quote_currency: str = "USDT"
 
 
@@ -131,12 +131,12 @@ class FundamentalRecord(BaseModel):
     """
 
     symbol: str
-    field_name: str              # e.g. "revenue", "eps", "book_value"
+    field_name: str  # e.g. "revenue", "eps", "book_value"
     value: float
-    period_end: date             # fiscal period end date
-    published_at: datetime       # when this data became publicly available
-    fiscal_quarter: str = ""     # e.g. "Q4", "FY"
-    source: str = ""             # e.g. "sec_edgar", "polygon_fundamentals"
+    period_end: date  # fiscal period end date
+    published_at: datetime  # when this data became publicly available
+    fiscal_quarter: str = ""  # e.g. "Q4", "FY"
+    source: str = ""  # e.g. "sec_edgar", "polygon_fundamentals"
 
 
 # ── Data request/response ────────────────────────────────────────────────────

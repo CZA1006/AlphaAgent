@@ -274,8 +274,7 @@ class WalkForwardEvaluator:
             "holdout_start": str(split_start),
             "holdout_end": str(request.eval_end),
             "holdout_days": holdout_days,
-            "embargo_bars": request.label.lag_bars
-            + request.label.forecast_horizon_bars,
+            "embargo_bars": request.label.lag_bars + request.label.forecast_horizon_bars,
             "embargo_mode": "window_local_forward_returns",
             "ic": held_out.ic,
             "rank_ic": held_out.rank_ic,
@@ -411,9 +410,7 @@ def _aggregate_metadata(
             }
 
     complement_payloads = [
-        payload
-        for fold in folds
-        if isinstance((payload := fold.metadata.get("complement")), dict)
+        payload for fold in folds if isinstance((payload := fold.metadata.get("complement")), dict)
     ]
     if complement_payloads:
         correlations = [
@@ -430,9 +427,7 @@ def _aggregate_metadata(
         metadata["complement"] = {
             "base_recipe_id": first.get("base_recipe_id"),
             "candidate_expression": first.get("candidate_expression"),
-            "mean_rank_correlation": (
-                statistics.fmean(correlations) if correlations else None
-            ),
+            "mean_rank_correlation": (statistics.fmean(correlations) if correlations else None),
             "max_abs_rank_correlation": (
                 max(abs(value) for value in correlations) if correlations else None
             ),

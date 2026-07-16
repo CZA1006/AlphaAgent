@@ -22,17 +22,26 @@ autonomous_main = autonomous_module.main
 def test_autonomous_cycle_mock_llm_end_to_end(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    exit_code = autonomous_main([
-        "--mock-llm",
-        "--n-candidates", "2",
-        "--n-days", "120",
-        "--n-symbols", "8",
-        "--seed", "7",
-        "--max-depth", "1",
-        "--max-variants-per-step", "2",
-        "--max-total-children", "3",
-        "--json",
-    ])
+    exit_code = autonomous_main(
+        [
+            "--mock-llm",
+            "--n-candidates",
+            "2",
+            "--n-days",
+            "120",
+            "--n-symbols",
+            "8",
+            "--seed",
+            "7",
+            "--max-depth",
+            "1",
+            "--max-variants-per-step",
+            "2",
+            "--max-total-children",
+            "3",
+            "--json",
+        ]
+    )
     assert exit_code == 0
 
     out = capsys.readouterr().out.strip()
@@ -55,15 +64,24 @@ def test_autonomous_cycle_live_without_api_key_exits_cleanly(
     """Live mode without OPENROUTER_API_KEY must fail fast with a hint."""
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
 
-    exit_code = autonomous_main([
-        "--n-candidates", "1",
-        "--n-days", "90",
-        "--n-symbols", "4",
-        "--seed", "1",
-        "--max-depth", "0",
-        "--max-variants-per-step", "1",
-        "--max-total-children", "0",
-    ])
+    exit_code = autonomous_main(
+        [
+            "--n-candidates",
+            "1",
+            "--n-days",
+            "90",
+            "--n-symbols",
+            "4",
+            "--seed",
+            "1",
+            "--max-depth",
+            "0",
+            "--max-variants-per-step",
+            "1",
+            "--max-total-children",
+            "0",
+        ]
+    )
 
     assert exit_code == 2
     err = capsys.readouterr().err
@@ -88,18 +106,28 @@ def test_autonomous_cycle_surfaces_refine_branch(
     # deliberately lift the base bar so its N=3 session-adjusted value lands
     # just below one mock candidate's typical IC. The candidate passes but stays
     # inside the default 20% refine margin, so the refinement runner fires.
-    exit_code = autonomous_main([
-        "--mock-llm",
-        "--n-candidates", "3",
-        "--n-days", "180",
-        "--n-symbols", "8",
-        "--seed", "11",
-        "--ic-threshold", "0.065",
-        "--max-depth", "1",
-        "--max-variants-per-step", "2",
-        "--max-total-children", "4",
-        "--json",
-    ])
+    exit_code = autonomous_main(
+        [
+            "--mock-llm",
+            "--n-candidates",
+            "3",
+            "--n-days",
+            "180",
+            "--n-symbols",
+            "8",
+            "--seed",
+            "11",
+            "--ic-threshold",
+            "0.065",
+            "--max-depth",
+            "1",
+            "--max-variants-per-step",
+            "2",
+            "--max-total-children",
+            "4",
+            "--json",
+        ]
+    )
     assert exit_code == 0
 
     payload = json.loads(capsys.readouterr().out.strip())
@@ -122,39 +150,59 @@ def test_autonomous_cycle_complement_mode_builds_augmented_basket(
         components=["rank(close)", "rank(volume)"],
     )
     factor_id = "composite_base"
-    (promoted_dir / f"{factor_id}.json").write_text(json.dumps({
-        "factor_id": factor_id,
-        "composite_recipe": base.model_dump(mode="json"),
-    }))
-    (promoted_dir / "_index.jsonl").write_text(json.dumps({
-        "factor_id": factor_id,
-        "ic": 0.03,
-        "rank_ic": 0.04,
-        "promoted_at": "2026-07-15T00:00:00+00:00",
-    }) + "\n")
+    (promoted_dir / f"{factor_id}.json").write_text(
+        json.dumps(
+            {
+                "factor_id": factor_id,
+                "composite_recipe": base.model_dump(mode="json"),
+            }
+        )
+    )
+    (promoted_dir / "_index.jsonl").write_text(
+        json.dumps(
+            {
+                "factor_id": factor_id,
+                "ic": 0.03,
+                "rank_ic": 0.04,
+                "promoted_at": "2026-07-15T00:00:00+00:00",
+            }
+        )
+        + "\n"
+    )
     monkeypatch.setattr(
         autonomous_module,
         "_MOCK_CANDIDATES",
-        [RawProposal(
-            expression="rank(high - low)",
-            rationale="range signal diversifies level and volume",
-            base_recipe_id=base.recipe_id,
-        )],
+        [
+            RawProposal(
+                expression="rank(high - low)",
+                rationale="range signal diversifies level and volume",
+                base_recipe_id=base.recipe_id,
+            )
+        ],
     )
 
-    exit_code = autonomous_main([
-        "--mock-llm",
-        "--composite-complements",
-        "--promoted-dir", str(promoted_dir),
-        "--no-promoted-artifacts",
-        "--n-candidates", "1",
-        "--n-days", "160",
-        "--n-symbols", "8",
-        "--seed", "7",
-        "--max-depth", "0",
-        "--max-total-children", "0",
-        "--json",
-    ])
+    exit_code = autonomous_main(
+        [
+            "--mock-llm",
+            "--composite-complements",
+            "--promoted-dir",
+            str(promoted_dir),
+            "--no-promoted-artifacts",
+            "--n-candidates",
+            "1",
+            "--n-days",
+            "160",
+            "--n-symbols",
+            "8",
+            "--seed",
+            "7",
+            "--max-depth",
+            "0",
+            "--max-total-children",
+            "0",
+            "--json",
+        ]
+    )
     assert exit_code == 0
     payload = json.loads(capsys.readouterr().out.strip())
     assert payload["proposals_accepted"] == 1
@@ -165,13 +213,19 @@ def test_autonomous_cycle_complement_mode_fails_without_anchor(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    exit_code = autonomous_main([
-        "--mock-llm",
-        "--composite-complements",
-        "--promoted-dir", str(tmp_path / "missing"),
-        "--n-candidates", "1",
-        "--n-days", "40",
-        "--n-symbols", "4",
-    ])
+    exit_code = autonomous_main(
+        [
+            "--mock-llm",
+            "--composite-complements",
+            "--promoted-dir",
+            str(tmp_path / "missing"),
+            "--n-candidates",
+            "1",
+            "--n-days",
+            "40",
+            "--n-symbols",
+            "4",
+        ]
+    )
     assert exit_code == 2
     assert "requires at least one valid promoted composite anchor" in capsys.readouterr().err

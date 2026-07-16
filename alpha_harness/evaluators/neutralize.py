@@ -63,13 +63,15 @@ def _beta_neutralize(
         raise ValueError("min_periods must be <= lookback_bars")
 
     universe_mean = fwd.groupby(timestamps.to_numpy()).transform("mean")
-    frame = pd.DataFrame({
-        "_position": np.arange(len(fwd)),
-        "_timestamp": timestamps.to_numpy(),
-        "_symbol": symbols.to_numpy(),
-        "_return": fwd.to_numpy(dtype=float),
-        "_market": universe_mean.to_numpy(dtype=float),
-    })
+    frame = pd.DataFrame(
+        {
+            "_position": np.arange(len(fwd)),
+            "_timestamp": timestamps.to_numpy(),
+            "_symbol": symbols.to_numpy(),
+            "_return": fwd.to_numpy(dtype=float),
+            "_market": universe_mean.to_numpy(dtype=float),
+        }
+    )
     result = np.full(len(frame), np.nan, dtype=float)
 
     for _, group in frame.groupby("_symbol", sort=False, dropna=False):
@@ -145,11 +147,14 @@ def compute_factor_turnover(
     if symbols is None:
         return None
 
-    df = pd.DataFrame({
-        "ts": timestamps.to_numpy(),
-        "sym": symbols.to_numpy(),
-        "sig": signal.to_numpy(dtype=float),
-    })
+    df = pd.DataFrame(
+        {
+            "ts": timestamps.to_numpy(),
+            "sym": symbols.to_numpy(),
+            "sig": signal.to_numpy(dtype=float),
+        }
+    )
+
     # Per-date z-score.
     def _z(x: pd.Series) -> pd.Series:
         std = x.std()

@@ -86,9 +86,7 @@ class ParquetStore:
             return 0
 
         if not exchange:
-            exchange = str(
-                df["exchange"].iloc[0] if "exchange" in df.columns else "unknown"
-            )
+            exchange = str(df["exchange"].iloc[0] if "exchange" in df.columns else "unknown")
 
         exchange_dir = self._base_path / exchange
         exchange_dir.mkdir(parents=True, exist_ok=True)

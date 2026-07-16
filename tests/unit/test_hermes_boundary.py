@@ -37,9 +37,9 @@ def _default_eval_request() -> EvaluationRequest:
     )
 
 
-def _build_stack() -> (
-    tuple[ResearchOrchestrator, ExperimentRegistry, HypothesisRegistry, MemoryRegistry]
-):
+def _build_stack() -> tuple[
+    ResearchOrchestrator, ExperimentRegistry, HypothesisRegistry, MemoryRegistry
+]:
     """Build a full harness stack with stub implementations."""
     compiler = FactorDslCompiler()
     evaluator = StubSignalQualityEvaluator()
@@ -152,16 +152,20 @@ class TestStubMemoryProvider:
         mem_reg = MemoryRegistry()
         provider = StubMemoryProvider(memory_registry=mem_reg)
 
-        provider.store(MemoryEntry(
-            category=MemoryCategory.SUCCESS_PATTERN,
-            content="Pattern A",
-            tags=["momentum"],
-        ))
-        provider.store(MemoryEntry(
-            category=MemoryCategory.FAILURE_PATTERN,
-            content="Pattern B",
-            tags=["mean_reversion"],
-        ))
+        provider.store(
+            MemoryEntry(
+                category=MemoryCategory.SUCCESS_PATTERN,
+                content="Pattern A",
+                tags=["momentum"],
+            )
+        )
+        provider.store(
+            MemoryEntry(
+                category=MemoryCategory.FAILURE_PATTERN,
+                content="Pattern B",
+                tags=["mean_reversion"],
+            )
+        )
 
         results = provider.retrieve_by_tags(["momentum"])
         assert len(results) == 1
@@ -172,10 +176,12 @@ class TestStubMemoryProvider:
         provider = StubMemoryProvider(memory_registry=mem_reg)
 
         for i in range(5):
-            provider.store(MemoryEntry(
-                category=MemoryCategory.EXPERIMENT_LINEAGE,
-                content=f"Entry {i}",
-            ))
+            provider.store(
+                MemoryEntry(
+                    category=MemoryCategory.EXPERIMENT_LINEAGE,
+                    content=f"Entry {i}",
+                )
+            )
 
         recent = provider.retrieve_recent(limit=3)
         assert len(recent) == 3
@@ -212,14 +218,18 @@ class TestStubContextInjector:
         )
 
         # Add some memory entries
-        mem_reg.save(MemoryEntry(
-            category=MemoryCategory.SUCCESS_PATTERN,
-            content="High IC in momentum factors during uptrends.",
-        ))
-        mem_reg.save(MemoryEntry(
-            category=MemoryCategory.FAILURE_PATTERN,
-            content="Mean reversion fails in trending regimes.",
-        ))
+        mem_reg.save(
+            MemoryEntry(
+                category=MemoryCategory.SUCCESS_PATTERN,
+                content="High IC in momentum factors during uptrends.",
+            )
+        )
+        mem_reg.save(
+            MemoryEntry(
+                category=MemoryCategory.FAILURE_PATTERN,
+                content="Mean reversion fails in trending regimes.",
+            )
+        )
 
         # Run a research cycle to populate experiments
         hypothesis = Hypothesis(text="ts_mean(close, 10)")
@@ -242,10 +252,12 @@ class TestStubContextInjector:
         )
 
         # Add a large memory entry
-        mem_reg.save(MemoryEntry(
-            category=MemoryCategory.SUCCESS_PATTERN,
-            content="x" * 10000,  # very long entry
-        ))
+        mem_reg.save(
+            MemoryEntry(
+                category=MemoryCategory.SUCCESS_PATTERN,
+                content="x" * 10000,  # very long entry
+            )
+        )
 
         # Small budget should truncate
         ctx = injector.build_context(token_budget=100)

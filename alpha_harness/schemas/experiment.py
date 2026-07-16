@@ -156,15 +156,15 @@ class PromotionTrail(BaseModel):
             "ic_threshold_multiplier": threshold_multiplier,
         }
         if beta_enabled:
-            body.update({
-                "beta_estimation_method": "rolling_ols_lagged_1",
-                "beta_lookback_bars": int(
-                    getattr(evaluation_request, "beta_lookback_bars", 60)
-                ),
-                "beta_min_periods": int(
-                    getattr(evaluation_request, "beta_min_periods", 20)
-                ),
-            })
+            body.update(
+                {
+                    "beta_estimation_method": "rolling_ols_lagged_1",
+                    "beta_lookback_bars": int(
+                        getattr(evaluation_request, "beta_lookback_bars", 60)
+                    ),
+                    "beta_min_periods": int(getattr(evaluation_request, "beta_min_periods", 20)),
+                }
+            )
         if selection:
             body["selection"] = dict(selection)
         canonical = _json.dumps(body, sort_keys=True, default=str)

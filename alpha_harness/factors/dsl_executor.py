@@ -122,9 +122,7 @@ class DslExecutor:
         required = {"timestamp", "close"}
         missing = required - set(self._df.columns)
         if missing:
-            raise DslExecutionError(
-                f"DataFrame missing required columns: {sorted(missing)}"
-            )
+            raise DslExecutionError(f"DataFrame missing required columns: {sorted(missing)}")
 
     def execute(self, ast: dict[str, Any]) -> pd.Series:
         """Execute the AST and return the computed signal Series.
@@ -161,18 +159,14 @@ class DslExecutor:
         """Look up a price field column in the DataFrame."""
         if name not in self._df.columns:
             raise DslExecutionError(
-                f"Field {name!r} not found in DataFrame columns: "
-                f"{list(self._df.columns)}"
+                f"Field {name!r} not found in DataFrame columns: {list(self._df.columns)}"
             )
         return self._df[name].astype(float)
 
-    def _eval_function(
-        self, name: str, args: list[dict[str, Any]]
-    ) -> pd.Series:
+    def _eval_function(self, name: str, args: list[dict[str, Any]]) -> pd.Series:
         """Evaluate a function call node."""
         # Time-series functions: f(signal, window)
-        if name in ("ts_mean", "ts_std", "ts_sum", "ts_min", "ts_max",
-                     "ts_delta", "ts_lag", "lag"):
+        if name in ("ts_mean", "ts_std", "ts_sum", "ts_min", "ts_max", "ts_delta", "ts_lag", "lag"):
             return self._eval_ts_function(name, args)
 
         # Cross-sectional functions: f(signal)
@@ -188,43 +182,31 @@ class DslExecutor:
     def _eval_event_decay(self, args: list[dict[str, Any]]) -> pd.Series:
         """Map absolute event distance to an exponential half-life weight."""
         if len(args) != 2:
-            raise DslExecutionError(
-                f"Function 'event_decay' requires 2 arguments, got {len(args)}"
-            )
+            raise DslExecutionError(f"Function 'event_decay' requires 2 arguments, got {len(args)}")
         distance = _ensure_series(self._eval_node(args[0]))
         half_life_value = self._eval_node(args[1])
         if not isinstance(half_life_value, int | float) or half_life_value <= 0:
-            raise DslExecutionError(
-                "Function 'event_decay' half-life must be a positive number"
-            )
+            raise DslExecutionError("Function 'event_decay' half-life must be a positive number")
         weight = pd.Series(
             np.exp(-np.log(2.0) * distance.abs() / float(half_life_value)),
             index=distance.index,
         )
         return weight.fillna(0.0)
 
-    def _eval_ts_function(
-        self, name: str, args: list[dict[str, Any]]
-    ) -> pd.Series:
+    def _eval_ts_function(self, name: str, args: list[dict[str, Any]]) -> pd.Series:
         """Evaluate a time-series windowed function."""
         if len(args) != 2:
-            raise DslExecutionError(
-                f"Function {name!r} requires 2 arguments, got {len(args)}"
-            )
+            raise DslExecutionError(f"Function {name!r} requires 2 arguments, got {len(args)}")
 
         signal_val = self._eval_node(args[0])
         window_val = self._eval_node(args[1])
 
         signal = _ensure_series(signal_val)
         if not isinstance(window_val, int | float):
-            raise DslExecutionError(
-                f"Function {name!r} window must be a number"
-            )
+            raise DslExecutionError(f"Function {name!r} window must be a number")
         window = int(window_val)
         if window <= 0:
-            raise DslExecutionError(
-                f"Function {name!r} window must be positive, got {window}"
-            )
+            raise DslExecutionError(f"Function {name!r} window must be positive, got {window}")
 
         ts_ops: dict[str, Any] = {
             "ts_mean": _rolling_mean,
@@ -243,9 +225,7 @@ class DslExecutor:
     def _eval_rank(self, args: list[dict[str, Any]]) -> pd.Series:
         """Cross-sectional percentile rank per timestamp."""
         if len(args) != 1:
-            raise DslExecutionError(
-                f"Function 'rank' requires 1 argument, got {len(args)}"
-            )
+            raise DslExecutionError(f"Function 'rank' requires 1 argument, got {len(args)}")
         signal_val = self._eval_node(args[0])
         signal = _ensure_series(signal_val)
 
@@ -258,9 +238,7 @@ class DslExecutor:
     def _eval_zscore(self, args: list[dict[str, Any]]) -> pd.Series:
         """Cross-sectional z-score per timestamp."""
         if len(args) != 1:
-            raise DslExecutionError(
-                f"Function 'zscore' requires 1 argument, got {len(args)}"
-            )
+            raise DslExecutionError(f"Function 'zscore' requires 1 argument, got {len(args)}")
         signal_val = self._eval_node(args[0])
         signal = _ensure_series(signal_val)
 
@@ -301,9 +279,7 @@ class DslExecutor:
 
         raise DslExecutionError(f"Unknown operator: {op!r}")
 
-    def _eval_unary(
-        self, op: str, operand_node: dict[str, Any]
-    ) -> pd.Series | float:
+    def _eval_unary(self, op: str, operand_node: dict[str, Any]) -> pd.Series | float:
         """Evaluate a unary operator."""
         operand = self._eval_node(operand_node)
         if op == "-":

@@ -34,49 +34,78 @@ from typing import Any
 # fields are syntactically allowed everywhere but only resolve when the
 # panel actually carries them — on a parquet/synthetic panel such a factor
 # fails at execution and is rejected, never silently mis-evaluated.
-ALLOWED_FIELDS = frozenset({
-    # OHLCV
-    "open", "high", "low", "close", "volume", "vwap",
-    # Microstructure (HK IPO tick-derived)
-    "ofi", "rel_spread", "realized_vol",
-    "n_trades", "tick_volume", "avg_trade_size", "n_quotes",
-    # Event features (HKEX/prospectus-derived)
-    "days_since_listing", "days_since_pricing",
-    "days_to_next_cornerstone_lockup", "next_cornerstone_unlock_pct_offer",
-    "days_since_prev_cornerstone_lockup", "next_cornerstone_unlock_shares",
-    "next_cornerstone_unlock_pct_cap",
-    "days_to_next_greenshoe_expiry", "days_to_next_stabilization_end",
-    "days_since_prev_greenshoe_expiry", "days_to_next_greenshoe_exercise",
-    "days_since_prev_greenshoe_exercise", "days_since_prev_stabilization_end",
-    "days_since_prev_stabilization_start",
-    "is_pre_greenshoe_expiry_5d", "is_pre_cornerstone_lockup_5d",
-    "is_near_greenshoe_expiry_5d", "is_near_greenshoe_exercise_5d",
-    "is_near_cornerstone_lockup_5d", "is_pre_stabilization_end_5d",
-    "is_near_stabilization_end_5d",
-    "is_stabilization_window_active",
-    # Intraday v1 candidate features (opt-in loader join against the
-    # 7-day-expiring micro_features_intraday_v1_candidate table; only
-    # resolve when the loader was built with_intraday_features=True)
-    "first_hour_n_trades", "first_hour_tick_volume", "first_hour_ofi",
-    "first_hour_rel_spread", "first_hour_realized_vol", "first_hour_n_quotes",
-    "opening_auction_trade_share",
-    "prior_20d_first_hour_rel_spread", "prior_20d_first_hour_tick_volume",
-    "first_hour_spread_shock", "first_hour_liquidity_withdrawal",
-})
+ALLOWED_FIELDS = frozenset(
+    {
+        # OHLCV
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "vwap",
+        # Microstructure (HK IPO tick-derived)
+        "ofi",
+        "rel_spread",
+        "realized_vol",
+        "n_trades",
+        "tick_volume",
+        "avg_trade_size",
+        "n_quotes",
+        # Event features (HKEX/prospectus-derived)
+        "days_since_listing",
+        "days_since_pricing",
+        "days_to_next_cornerstone_lockup",
+        "next_cornerstone_unlock_pct_offer",
+        "days_since_prev_cornerstone_lockup",
+        "next_cornerstone_unlock_shares",
+        "next_cornerstone_unlock_pct_cap",
+        "days_to_next_greenshoe_expiry",
+        "days_to_next_stabilization_end",
+        "days_since_prev_greenshoe_expiry",
+        "days_to_next_greenshoe_exercise",
+        "days_since_prev_greenshoe_exercise",
+        "days_since_prev_stabilization_end",
+        "days_since_prev_stabilization_start",
+        "is_pre_greenshoe_expiry_5d",
+        "is_pre_cornerstone_lockup_5d",
+        "is_near_greenshoe_expiry_5d",
+        "is_near_greenshoe_exercise_5d",
+        "is_near_cornerstone_lockup_5d",
+        "is_pre_stabilization_end_5d",
+        "is_near_stabilization_end_5d",
+        "is_stabilization_window_active",
+        # Intraday v1 candidate features (opt-in loader join against the
+        # 7-day-expiring micro_features_intraday_v1_candidate table; only
+        # resolve when the loader was built with_intraday_features=True)
+        "first_hour_n_trades",
+        "first_hour_tick_volume",
+        "first_hour_ofi",
+        "first_hour_rel_spread",
+        "first_hour_realized_vol",
+        "first_hour_n_quotes",
+        "opening_auction_trade_share",
+        "prior_20d_first_hour_rel_spread",
+        "prior_20d_first_hour_tick_volume",
+        "first_hour_spread_shock",
+        "first_hour_liquidity_withdrawal",
+    }
+)
 
-ALLOWED_FUNCTIONS = frozenset({
-    "lag",
-    "ts_mean",
-    "ts_std",
-    "ts_sum",
-    "ts_min",
-    "ts_max",
-    "ts_delta",
-    "ts_lag",
-    "event_decay",
-    "rank",
-    "zscore",
-})
+ALLOWED_FUNCTIONS = frozenset(
+    {
+        "lag",
+        "ts_mean",
+        "ts_std",
+        "ts_sum",
+        "ts_min",
+        "ts_max",
+        "ts_delta",
+        "ts_lag",
+        "event_decay",
+        "rank",
+        "zscore",
+    }
+)
 
 # ── Token types ──────────────────────────────────────────────────────────────
 
@@ -187,8 +216,7 @@ class Parser:
         if self._current().type != TokenType.EOF:
             tok = self._current()
             raise DslParseError(
-                f"Unexpected token {tok.value!r} at position {tok.pos} "
-                f"(expected end of expression)"
+                f"Unexpected token {tok.value!r} at position {tok.pos} (expected end of expression)"
             )
         return node
 
@@ -274,9 +302,7 @@ class Parser:
             self._expect(TokenType.RPAREN)
             return node
 
-        raise DslParseError(
-            f"Unexpected token {tok.value!r} at position {tok.pos}"
-        )
+        raise DslParseError(f"Unexpected token {tok.value!r} at position {tok.pos}")
 
     def _function_call(self, name: str, name_pos: int) -> dict[str, Any]:
         """Parse function_call = name '(' arg_list ')'"""
@@ -348,17 +374,26 @@ def validate_ast(node: dict[str, Any]) -> list[str]:
         args = node["args"]
         expected = _function_arity(name)
         if expected is not None and len(args) != expected:
-            errors.append(
-                f"Function {name!r} expects {expected} argument(s), got {len(args)}"
-            )
+            errors.append(f"Function {name!r} expects {expected} argument(s), got {len(args)}")
         # Check that window / half-life arguments are positive numeric literals.
-        if name in ("ts_mean", "ts_std", "ts_sum", "ts_min", "ts_max",
-                     "ts_delta", "ts_lag", "lag", "event_decay") and len(args) >= 2:
+        if (
+            name
+            in (
+                "ts_mean",
+                "ts_std",
+                "ts_sum",
+                "ts_min",
+                "ts_max",
+                "ts_delta",
+                "ts_lag",
+                "lag",
+                "event_decay",
+            )
+            and len(args) >= 2
+        ):
             window_arg = args[1]
             if window_arg.get("type") != "number":
-                errors.append(
-                    f"Function {name!r} requires a numeric window/half-life argument"
-                )
+                errors.append(f"Function {name!r} requires a numeric window/half-life argument")
             elif window_arg.get("value", 0) <= 0:
                 errors.append(
                     f"Function {name!r} window/half-life must be positive, "

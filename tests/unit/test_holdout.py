@@ -147,10 +147,7 @@ def test_precomputed_holdout_uses_same_embargo_contract() -> None:
     assert precomputed.ic == pytest.approx(scalar.ic)
     assert precomputed.rank_ic == pytest.approx(scalar.rank_ic)
     assert precomputed.metadata["holdout"]["embargo_bars"] == 6
-    assert (
-        precomputed.metadata["holdout"]["embargo_mode"]
-        == "window_local_forward_returns"
-    )
+    assert precomputed.metadata["holdout"]["embargo_mode"] == "window_local_forward_returns"
 
 
 def test_evaluator_holdout_none_is_passthrough() -> None:

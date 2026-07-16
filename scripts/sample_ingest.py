@@ -46,7 +46,9 @@ def _ingest_equities(symbols: list[str], days: int, out_dir: str) -> None:
     request = DataRequest(symbols=symbols, start=start, end=end)
     logger.info(
         "Fetching equities: symbols=%s, range=%s to %s",
-        symbols, start, end,
+        symbols,
+        start,
+        end,
     )
 
     df, meta = loader.load_bars(request)
@@ -67,9 +69,7 @@ def _ingest_equities(symbols: list[str], days: int, out_dir: str) -> None:
     logger.info("Saved %d symbol files to %s", n, out_dir)
 
 
-def _ingest_crypto(
-    symbols: list[str], exchange: str, days: int, out_dir: str
-) -> None:
+def _ingest_crypto(symbols: list[str], exchange: str, days: int, out_dir: str) -> None:
     """Fetch crypto bars from an exchange via ccxt and save to Parquet."""
     loader = create_crypto_loader("ccxt", exchange=exchange)
     end = date.today()
@@ -78,7 +78,10 @@ def _ingest_crypto(
     request = DataRequest(symbols=symbols, start=start, end=end)
     logger.info(
         "Fetching crypto: symbols=%s, exchange=%s, range=%s to %s",
-        symbols, exchange, start, end,
+        symbols,
+        exchange,
+        start,
+        end,
     )
 
     df, meta = loader.load_bars(request)
@@ -108,25 +111,29 @@ def main() -> None:
     # -- equities subcommand --
     eq = sub.add_parser("equities", help="Fetch equity bars from Polygon")
     eq.add_argument(
-        "--symbols", required=True,
+        "--symbols",
+        required=True,
         help="Comma-separated ticker symbols (e.g. AAPL,MSFT)",
     )
     eq.add_argument("--days", type=int, default=30, help="Number of days to fetch")
     eq.add_argument(
-        "--out", default="data/silver/equities",
+        "--out",
+        default="data/silver/equities",
         help="Output directory for Parquet files",
     )
 
     # -- crypto subcommand --
     cr = sub.add_parser("crypto", help="Fetch crypto bars via ccxt")
     cr.add_argument(
-        "--symbols", required=True,
+        "--symbols",
+        required=True,
         help="Comma-separated symbols (e.g. BTC/USDT,ETH/USDT)",
     )
     cr.add_argument("--exchange", default="binance", help="Exchange to fetch from")
     cr.add_argument("--days", type=int, default=30, help="Number of days to fetch")
     cr.add_argument(
-        "--out", default="data/silver/crypto",
+        "--out",
+        default="data/silver/crypto",
         help="Output directory for Parquet files",
     )
 

@@ -47,9 +47,7 @@ def _win(s: str) -> tuple[date, date]:
 
 def _load_universe(path: str) -> list[str]:
     return [
-        ln.strip()
-        for ln in open(path, encoding="utf-8")
-        if ln.strip() and not ln.startswith("#")
+        ln.strip() for ln in open(path, encoding="utf-8") if ln.strip() and not ln.startswith("#")
     ]
 
 
@@ -83,8 +81,10 @@ def per_factor_oos(
     if half_spread_bps is None:
         half_spread_bps = float(np.nanmean(test["rel_spread"])) * 1e4 / 2
     full_spread = 2 * half_spread_bps * 1e-4  # round-trip on changed names
-    print(f"measured half-spread = {half_spread_bps:.1f} bps "
-          f"(round-trip cost {full_spread * 1e4:.0f} bps)\n")
+    print(
+        f"measured half-spread = {half_spread_bps:.1f} bps "
+        f"(round-trip cost {full_spread * 1e4:.0f} bps)\n"
+    )
 
     for name, df in [("TRAIN", train), ("TEST", test)]:
         df = df.sort_values(["timestamp", "symbol"]).reset_index(drop=True)
@@ -180,7 +180,11 @@ def main(argv: list[str] | None = None) -> int:
 
     hsi_fwd = _hsi_forward(args.project)
     per_factor_oos(
-        panel(args.train), panel(args.test), hsi_fwd, exprs, args.half_spread_bps,
+        panel(args.train),
+        panel(args.test),
+        hsi_fwd,
+        exprs,
+        args.half_spread_bps,
     )
     return 0
 

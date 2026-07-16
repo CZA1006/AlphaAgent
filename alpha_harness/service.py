@@ -84,9 +84,7 @@ class AlphaHarnessService:
         """Compile a hypothesis into a factor spec via the factor DSL."""
         return self._compiler.compile(hypothesis)
 
-    def evaluate_factor(
-        self, factor: FactorSpec, request: EvaluationRequest
-    ) -> EvaluationBundle:
+    def evaluate_factor(self, factor: FactorSpec, request: EvaluationRequest) -> EvaluationBundle:
         """Run deterministic evaluation on a compiled factor."""
         return self._evaluator.evaluate(factor, request)
 

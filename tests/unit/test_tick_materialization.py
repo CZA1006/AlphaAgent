@@ -119,9 +119,7 @@ def test_plan_dry_runs_write_sql_and_executes_only_read_only_qa() -> None:
     }
 
 
-def test_raw_tick_plan_cli_writes_typed_artifact(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_raw_tick_plan_cli_writes_typed_artifact(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         plan_script,
         "_bigquery_runners",

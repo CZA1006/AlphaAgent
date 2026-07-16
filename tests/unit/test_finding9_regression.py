@@ -99,17 +99,22 @@ def test_sqe_and_precomputed_per_fold_ic_match() -> None:
         holdout=HoldoutPolicy(strategy=HoldoutStrategy.NONE),
     )
     wf_config = WalkForwardConfig(
-        n_folds=4, fold_size_days=60, step_days=30, embargo_days=0,
+        n_folds=4,
+        fold_size_days=60,
+        step_days=30,
+        embargo_days=0,
     )
 
     # Path A: SignalQualityEvaluator → WalkForwardEvaluator
     bundle_sqe = WalkForwardEvaluator(SignalQualityEvaluator(df), wf_config).evaluate(
-        factor, request,
+        factor,
+        request,
     )
     # Path B: precomputed signal → WalkForwardEvaluator
     sig = compute_signal(expr, df)
     bundle_pre = WalkForwardEvaluator(_PrecomputedInner(sig, df), wf_config).evaluate(
-        factor, request,
+        factor,
+        request,
     )
 
     per_fold_sqe = [f["ic"] for f in bundle_sqe.metadata["per_fold"]]

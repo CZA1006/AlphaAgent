@@ -92,7 +92,10 @@ def _make_experiment(
         ic=0.05 if decision != ExperimentDecision.REJECT else 0.01,
     )
     return ExperimentRecord(
-        hypothesis=h, factor=f, evaluation=ev, decision=decision,
+        hypothesis=h,
+        factor=f,
+        evaluation=ev,
+        decision=decision,
     )
 
 

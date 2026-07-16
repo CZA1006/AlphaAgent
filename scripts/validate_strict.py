@@ -203,8 +203,7 @@ _HK_IPO_EVENT_DECAY_DECOMPOSITION_CANDIDATES: list[RawProposal] = [
     ),
     RawProposal(
         expression=(
-            "event_decay(days_to_next_greenshoe_expiry, 10) * "
-            "rank(ts_delta(rel_spread, 2))"
+            "event_decay(days_to_next_greenshoe_expiry, 10) * rank(ts_delta(rel_spread, 2))"
         ),
         rationale="Event-only component for the smoothed OFI greenshoe lead.",
         tags=["hk_ipo", "decomposition", "event_only", "greenshoe"],
@@ -225,8 +224,7 @@ _HK_IPO_EVENT_DECAY_DECOMPOSITION_CANDIDATES: list[RawProposal] = [
     ),
     RawProposal(
         expression=(
-            "event_decay(days_to_next_greenshoe_expiry, 10) * "
-            "rank(ts_delta(rel_spread, 3))"
+            "event_decay(days_to_next_greenshoe_expiry, 10) * rank(ts_delta(rel_spread, 3))"
         ),
         rationale="Event-only component for the daily OFI greenshoe lead.",
         tags=["hk_ipo", "decomposition", "event_only", "greenshoe"],
@@ -657,19 +655,19 @@ def _load_replay_hypotheses(
                 continue
             seen_expressions.add(factor.expression)
             hypothesis = Hypothesis(
-                    text=factor.expression,
-                    rationale=(
-                        f"Deterministic replay of promoted factor {factor.factor_id} "
-                        f"from validation cycle {cycle_id}."
-                    ),
-                    source="validation_replay",
-                    asset_class=asset_class,
-                    tags=[
-                        "cost_stress_replay",
-                        f"source_cycle:{cycle_id}",
-                        f"source_factor:{factor.factor_id}",
-                    ],
-                )
+                text=factor.expression,
+                rationale=(
+                    f"Deterministic replay of promoted factor {factor.factor_id} "
+                    f"from validation cycle {cycle_id}."
+                ),
+                source="validation_replay",
+                asset_class=asset_class,
+                tags=[
+                    "cost_stress_replay",
+                    f"source_cycle:{cycle_id}",
+                    f"source_factor:{factor.factor_id}",
+                ],
+            )
             precompiled: FactorSpec | None = None
             if factor.composite_recipe is not None:
                 recipe = factor.composite_recipe
@@ -679,8 +677,7 @@ def _load_replay_hypotheses(
                         "complement_base_recipe_id": factor.complement_base_recipe_id,
                         "complement_base_size": len(recipe.components) - 1,
                         "complement_candidate_expression": (
-                            factor.complement_candidate_expression
-                            or recipe.components[-1]
+                            factor.complement_candidate_expression or recipe.components[-1]
                         ),
                     }
                 precompiled = FactorSpec(
@@ -735,12 +732,8 @@ def main(argv: list[str] | None = None) -> int:
             min_fraction_positive_folds=judge_thresholds["min_fraction_positive_folds"],
             max_tail_concentration=judge_thresholds["max_tail_concentration"],
             min_holdout_decay_ratio=judge_thresholds["min_holdout_decay_ratio"],
-            multiple_testing_familywise_alpha=judge_thresholds[
-                "multiple_testing_familywise_alpha"
-            ],
-            max_complement_rank_correlation=judge_thresholds[
-                "max_complement_rank_correlation"
-            ],
+            multiple_testing_familywise_alpha=judge_thresholds["multiple_testing_familywise_alpha"],
+            max_complement_rank_correlation=judge_thresholds["max_complement_rank_correlation"],
             min_complement_improvement_fraction=judge_thresholds[
                 "min_complement_improvement_fraction"
             ],

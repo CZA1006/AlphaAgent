@@ -40,6 +40,11 @@ The live alpha hypothesis is the HK IPO order-flow track.
 - **Clean two-layer split**, statically enforced: no `hermes.*`
   imports in the harness, LLM confined to `proposer/`.  `make audit`
   fails the build on violation.
+- **Continuous integration (Productization P0 Stage 0)** — every push to
+  `main` and every pull request runs the existing `make check` quality gate
+  plus an independent integration smoke job on Python 3.11. The workflow
+  uses a frozen lockfile, uv caching, read-only repository permissions, and
+  requires no market-data or LLM secrets.
 - **Safe factor DSL** — whitelisted fields + functions, typed AST, no
   `eval`/arbitrary code.  Deterministic, test-covered execution.
 - **Continuous event proximity** — `event_decay(distance, half_life)` maps

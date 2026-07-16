@@ -67,17 +67,26 @@ def test_load_bars_maps_columns_to_canonical_panel() -> None:
 
     # Canonical harness columns, in order.
     assert list(df.columns) == [
-        "symbol", "timestamp", "open", "high", "low", "close",
-        "volume", "vwap", "adjustment", "source", "frequency",
+        "symbol",
+        "timestamp",
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "vwap",
+        "adjustment",
+        "source",
+        "frequency",
     ]
     # ipo_daily_prices column mapping.
     row = df[(df["symbol"] == "00068") & (df["timestamp"].dt.date == date(2026, 3, 2))].iloc[0]
     assert row["open"] == 20.7
     assert row["high"] == 21.86
     assert row["low"] == 16.5
-    assert row["close"] == 18.6          # px_last → close
+    assert row["close"] == 18.6  # px_last → close
     assert row["volume"] == 134488211.0
-    assert row["vwap"] == 19.37          # weighted_avg_px → vwap
+    assert row["vwap"] == 19.37  # weighted_avg_px → vwap
     assert row["source"] == "bigquery"
     assert row["frequency"] == "1d"
     # timestamp is UTC-aware.
@@ -89,7 +98,7 @@ def test_load_bars_metadata_counts() -> None:
     loader = BigQueryEquitiesLoader(client=client)
     _df, meta = loader.load_bars(_request())
     assert meta.symbols_requested == 2
-    assert meta.symbols_returned == 2     # 00068 + 00100
+    assert meta.symbols_returned == 2  # 00068 + 00100
     assert meta.bars_returned == 3
     assert meta.source == "bigquery"
 
@@ -113,8 +122,17 @@ def test_empty_result_returns_well_formed_empty_panel() -> None:
     df, meta = loader.load_bars(_request())
     assert df.empty
     assert list(df.columns) == [
-        "symbol", "timestamp", "open", "high", "low", "close",
-        "volume", "vwap", "adjustment", "source", "frequency",
+        "symbol",
+        "timestamp",
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "vwap",
+        "adjustment",
+        "source",
+        "frequency",
     ]
     assert meta.symbols_returned == 0
     assert meta.bars_returned == 0
@@ -158,8 +176,15 @@ def test_micro_features_pass_through_as_dsl_fields() -> None:
     df, _meta = loader.load_bars(_request())
 
     # OHLCV columns first, micro columns appended.
-    for col in ("ofi", "rel_spread", "realized_vol", "n_trades",
-                "tick_volume", "avg_trade_size", "n_quotes"):
+    for col in (
+        "ofi",
+        "rel_spread",
+        "realized_vol",
+        "n_trades",
+        "tick_volume",
+        "avg_trade_size",
+        "n_quotes",
+    ):
         assert col in df.columns
         assert pd.api.types.is_float_dtype(df[col])
     row = df[df["symbol"] == "00068"].iloc[0]
@@ -237,8 +262,15 @@ def test_micro_fields_compile_in_dsl() -> None:
     """The microstructure field names are whitelisted in the DSL."""
     from alpha_harness.factors.dsl_parser import ALLOWED_FIELDS, parse_expression
 
-    for f in ("ofi", "rel_spread", "realized_vol", "n_trades",
-              "tick_volume", "avg_trade_size", "n_quotes"):
+    for f in (
+        "ofi",
+        "rel_spread",
+        "realized_vol",
+        "n_trades",
+        "tick_volume",
+        "avg_trade_size",
+        "n_quotes",
+    ):
         assert f in ALLOWED_FIELDS
     # A real microstructure factor must parse.
     parse_expression("rank(ofi) * rank(-realized_vol)")

@@ -269,8 +269,7 @@ def _load_from_validation_report(
                 or not fingerprint
             ):
                 raise ValueError(
-                    f"promotion source report {path} must include cycle_id "
-                    "and data_fingerprint"
+                    f"promotion source report {path} must include cycle_id and data_fingerprint"
                 )
             if isinstance(cycle_id, str) and cycle_id:
                 cycle_ids.append(cycle_id)
@@ -789,12 +788,9 @@ def main(argv: list[str] | None = None) -> int:
         "quantile_spread": basket_bundle.quantile_spread,
         "net_quantile_spread": basket_bundle.net_quantile_spread,
     }
-    basket["passes_ic"] = (
-        basket_bundle.ic is not None and basket_bundle.ic >= adjusted_ic_threshold
-    )
+    basket["passes_ic"] = basket_bundle.ic is not None and basket_bundle.ic >= adjusted_ic_threshold
     basket["passes_rank_ic"] = (
-        basket_bundle.rank_ic is not None
-        and basket_bundle.rank_ic >= adjusted_rank_ic_threshold
+        basket_bundle.rank_ic is not None and basket_bundle.rank_ic >= adjusted_rank_ic_threshold
     )
     basket["passes_quantile_spread"] = (
         basket_bundle.quantile_spread is not None

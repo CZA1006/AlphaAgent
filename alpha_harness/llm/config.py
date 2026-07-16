@@ -46,9 +46,7 @@ class OpenRouterConfig:
     app_title: str | None = None
 
     @classmethod
-    def from_env(
-        cls, env: Mapping[str, str] | None = None
-    ) -> OpenRouterConfig:
+    def from_env(cls, env: Mapping[str, str] | None = None) -> OpenRouterConfig:
         """Build a config from environment variables.
 
         Raises :class:`LLMConfigError` if ``OPENROUTER_API_KEY`` is unset or
@@ -80,8 +78,7 @@ class OpenRouterConfig:
             timeout = float(source.get("OPENROUTER_TIMEOUT", DEFAULT_TIMEOUT))
         except ValueError as exc:
             raise LLMConfigError(
-                f"OPENROUTER_TIMEOUT must be a float, got "
-                f"{source.get('OPENROUTER_TIMEOUT')!r}"
+                f"OPENROUTER_TIMEOUT must be a float, got {source.get('OPENROUTER_TIMEOUT')!r}"
             ) from exc
 
         referer = source.get("OPENROUTER_HTTP_REFERER") or None

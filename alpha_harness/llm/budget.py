@@ -86,15 +86,9 @@ class TokenBudget:
         return max(0.0, self.max_cost_usd - self.cost_usd_spent)
 
     def is_exhausted(self) -> bool:
-        if (
-            self.max_total_tokens is not None
-            and self.total_tokens_spent >= self.max_total_tokens
-        ):
+        if self.max_total_tokens is not None and self.total_tokens_spent >= self.max_total_tokens:
             return True
-        return (
-            self.max_cost_usd is not None
-            and self.cost_usd_spent >= self.max_cost_usd
-        )
+        return self.max_cost_usd is not None and self.cost_usd_spent >= self.max_cost_usd
 
     # ── Mutation ─────────────────────────────────────────────────────────
 
@@ -113,29 +107,20 @@ class TokenBudget:
             call_cost = max(0.0, actual_cost_usd)
             self.actual_cost_calls += 1
         else:
-            call_cost = (
-                (prompt_tokens / 1000.0) * self.prompt_cost_per_1k
-                + (completion_tokens / 1000.0) * self.completion_cost_per_1k
-            )
+            call_cost = (prompt_tokens / 1000.0) * self.prompt_cost_per_1k + (
+                completion_tokens / 1000.0
+            ) * self.completion_cost_per_1k
             self.estimated_cost_calls += 1
         self.cost_usd_spent += call_cost
 
         reasons: list[str] = []
-        if (
-            self.max_total_tokens is not None
-            and self.total_tokens_spent > self.max_total_tokens
-        ):
+        if self.max_total_tokens is not None and self.total_tokens_spent > self.max_total_tokens:
             reasons.append(
-                f"token budget exceeded: {self.total_tokens_spent} "
-                f"> {self.max_total_tokens}"
+                f"token budget exceeded: {self.total_tokens_spent} > {self.max_total_tokens}"
             )
-        if (
-            self.max_cost_usd is not None
-            and self.cost_usd_spent > self.max_cost_usd
-        ):
+        if self.max_cost_usd is not None and self.cost_usd_spent > self.max_cost_usd:
             reasons.append(
-                f"cost budget exceeded: "
-                f"${self.cost_usd_spent:.4f} > ${self.max_cost_usd:.4f}"
+                f"cost budget exceeded: ${self.cost_usd_spent:.4f} > ${self.max_cost_usd:.4f}"
             )
         if reasons:
             raise BudgetExceededError("; ".join(reasons))

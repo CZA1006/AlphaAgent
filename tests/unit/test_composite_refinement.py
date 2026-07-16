@@ -38,9 +38,7 @@ def test_composite_mutator_returns_candidates_with_distinct_recipe_ids() -> None
         # Same method, same number of components, only one differs.
         assert child.method == recipe.method
         assert len(child.components) == len(recipe.components)
-        n_diff = sum(
-            1 for a, b in zip(recipe.components, child.components, strict=True) if a != b
-        )
+        n_diff = sum(1 for a, b in zip(recipe.components, child.components, strict=True) if a != b)
         assert n_diff == 1, f"label={label} changed {n_diff} components"
         assert label.startswith("component_")
 
@@ -111,7 +109,9 @@ def test_runner_dispatches_composite_branch_when_recipe_present() -> None:
     runner = RefinementRunner(
         orchestrator=orchestrator,
         config=RefinementConfig(
-            max_depth=2, max_variants_per_step=2, max_total_children=4,
+            max_depth=2,
+            max_variants_per_step=2,
+            max_total_children=4,
         ),
     )
 

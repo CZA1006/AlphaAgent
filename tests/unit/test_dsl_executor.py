@@ -25,14 +25,16 @@ def _make_single_symbol_df(n: int = 50) -> pd.DataFrame:
     """Create a simple single-symbol price DataFrame."""
     rng = np.random.default_rng(42)
     prices = 100.0 + np.cumsum(rng.standard_normal(n) * 0.5)
-    return pd.DataFrame({
-        "timestamp": pd.date_range("2023-01-01", periods=n, freq="D", tz="UTC"),
-        "open": prices + rng.uniform(-0.5, 0.5, n),
-        "high": prices + rng.uniform(0, 1, n),
-        "low": prices - rng.uniform(0, 1, n),
-        "close": prices,
-        "volume": rng.uniform(1e6, 5e6, n),
-    })
+    return pd.DataFrame(
+        {
+            "timestamp": pd.date_range("2023-01-01", periods=n, freq="D", tz="UTC"),
+            "open": prices + rng.uniform(-0.5, 0.5, n),
+            "high": prices + rng.uniform(0, 1, n),
+            "low": prices - rng.uniform(0, 1, n),
+            "close": prices,
+            "volume": rng.uniform(1e6, 5e6, n),
+        }
+    )
 
 
 def _make_multi_symbol_df() -> pd.DataFrame:
@@ -42,47 +44,60 @@ def _make_multi_symbol_df() -> pd.DataFrame:
     for symbol in ("AAPL", "MSFT", "GOOGL"):
         n = 30
         prices = 100.0 + np.cumsum(rng.standard_normal(n) * 0.5)
-        df = pd.DataFrame({
-            "timestamp": pd.date_range("2023-01-01", periods=n, freq="D", tz="UTC"),
-            "symbol": symbol,
-            "open": prices + rng.uniform(-0.5, 0.5, n),
-            "high": prices + rng.uniform(0, 1, n),
-            "low": prices - rng.uniform(0, 1, n),
-            "close": prices,
-            "volume": rng.uniform(1e6, 5e6, n),
-        })
+        df = pd.DataFrame(
+            {
+                "timestamp": pd.date_range("2023-01-01", periods=n, freq="D", tz="UTC"),
+                "symbol": symbol,
+                "open": prices + rng.uniform(-0.5, 0.5, n),
+                "high": prices + rng.uniform(0, 1, n),
+                "low": prices - rng.uniform(0, 1, n),
+                "close": prices,
+                "volume": rng.uniform(1e6, 5e6, n),
+            }
+        )
         frames.append(df)
     return pd.concat(frames, ignore_index=True)
 
 
 def _make_tiny_df() -> pd.DataFrame:
     """Tiny hand-crafted DataFrame for exact-value tests (no randomness)."""
-    return pd.DataFrame({
-        "timestamp": pd.to_datetime(["2023-01-01", "2023-01-02",
-                                      "2023-01-03", "2023-01-04",
-                                      "2023-01-05"], utc=True),
-        "close": [10.0, 12.0, 11.0, 14.0, 13.0],
-        "open": [9.5, 11.5, 10.5, 13.5, 12.5],
-        "high": [10.5, 12.5, 11.5, 14.5, 13.5],
-        "low": [9.0, 11.0, 10.0, 13.0, 12.0],
-        "volume": [100.0, 200.0, 150.0, 300.0, 0.0],
-    })
+    return pd.DataFrame(
+        {
+            "timestamp": pd.to_datetime(
+                ["2023-01-01", "2023-01-02", "2023-01-03", "2023-01-04", "2023-01-05"], utc=True
+            ),
+            "close": [10.0, 12.0, 11.0, 14.0, 13.0],
+            "open": [9.5, 11.5, 10.5, 13.5, 12.5],
+            "high": [10.5, 12.5, 11.5, 14.5, 13.5],
+            "low": [9.0, 11.0, 10.0, 13.0, 12.0],
+            "volume": [100.0, 200.0, 150.0, 300.0, 0.0],
+        }
+    )
 
 
 def _make_tiny_multi_df() -> pd.DataFrame:
     """Tiny multi-symbol DataFrame for exact cross-sectional tests."""
-    return pd.DataFrame({
-        "timestamp": pd.to_datetime([
-            "2023-01-01", "2023-01-01", "2023-01-01",
-            "2023-01-02", "2023-01-02", "2023-01-02",
-        ], utc=True),
-        "symbol": ["A", "B", "C", "A", "B", "C"],
-        "close": [10.0, 20.0, 30.0, 15.0, 25.0, 5.0],
-        "open": [9.0, 19.0, 29.0, 14.0, 24.0, 4.0],
-        "high": [11.0, 21.0, 31.0, 16.0, 26.0, 6.0],
-        "low": [8.0, 18.0, 28.0, 13.0, 23.0, 3.0],
-        "volume": [100.0, 200.0, 300.0, 150.0, 250.0, 50.0],
-    })
+    return pd.DataFrame(
+        {
+            "timestamp": pd.to_datetime(
+                [
+                    "2023-01-01",
+                    "2023-01-01",
+                    "2023-01-01",
+                    "2023-01-02",
+                    "2023-01-02",
+                    "2023-01-02",
+                ],
+                utc=True,
+            ),
+            "symbol": ["A", "B", "C", "A", "B", "C"],
+            "close": [10.0, 20.0, 30.0, 15.0, 25.0, 5.0],
+            "open": [9.0, 19.0, 29.0, 14.0, 24.0, 4.0],
+            "high": [11.0, 21.0, 31.0, 16.0, 26.0, 6.0],
+            "low": [8.0, 18.0, 28.0, 13.0, 23.0, 3.0],
+            "volume": [100.0, 200.0, 300.0, 150.0, 250.0, 50.0],
+        }
+    )
 
 
 # ── Hand-crafted deterministic tests ────────────────────────────────────────
@@ -177,10 +192,16 @@ class TestHandCraftedDeterministic:
         """
         df = _make_tiny_multi_df()
         result = DslExecutor(df).execute(parse_expression("rank(close)"))
-        expected = pd.Series([
-            1.0 / 3, 2.0 / 3, 3.0 / 3,
-            2.0 / 3, 3.0 / 3, 1.0 / 3,
-        ])
+        expected = pd.Series(
+            [
+                1.0 / 3,
+                2.0 / 3,
+                3.0 / 3,
+                2.0 / 3,
+                3.0 / 3,
+                1.0 / 3,
+            ]
+        )
         pd.testing.assert_series_equal(result, expected, check_names=False)
 
     def test_cross_sectional_zscore_exact(self) -> None:
@@ -388,8 +409,8 @@ class TestMultiSymbolTimeSeries:
         # First row per symbol: NaN
         assert np.isnan(result.iloc[0])
         # Second row: close[t] - close[t-1] within symbol
-        assert result.iloc[3] == pytest.approx(5.0)   # A: 15 - 10
-        assert result.iloc[4] == pytest.approx(5.0)   # B: 25 - 20
+        assert result.iloc[3] == pytest.approx(5.0)  # A: 15 - 10
+        assert result.iloc[4] == pytest.approx(5.0)  # B: 25 - 20
         assert result.iloc[5] == pytest.approx(-25.0)  # C: 5 - 30
 
 
@@ -449,27 +470,21 @@ class TestComposition:
     def test_zscore_of_ratio(self) -> None:
         df = _make_multi_symbol_df()
         executor = DslExecutor(df)
-        result = executor.execute(
-            parse_expression("zscore(close / ts_mean(close, 10))")
-        )
+        result = executor.execute(parse_expression("zscore(close / ts_mean(close, 10))"))
         # zscore should have mean near 0 per timestamp
         assert not result.isna().all()
 
     def test_rank_of_volume_ratio(self) -> None:
         df = _make_multi_symbol_df()
         executor = DslExecutor(df)
-        result = executor.execute(
-            parse_expression("rank(volume / ts_mean(volume, 10))")
-        )
+        result = executor.execute(parse_expression("rank(volume / ts_mean(volume, 10))"))
         assert result.min() >= 0.0
         assert result.max() <= 1.0
 
     def test_momentum_minus_mean(self) -> None:
         df = _make_single_symbol_df()
         executor = DslExecutor(df)
-        result = executor.execute(
-            parse_expression("ts_mean(close, 20) - ts_mean(close, 5)")
-        )
+        result = executor.execute(parse_expression("ts_mean(close, 20) - ts_mean(close, 5)"))
         expected = (
             df["close"].rolling(20, min_periods=1).mean()
             - df["close"].rolling(5, min_periods=1).mean()
@@ -501,9 +516,7 @@ class TestEndToEnd:
                           = [0, 0.0909..., 0, 0.1351..., 0.0263...]
         """
         df = _make_tiny_df()
-        result = DslExecutor(df).execute(
-            parse_expression("close / ts_mean(close, 3) - 1")
-        )
+        result = DslExecutor(df).execute(parse_expression("close / ts_mean(close, 3) - 1"))
         assert len(result) == 5
         assert result.iloc[0] == pytest.approx(0.0)
         assert result.iloc[1] == pytest.approx(1.0 / 11.0)
@@ -519,9 +532,7 @@ class TestEndToEnd:
           -25 -> 1/3, 5 -> 2.5/3 (tie), 5 -> 2.5/3 (tie)
         """
         df = _make_tiny_multi_df()
-        result = DslExecutor(df).execute(
-            parse_expression("rank(ts_delta(close, 1))")
-        )
+        result = DslExecutor(df).execute(parse_expression("rank(ts_delta(close, 1))"))
         # t1: all NaN (no prior data) -> rank of NaN = NaN
         assert np.isnan(result.iloc[0])
         assert np.isnan(result.iloc[1])

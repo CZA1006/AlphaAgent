@@ -145,8 +145,16 @@ class TestParserValid:
 
     def test_all_functions_parse(self) -> None:
         # Every allowed function should parse
-        for func in ("ts_mean", "ts_std", "ts_sum", "ts_min", "ts_max",
-                      "ts_delta", "ts_lag", "lag"):
+        for func in (
+            "ts_mean",
+            "ts_std",
+            "ts_sum",
+            "ts_min",
+            "ts_max",
+            "ts_delta",
+            "ts_lag",
+            "lag",
+        ):
             ast = parse_expression(f"{func}(close, 10)")
             assert ast["type"] == "function"
             assert ast["name"] == func

@@ -58,10 +58,13 @@ class _ScriptedEvaluator:
         self._default = default
 
     def evaluate(
-        self, factor: FactorSpec, request: EvaluationRequest,
+        self,
+        factor: FactorSpec,
+        request: EvaluationRequest,
     ) -> EvaluationBundle:
         ic, rank_ic, spread = self._mapping.get(
-            factor.expression, self._default,
+            factor.expression,
+            self._default,
         )
         return EvaluationBundle(ic=ic, rank_ic=rank_ic, quantile_spread=spread)
 
@@ -77,7 +80,9 @@ def _build_stack(
     compiler = FactorDslCompiler()
     judge = PromotionJudge()
     service = AlphaHarnessService(
-        compiler=compiler, evaluator=evaluator, judge=judge,
+        compiler=compiler,
+        evaluator=evaluator,
+        judge=judge,
     )
     experiments = ExperimentRegistry()
     orchestrator = ResearchOrchestrator(
@@ -203,7 +208,8 @@ class TestRunCycle:
             with pytest.raises(ValueError, match="Unsupported CycleGoal"):
                 adapter.run_cycle(
                     ResearchCycleRequest(
-                        hypothesis_text="rank(close)", goal=goal,
+                        hypothesis_text="rank(close)",
+                        goal=goal,
                     ),
                 )
 
@@ -218,10 +224,12 @@ class TestRunTheme:
             adapter.run_theme(ThemeCycleRequest(theme="x"))
 
     def test_runs_each_accepted_proposal(self) -> None:
-        evaluator = _ScriptedEvaluator({
-            "rank(close)": (0.10, 0.12, 0.02),
-            "zscore(close)": (0.0, 0.0, 0.0),
-        })
+        evaluator = _ScriptedEvaluator(
+            {
+                "rank(close)": (0.10, 0.12, 0.02),
+                "zscore(close)": (0.0, 0.0, 0.0),
+            }
+        )
         adapter, experiments = _build_stack(
             evaluator,
             with_proposer=True,
@@ -242,8 +250,7 @@ class TestRunTheme:
         # Registry ends up with at least the two root experiments.
         assert len(experiments.list_all()) >= 2
         assert all(
-            record.eval_request is not None
-            and record.eval_request.n_proposals_in_session == 2
+            record.eval_request is not None and record.eval_request.n_proposals_in_session == 2
             for record in experiments.list_all()
         )
 
@@ -317,10 +324,12 @@ class TestRunTheme:
         adapter, experiments = _build_stack(
             _ScriptedEvaluator({placeholder: (0.10, 0.12, 0.02)}),
             with_proposer=True,
-            mock_proposals=[RawProposal(
-                expression="rank(realized_vol)",
-                base_recipe_id=anchor.recipe.recipe_id,
-            )],
+            mock_proposals=[
+                RawProposal(
+                    expression="rank(realized_vol)",
+                    base_recipe_id=anchor.recipe.recipe_id,
+                )
+            ],
             composite_anchors=[anchor],
         )
         response = adapter.run_theme(

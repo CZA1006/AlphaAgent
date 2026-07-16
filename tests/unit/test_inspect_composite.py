@@ -88,7 +88,11 @@ def test_render_list_empty_dir(tmp_path: Path) -> None:
 
 def test_render_list_shows_recipe_rows(tmp_path: Path) -> None:
     _write_artifact(
-        tmp_path, factor_id="composite_aaa_111111", recipe_id="aaa", ic=0.03, rank_ic=0.04,
+        tmp_path,
+        factor_id="composite_aaa_111111",
+        recipe_id="aaa",
+        ic=0.03,
+        rank_ic=0.04,
     )
     _write_artifact(
         tmp_path,
@@ -180,7 +184,8 @@ def test_main_recipe_id_mode(tmp_path: Path, capsys: pytest.CaptureFixture[str])
 
 
 def test_main_missing_dir_errors(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     rc = main(["--list", "--promoted-dir", str(tmp_path / "no_such")])
     assert rc == 2

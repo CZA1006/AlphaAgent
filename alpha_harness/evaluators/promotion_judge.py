@@ -223,10 +223,7 @@ class PromotionJudge:
                     )
                 return FailureRecord(
                     category=FailureCategory.WEAK_SIGNAL,
-                    detail=(
-                        f"{metric.value}={value:.4f} < threshold={threshold:.4f}"
-                        f"{pressure}"
-                    ),
+                    detail=(f"{metric.value}={value:.4f} < threshold={threshold:.4f}{pressure}"),
                 )
         return None
 
@@ -344,9 +341,7 @@ class PromotionJudge:
         holdout = evaluation.metadata.get("holdout")
         holdout_complement = holdout.get("complement") if isinstance(holdout, dict) else None
         holdout_lift = (
-            holdout_complement.get("rank_ic_lift")
-            if isinstance(holdout_complement, dict)
-            else None
+            holdout_complement.get("rank_ic_lift") if isinstance(holdout_complement, dict) else None
         )
         if not isinstance(holdout_lift, int | float):
             return FailureRecord(
