@@ -34,14 +34,20 @@ from __future__ import annotations
 import logging
 import os
 from types import SimpleNamespace
-from typing import TYPE_CHECKING, Any
+from typing import Any, Protocol
 
 import pandas as pd
 
 from alpha_harness.data.models import AdjustmentType, BarFrequency, DataRequest, DataResult
 
-if TYPE_CHECKING:  # pragma: no cover — typing only
-    from google.cloud import bigquery
+
+class _QueryResult(Protocol):
+    def to_dataframe(self) -> pd.DataFrame: ...
+
+
+class _BigQueryClient(Protocol):
+    def query(self, query: str, *, job_config: Any) -> _QueryResult: ...
+
 
 logger = logging.getLogger(__name__)
 
@@ -184,7 +190,7 @@ class BigQueryEquitiesLoader:
         with_event_features: bool = True,
         with_intraday_features: bool = False,
         max_bytes_billed: int = DEFAULT_MAX_BYTES_BILLED,
-        client: Any | None = None,
+        client: _BigQueryClient | None = None,
     ) -> None:
         self._project = project
         self._dataset = dataset
@@ -202,7 +208,7 @@ class BigQueryEquitiesLoader:
 
     # ── client ───────────────────────────────────────────────────────────
 
-    def _get_client(self) -> bigquery.Client:
+    def _get_client(self) -> _BigQueryClient:
         if self._client is None:
             try:
                 from google.cloud import bigquery
@@ -362,7 +368,7 @@ class BigQueryTickLoader:
         tick_table: str = DEFAULT_TICK_TABLE,
         scope: str = "target",
         max_bytes_billed: int = DEFAULT_TICK_MAX_BYTES_BILLED,
-        client: Any | None = None,
+        client: _BigQueryClient | None = None,
     ) -> None:
         self._project = project
         self._dataset = dataset
@@ -371,7 +377,7 @@ class BigQueryTickLoader:
         self._max_bytes_billed = max_bytes_billed
         self._client = client
 
-    def _get_client(self) -> bigquery.Client:
+    def _get_client(self) -> _BigQueryClient:
         if self._client is None:
             try:
                 from google.cloud import bigquery

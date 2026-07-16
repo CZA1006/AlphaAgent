@@ -91,5 +91,6 @@ warn_unused_configs = true
 [[tool.mypy.overrides]]
 module = [
     "ccxt.*",
+    "google.cloud.*",
 ]
 ignore_missing_imports = true
