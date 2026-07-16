@@ -12,6 +12,9 @@ at PR review time.
 * :func:`assert_no_outbound_io_in_evaluators` — evaluators must be
   pure functions of their inputs; no network, no subprocess, no LLM
   SDKs.
+* :func:`assert_no_market_literals` — generic core modules must obtain
+  market identifiers from packs; the Stage 2 director boundary is
+  temporarily exempt.
 """
 
 from alpha_harness.audit.imports import (
@@ -19,10 +22,12 @@ from alpha_harness.audit.imports import (
     AuditError,
     AuditViolation,
     assert_clean_imports,
+    assert_no_market_literals,
     assert_no_outbound_io_in_evaluators,
     run_all_audits,
     scan_clean_imports,
     scan_evaluator_io,
+    scan_market_literals,
 )
 
 __all__ = [
@@ -30,8 +35,10 @@ __all__ = [
     "AuditError",
     "AuditViolation",
     "assert_clean_imports",
+    "assert_no_market_literals",
     "assert_no_outbound_io_in_evaluators",
     "run_all_audits",
     "scan_clean_imports",
     "scan_evaluator_io",
+    "scan_market_literals",
 ]

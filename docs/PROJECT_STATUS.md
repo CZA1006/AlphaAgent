@@ -51,7 +51,10 @@ The live alpha hypothesis is the HK IPO order-flow track.
   and SQL templates. The DSL, BigQuery loaders, SQL scripts, and LLM model
   selection now consume explicit configuration while retaining compatibility
   at existing CLI edges. A fixed synthetic panel pins the pre-migration data
-  fingerprint and strict promotion trail id.
+  fingerprint and strict promotion trail id; a third-pack fixture proves
+  pack load -> Parquet loader -> pack-only DSL field -> mock-LLM evaluation.
+  The static audit blocks market literals throughout the generic core. Its
+  only temporary exemption is `director/`, whose migration belongs to Stage 2.
 - **Safe factor DSL** — whitelisted fields + functions, typed AST, no
   `eval`/arbitrary code.  Deterministic, test-covered execution.
 - **Continuous event proximity** — `event_decay(distance, half_life)` maps

@@ -9,6 +9,7 @@ inspection — never executes module top-level code.
 from __future__ import annotations
 
 import ast
+import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
@@ -39,6 +40,11 @@ _FORBIDDEN_EVALUATOR_PREFIXES: tuple[str, ...] = (
 )
 
 EVALUATORS_DIR = HARNESS_PACKAGE_DIR / "evaluators"
+_MARKET_LITERAL_EXEMPT_DIRS = frozenset({"markets", "director"})
+_FORBIDDEN_MARKET_LITERALS = (
+    "hk" + "_ipo",
+    "bloomberg" + "-database-0629",
+)
 
 
 # ── Public types ────────────────────────────────────────────────────────────
@@ -52,10 +58,11 @@ class AuditViolation:
     line: int
     imported: str
     rule: str
+    action: str = "imports"
 
     def render(self) -> str:
         rel = self._relative_to_package()
-        return f"{rel}:{self.line}  imports {self.imported!r}  ({self.rule})"
+        return f"{rel}:{self.line}  {self.action} {self.imported!r}  ({self.rule})"
 
     def _relative_to_package(self) -> str:
         try:
@@ -172,6 +179,39 @@ def assert_no_outbound_io_in_evaluators(root: Path | None = None) -> None:
         raise AuditError(violations)
 
 
+def scan_market_literals(root: Path | None = None) -> list[AuditViolation]:
+    """Return market literals outside packs and the Stage 2 director boundary."""
+    scan_root = root or HARNESS_PACKAGE_DIR
+    violations: list[AuditViolation] = []
+    for path in _iter_py_files(scan_root):
+        try:
+            relative = path.relative_to(scan_root)
+            if relative.parts and relative.parts[0] in _MARKET_LITERAL_EXEMPT_DIRS:
+                continue
+            source = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        for literal in _FORBIDDEN_MARKET_LITERALS:
+            for match in re.finditer(re.escape(literal), source, flags=re.IGNORECASE):
+                violations.append(
+                    AuditViolation(
+                        file=path,
+                        line=source.count("\n", 0, match.start()) + 1,
+                        imported=literal,
+                        rule="market literals belong in market packs",
+                        action="contains",
+                    )
+                )
+    return violations
+
+
+def assert_no_market_literals(root: Path | None = None) -> None:
+    """Raise when non-exempt core modules contain a market literal."""
+    violations = scan_market_literals(root)
+    if violations:
+        raise AuditError(violations)
+
+
 def run_all_audits() -> None:
     """Run every auditor in sequence; the first violation aborts.
 
@@ -180,3 +220,4 @@ def run_all_audits() -> None:
     """
     assert_clean_imports()
     assert_no_outbound_io_in_evaluators()
+    assert_no_market_literals()
