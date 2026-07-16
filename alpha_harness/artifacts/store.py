@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import builtins
 import contextlib
 import json
 import os
@@ -77,21 +78,26 @@ class LocalArtifactStore:
         directory = self.directory(kind)
         index = directory / "_index.jsonl"
         if index.is_file():
-            rows: list[dict[str, Any]] = []
-            for line in index.read_text(encoding="utf-8").splitlines():
-                try:
-                    payload = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                if isinstance(payload, dict):
-                    rows.append(payload)
-            return rows
-        if kind != "autonomous_runs":
-            return []
+            return self.list_index(kind)
         rows = []
         for path in sorted(directory.glob("*.json")):
             payload = self.read(kind, path.stem)
             if payload is not None:
+                rows.append(payload)
+        return rows
+
+    def list_index(self, kind: ArtifactKind) -> builtins.list[dict[str, Any]]:
+        """Read only the legacy index, preserving old missing-index behavior."""
+        index = self.directory(kind) / "_index.jsonl"
+        if not index.is_file():
+            return []
+        rows = []
+        for line in index.read_text(encoding="utf-8").splitlines():
+            try:
+                payload = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(payload, dict):
                 rows.append(payload)
         return rows
 

@@ -36,6 +36,8 @@ def test_local_store_and_raw_validation_paths_are_byte_compatible(tmp_path) -> N
     store = LocalArtifactStore.for_directory("validations", store_dir)
     store_path = store.write("validations", report.cycle_id, payload)
     assert read_report(store_dir, report.cycle_id) == report
+    assert store.list("validations") == [payload]
+    assert store.list_index("validations") == []
 
     raw_path = StrictValidationReportWriter(raw_dir).write(report)
     assert raw_path is not None

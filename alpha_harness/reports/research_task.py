@@ -74,7 +74,7 @@ class ResearchTaskReport(BaseModel):
 def read_index(
     base_dir: Path | str = DEFAULT_RESEARCH_TASK_DIR,
 ) -> list[dict[str, Any]]:
-    return LocalArtifactStore.for_directory("research_tasks", base_dir).list("research_tasks")
+    return LocalArtifactStore.for_directory("research_tasks", base_dir).list_index("research_tasks")
 
 
 def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:

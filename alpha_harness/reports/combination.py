@@ -154,7 +154,7 @@ def index_path(base_dir: Path | str = DEFAULT_COMBINATION_DIR) -> Path:
 def read_index(
     base_dir: Path | str = DEFAULT_COMBINATION_DIR,
 ) -> list[dict[str, Any]]:
-    return LocalArtifactStore.for_directory("combinations", base_dir).list("combinations")
+    return LocalArtifactStore.for_directory("combinations", base_dir).list_index("combinations")
 
 
 # ── Writer (mirrors StrictValidationReportWriter) ───────────────────────────

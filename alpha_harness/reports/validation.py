@@ -344,7 +344,7 @@ def index_path(base_dir: Path | str = DEFAULT_VALIDATION_DIR) -> Path:
 def read_index(
     base_dir: Path | str = DEFAULT_VALIDATION_DIR,
 ) -> list[dict[str, Any]]:
-    return LocalArtifactStore.for_directory("validations", base_dir).list("validations")
+    return LocalArtifactStore.for_directory("validations", base_dir).list_index("validations")
 
 
 def read_reports(

@@ -47,7 +47,7 @@ def index_path(base_dir: Path | str = DEFAULT_TRAIL_DIR) -> Path:
 
 def read_trails(base_dir: Path | str = DEFAULT_TRAIL_DIR) -> list[dict[str, Any]]:
     """Load every index row.  Returns ``[]`` when the file is absent."""
-    return LocalArtifactStore.for_directory("trails", base_dir).list("trails")
+    return LocalArtifactStore.for_directory("trails", base_dir).list_index("trails")
 
 
 def read_trail(

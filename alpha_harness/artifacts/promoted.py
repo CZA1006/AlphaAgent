@@ -51,7 +51,7 @@ def index_path(base_dir: Path | str = DEFAULT_PROMOTED_DIR) -> Path:
 
 def read_index(base_dir: Path | str = DEFAULT_PROMOTED_DIR) -> list[dict[str, Any]]:
     """Load all index entries.  Returns empty list when the file is absent."""
-    return LocalArtifactStore.for_directory("promoted", base_dir).list("promoted")
+    return LocalArtifactStore.for_directory("promoted", base_dir).list_index("promoted")
 
 
 def read_artifact(
