@@ -51,25 +51,7 @@ def index_path(base_dir: Path | str = DEFAULT_PROMOTED_DIR) -> Path:
 
 def read_index(base_dir: Path | str = DEFAULT_PROMOTED_DIR) -> list[dict[str, Any]]:
     """Load all index entries.  Returns empty list when the file is absent."""
-    path = index_path(base_dir)
-    if not path.is_file():
-        return []
-    entries: list[dict[str, Any]] = []
-    with path.open("r", encoding="utf-8") as fh:
-        for i, line in enumerate(fh, 1):
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                entries.append(json.loads(line))
-            except json.JSONDecodeError as exc:
-                logger.warning(
-                    "Skipping corrupt index line %d in %s: %s",
-                    i,
-                    path,
-                    exc,
-                )
-    return entries
+    return LocalArtifactStore.for_directory("promoted", base_dir).list("promoted")
 
 
 def read_artifact(

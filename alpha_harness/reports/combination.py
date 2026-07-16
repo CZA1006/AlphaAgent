@@ -154,25 +154,7 @@ def index_path(base_dir: Path | str = DEFAULT_COMBINATION_DIR) -> Path:
 def read_index(
     base_dir: Path | str = DEFAULT_COMBINATION_DIR,
 ) -> list[dict[str, Any]]:
-    path = index_path(base_dir)
-    if not path.is_file():
-        return []
-    rows: list[dict[str, Any]] = []
-    with path.open("r", encoding="utf-8") as fh:
-        for i, line in enumerate(fh, 1):
-            stripped = line.strip()
-            if not stripped:
-                continue
-            try:
-                rows.append(json.loads(stripped))
-            except json.JSONDecodeError as exc:
-                logger.warning(
-                    "Skipping corrupt combination index line %d in %s: %s",
-                    i,
-                    path,
-                    exc,
-                )
-    return rows
+    return LocalArtifactStore.for_directory("combinations", base_dir).list("combinations")
 
 
 # ── Writer (mirrors StrictValidationReportWriter) ───────────────────────────

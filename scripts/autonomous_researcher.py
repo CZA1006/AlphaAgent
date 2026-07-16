@@ -239,14 +239,9 @@ def _new_validation_rows(
 
 
 def _read_validation_report(validation_dir: Path, cycle_id: str) -> dict[str, Any] | None:
-    path = validation_dir / f"{cycle_id}.json"
-    if not path.is_file():
-        return None
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return None
-    return payload if isinstance(payload, dict) else None
+    return LocalArtifactStore.for_directory("validations", validation_dir).read(
+        "validations", cycle_id
+    )
 
 
 def _build_research_run_summary(
@@ -326,15 +321,23 @@ def run_autonomous_research(
     *,
     command_runner: CommandRunner = _run_command,
     python_executable: str = sys.executable,
+    market_pack: MarketPack | None = None,
 ) -> AutonomousRunRecord:
     """Plan and optionally execute autonomous research iterations."""
     if config.iterations < 1:
         raise ValueError("iterations must be >= 1")
 
-    try:
-        pack = load_market_pack(config.market)
-    except LookupError as exc:
-        raise ValueError(f"unsupported market: {config.market}") from exc
+    if market_pack is None:
+        try:
+            pack = load_market_pack(config.market)
+        except LookupError as exc:
+            raise ValueError(f"unsupported market: {config.market}") from exc
+    else:
+        pack = market_pack
+        if pack.market_id != config.market:
+            raise ValueError(
+                f"market config mismatch: pack={pack.market_id!r}, config={config.market!r}"
+            )
     run_id = config.run_id or _run_id(config.market)
     run_started = datetime.now(UTC)
     context = build_market_context(pack, validation_dir=config.validation_dir)
@@ -612,7 +615,9 @@ def main(argv: list[str] | None = None) -> int:
         validation_no_write=args.validation_no_write,
     )
     try:
-        record = run_autonomous_research(config)
+        from alpha_harness.sdk import run_autonomous
+
+        record = run_autonomous(args.market, config)
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2

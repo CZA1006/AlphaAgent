@@ -74,28 +74,7 @@ class ResearchTaskReport(BaseModel):
 def read_index(
     base_dir: Path | str = DEFAULT_RESEARCH_TASK_DIR,
 ) -> list[dict[str, Any]]:
-    path = Path(base_dir) / RESEARCH_TASK_INDEX_NAME
-    if not path.is_file():
-        return []
-    rows: list[dict[str, Any]] = []
-    with path.open("r", encoding="utf-8") as fh:
-        for line_no, line in enumerate(fh, 1):
-            stripped = line.strip()
-            if not stripped:
-                continue
-            try:
-                payload = json.loads(stripped)
-            except json.JSONDecodeError as exc:
-                logger.warning(
-                    "Skipping corrupt research-task index line %d in %s: %s",
-                    line_no,
-                    path,
-                    exc,
-                )
-                continue
-            if isinstance(payload, dict):
-                rows.append(payload)
-    return rows
+    return LocalArtifactStore.for_directory("research_tasks", base_dir).list("research_tasks")
 
 
 def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:

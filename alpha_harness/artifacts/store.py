@@ -86,6 +86,8 @@ class LocalArtifactStore:
                 if isinstance(payload, dict):
                     rows.append(payload)
             return rows
+        if kind != "autonomous_runs":
+            return []
         rows = []
         for path in sorted(directory.glob("*.json")):
             payload = self.read(kind, path.stem)

@@ -67,6 +67,7 @@ from alpha_harness.llm import (
     default_log_path,
     token_budget_from_env,
 )
+from alpha_harness.markets import list_market_packs
 from alpha_harness.multiple_testing import bonferroni_z_threshold_multiplier
 from alpha_harness.orchestrator.refinement import RefinementConfig, RefinementRunner
 from alpha_harness.orchestrator.research_loop import ResearchOrchestrator
@@ -417,6 +418,8 @@ def _load_data(args: argparse.Namespace) -> pd.DataFrame:
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=__doc__)
 
+    p.add_argument("--market", choices=list_market_packs(), default="hk_ipo")
+
     p.add_argument(
         "--data-source",
         choices=["synthetic", "parquet", "polygon", "bigquery"],
@@ -696,20 +699,25 @@ def _load_replay_hypotheses(
     return candidates
 
 
-def main(argv: list[str] | None = None) -> int:
+def _execute_validation(
+    argv: list[str] | None,
+    *,
+    dsl_fields: frozenset[str],
+    emit_output: bool,
+) -> tuple[int, list[StrictValidationReport]]:
     args = _build_parser().parse_args(argv)
     cycle_id = args.cycle_id or f"strict-{uuid.uuid4().hex[:12]}"
     candidate_source = ResearchExecutorKind(args.candidate_source)
     if args.cost_bps is not None and args.cost_bps < 0:
         print("error: --cost-bps must be >= 0", file=sys.stderr)
-        return 2
+        return 2, []
 
     # ── Data ────────────────────────────────────────────────────────────
     try:
         price_data = _load_data(args)
     except (FileNotFoundError, ValueError, RuntimeError) as exc:
         print(f"error: {exc}", file=sys.stderr)
-        return 2
+        return 2, []
 
     # ── Build the orchestrator under StrictRegime ───────────────────────
     regime = get_regime(args.regime)
@@ -725,7 +733,7 @@ def main(argv: list[str] | None = None) -> int:
     evaluator = WalkForwardEvaluator(inner_evaluator, regime.walk_forward_config())
 
     service = AlphaHarnessService(
-        compiler=FactorDslCompiler(),
+        compiler=FactorDslCompiler(extra_fields=dsl_fields),
         evaluator=evaluator,
         judge=PromotionJudge(
             refine_margin=judge_thresholds["refine_margin"],
@@ -813,10 +821,10 @@ def main(argv: list[str] | None = None) -> int:
             llm_client, llm_budget = _build_llm_client(args, cycle_id=cycle_id)
         except (RuntimeError, ValueError) as exc:
             print(f"error: {exc}", file=sys.stderr)
-            return 2
+            return 2, []
         proposer = HypothesisProposer(
             llm_client=llm_client,
-            compiler=FactorDslCompiler(),
+            compiler=FactorDslCompiler(extra_fields=dsl_fields),
         )
         composite_anchors = (
             load_composite_anchors(Path(args.promoted_dir) / "_index.jsonl")
@@ -829,7 +837,7 @@ def main(argv: list[str] | None = None) -> int:
                 "promoted composite anchor",
                 file=sys.stderr,
             )
-            return 2
+            return 2, []
         if composite_anchors:
             logger.info(
                 "Round 10 complement mode: loaded %d promoted composite anchor(s)",
@@ -857,7 +865,7 @@ def main(argv: list[str] | None = None) -> int:
             )
         except ValueError as exc:
             print(f"error: {exc}", file=sys.stderr)
-            return 2
+            return 2, []
     prior_reports = (
         []
         if args.no_memory or candidate_source is ResearchExecutorKind.REPLAY_PROMOTED
@@ -927,13 +935,13 @@ def main(argv: list[str] | None = None) -> int:
             except BudgetExceededError as exc:
                 logger.error("Cycle %d halted by budget guard: %s", i + 1, exc)
                 print(f"error: cycle halted — {exc}", file=sys.stderr)
-                return 3
+                return 3, []
             except Exception as exc:
                 from alpha_harness.llm.openrouter import OpenRouterError
 
                 if isinstance(exc, OpenRouterError):
                     print(f"error: LLM call failed — {exc}", file=sys.stderr)
-                    return 4
+                    return 4, []
                 raise
 
         # Report only the records produced *in this sub-cycle* — the
@@ -961,13 +969,14 @@ def main(argv: list[str] | None = None) -> int:
         reports.append(report)
 
     # ── Output ──────────────────────────────────────────────────────────
-    if args.json:
-        print(json.dumps([json.loads(r.model_dump_json()) for r in reports], indent=2))
-    elif n_cycles == 1:
-        _print_summary(reports[0])
-    else:
-        _print_multi_summary(reports)
-    return 0
+    if emit_output:
+        if args.json:
+            print(json.dumps([json.loads(r.model_dump_json()) for r in reports], indent=2))
+        elif n_cycles == 1:
+            _print_summary(reports[0])
+        else:
+            _print_multi_summary(reports)
+    return 0, reports
 
 
 def _print_multi_summary(reports: list[StrictValidationReport]) -> None:
@@ -1050,6 +1059,14 @@ def _print_summary(report: object) -> None:
             }
         ),
     )
+
+
+def main(argv: list[str] | None = None) -> int:
+    from alpha_harness.sdk import ValidationRequest, run_validation_cli
+
+    effective_argv = list(sys.argv[1:] if argv is None else argv)
+    market_id = _build_parser().parse_args(effective_argv).market
+    return run_validation_cli(market_id, ValidationRequest(argv=tuple(effective_argv)))
 
 
 if __name__ == "__main__":

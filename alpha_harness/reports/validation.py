@@ -344,25 +344,7 @@ def index_path(base_dir: Path | str = DEFAULT_VALIDATION_DIR) -> Path:
 def read_index(
     base_dir: Path | str = DEFAULT_VALIDATION_DIR,
 ) -> list[dict[str, Any]]:
-    path = index_path(base_dir)
-    if not path.is_file():
-        return []
-    rows: list[dict[str, Any]] = []
-    with path.open("r", encoding="utf-8") as fh:
-        for i, line in enumerate(fh, 1):
-            stripped = line.strip()
-            if not stripped:
-                continue
-            try:
-                rows.append(json.loads(stripped))
-            except json.JSONDecodeError as exc:
-                logger.warning(
-                    "Skipping corrupt validation index line %d in %s: %s",
-                    i,
-                    path,
-                    exc,
-                )
-    return rows
+    return LocalArtifactStore.for_directory("validations", base_dir).list("validations")
 
 
 def read_reports(
@@ -396,13 +378,13 @@ def read_reports(
             cycle_id == exclude_cycle_prefix or cycle_id.startswith(f"{exclude_cycle_prefix}-c")
         ):
             continue
-        path = root / f"{cycle_id}.json"
+        payload = LocalArtifactStore.for_directory("validations", root).read(
+            "validations", cycle_id
+        )
         try:
-            report = StrictValidationReport.model_validate_json(
-                path.read_text(encoding="utf-8"),
-            )
-        except (OSError, ValueError) as exc:
-            logger.warning("Skipping unreadable validation report %s: %s", path, exc)
+            report = StrictValidationReport.model_validate(payload)
+        except ValueError as exc:
+            logger.warning("Skipping unreadable validation report %s: %s", cycle_id, exc)
             continue
         if regime_trail_id is not None and report.regime_trail_id != regime_trail_id:
             continue

@@ -14,11 +14,9 @@ from pathlib import Path
 
 from alpha_harness.director import (
     DEFAULT_VALIDATION_DIR,
-    ResearchDirector,
     ResearchDirectorPlan,
-    build_market_context,
 )
-from alpha_harness.markets import list_market_packs, load_market_pack
+from alpha_harness.markets import list_market_packs
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -74,9 +72,9 @@ def _print_text(plan: ResearchDirectorPlan, *, top_n: int) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
-    pack = load_market_pack(args.market)
-    context = build_market_context(pack, validation_dir=Path(args.validation_dir))
-    plan = ResearchDirector().plan(pack, context)
+    from alpha_harness.sdk import plan as build_plan
+
+    plan = build_plan(args.market, validation_dir=Path(args.validation_dir))
     if args.json:
         print(json.dumps(json.loads(plan.model_dump_json()), indent=2))
     else:
