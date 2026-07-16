@@ -29,10 +29,11 @@ from alpha_harness.director import (
     ResearchPostRunPolicy,
     ResearchRunSummary,
     ResearchTopicPlan,
-    build_hk_ipo_context,
+    build_market_context,
     research_task_report_summary_from_payload,
     validation_report_summary_from_payload,
 )
+from alpha_harness.markets import MarketPack, list_market_packs, load_market_pack
 from alpha_harness.reports import DEFAULT_RESEARCH_TASK_DIR, read_research_task_index
 
 DEFAULT_RUN_DIR = Path("artifacts/autonomous_runs")
@@ -147,7 +148,7 @@ def build_validation_argv(
         return [
             python_executable,
             "-m",
-            "scripts.audit_hk_ipo_event_truth",
+            topic.runner_module,
             "--task-id",
             cycle_id,
             "--artifact-dir",
@@ -158,7 +159,7 @@ def build_validation_argv(
         return [
             python_executable,
             "-m",
-            "scripts.plan_hk_ipo_raw_tick_materialization",
+            topic.runner_module,
             "--task-id",
             cycle_id,
             "--artifact-dir",
@@ -182,7 +183,7 @@ def build_validation_argv(
     if no_write:
         args = _ensure_flag(args, "--no-write")
     args = _ensure_flag(args, "--json")
-    return [python_executable, "-m", "scripts.validate_strict", *args]
+    return [python_executable, "-m", topic.runner_module, *args]
 
 
 def _run_command(argv: Sequence[str], timeout_seconds: int) -> subprocess.CompletedProcess[str]:
@@ -280,9 +281,10 @@ def _build_research_run_summary(
 def _decide_next_step(
     record: AutonomousRunRecord,
     validation_dir: Path,
+    pack: MarketPack,
 ) -> PostRunDecision:
     summary = _build_research_run_summary(record, validation_dir)
-    return ResearchPostRunPolicy().decide(summary)
+    return ResearchPostRunPolicy().decide(summary, pack=pack)
 
 
 def _select_topic(plan: ResearchDirectorPlan, topic_id: str) -> ResearchTopicPlan:
@@ -325,15 +327,17 @@ def run_autonomous_research(
     python_executable: str = sys.executable,
 ) -> AutonomousRunRecord:
     """Plan and optionally execute autonomous research iterations."""
-    if config.market != "hk_ipo":
-        raise ValueError(f"unsupported market: {config.market}")
     if config.iterations < 1:
         raise ValueError("iterations must be >= 1")
 
+    try:
+        pack = load_market_pack(config.market)
+    except LookupError as exc:
+        raise ValueError(f"unsupported market: {config.market}") from exc
     run_id = config.run_id or _run_id(config.market)
     run_started = datetime.now(UTC)
-    context = build_hk_ipo_context(validation_dir=config.validation_dir)
-    plan = ResearchDirector().plan(context)
+    context = build_market_context(pack, validation_dir=config.validation_dir)
+    plan = ResearchDirector().plan(pack, context)
     selected = _select_topic(plan, config.topic_id) if config.topic_id else plan.selected_topic
     record = AutonomousRunRecord(
         run_id=run_id,
@@ -497,9 +501,9 @@ def run_autonomous_research(
             break
         record.status = "completed"
 
-        context = build_hk_ipo_context(validation_dir=config.validation_dir)
-        plan = ResearchDirector().plan(context)
-        decision = _decide_next_step(record, config.validation_dir)
+        context = build_market_context(pack, validation_dir=config.validation_dir)
+        plan = ResearchDirector().plan(pack, context)
+        decision = _decide_next_step(record, config.validation_dir, pack)
         record.iterations[-1].next_decision = json.loads(decision.model_dump_json())
         if decision.action in {
             NextResearchAction.STOP_COMPLETED,
@@ -513,7 +517,7 @@ def run_autonomous_research(
             selected = plan.selected_topic
 
     record.finished_at = datetime.now(UTC)
-    decision = _decide_next_step(record, config.validation_dir)
+    decision = _decide_next_step(record, config.validation_dir, pack)
     record.next_decision = json.loads(decision.model_dump_json())
     if not config.no_artifact:
         write_run_record(record, config.artifact_dir)
@@ -522,7 +526,7 @@ def run_autonomous_research(
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--market", choices=["hk_ipo"], default="hk_ipo")
+    parser.add_argument("--market", choices=list_market_packs(), default="hk_ipo")
     parser.add_argument("--topic-id", default=None)
     parser.add_argument("--execute", action="store_true", help="Run the selected validation loop.")
     parser.add_argument("--iterations", type=int, default=1)

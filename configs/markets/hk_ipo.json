@@ -115,47 +115,113 @@
     "first_hour_liquidity_withdrawal": "First-hour liquidity-withdrawal score."
   },
   "mock_presets": ["hk_ipo_events", "hk_ipo_micro"],
+  "director_context": {
+    "dataset_status": [
+      {"name": "ipo_daily_prices", "rows": 7118, "stocks": 77, "aligned_to_daily": true, "notes": "Daily HK IPO panel used as the evaluation spine."},
+      {"name": "micro_features_daily", "rows": 7118, "stocks": 77, "aligned_to_daily": true, "notes": "Daily tick-derived OFI, spread, volatility, and liquidity features."},
+      {"name": "tick_manifest_target", "rows": 86103563, "stocks": 77, "aligned_to_daily": null, "notes": "TRADE/BID/ASK tick manifest; no zero trade/bid/ask stocks in latest doctor."},
+      {"name": "ipo_event_features_daily", "rows": 7118, "stocks": 77, "aligned_to_daily": true, "notes": "Daily event distances and flags aligned to ipo_daily_prices."},
+      {"name": "ipo_event_dates_curated", "rows": 593, "stocks": 75, "aligned_to_daily": null, "notes": "HKEX/prospectus-derived event dates with source evidence."},
+      {"name": "hkex_document_registry_curated", "rows": 846, "stocks": 77, "aligned_to_daily": null, "notes": "Prospectus and allotment-results announcement coverage is 77/77 in the 2026-07-14 event-truth audit."}
+    ],
+    "data_gaps": [
+      {"name": "nonpositive_tick_values", "severity": "warning", "evidence": "Latest doctor found 364,768 nonpositive tick value rows across 77 stocks.", "recommended_action": "Keep value > 0 filters in derived SQL; add a source-level QA extract by stock/date/event_type before building intraday features."},
+      {"name": "event_terms_needs_review", "severity": "warning", "evidence": "ipo_event_terms_needs_review has 280 rows across 75 stocks.", "recommended_action": "Prioritize rows that affect greenshoe, stabilization, cornerstone, lockup, and tranche unlock dates; promote only source-backed terms."},
+      {"name": "bloomberg_lockup_anomalies", "severity": "warning", "evidence": "Bloomberg still reports anomalous lockup fields for 06051 and 03636; HKEX/prospectus terms should be treated as truth.", "recommended_action": "Use Bloomberg lockup fields only as review candidates unless confirmed by HKEX/prospectus source text."},
+      {"name": "raw_tick_intraday_loop_gap", "severity": "info", "evidence": "The validation loop consumes daily bars plus tick-derived daily features; raw tick loading exists but the agent does not yet generate intraday features itself.", "recommended_action": "Add an intraday feature-build step that materializes opening-auction, first-hour, and event-window features from TRADE/BID/ASK ticks."}
+    ],
+    "operator_constraints": [
+      "Use /Users/caizhuoang/AlphaAgent as the official working tree.",
+      "Prefer HKEX/prospectus-derived event dates over Bloomberg lockup fields.",
+      "Do not treat promoted lenient-regime factors as production alpha without stricter follow-up."
+    ],
+    "plan_notes": "Director selected an event-conditioned microstructure run because the core daily, microstructure, tick-manifest, and curated-event datasets are aligned. Data-review topics remain in the queue because they affect truth labeling and future intraday feature work."
+  },
   "director_topics": [
     {
       "topic_id": "hk_ipo_event_conditioned_microstructure",
       "theme": "HK IPO continuous event-decay microstructure signals",
       "priority": 100,
       "history_penalty": 5,
-      "rationale": "Use aligned daily, microstructure, and event tables for continuous event-distance interactions.",
-      "extra_guidance": "Retain a daily base microstructure signal and add a continuous event_decay interaction; do not collapse the cross-section with a Boolean event gate.",
-      "data_requirements": ["ipo_daily_prices", "micro_features_daily", "ipo_event_features_daily", "ipo_event_dates_curated"]
+      "rationale": "The aligned daily, microstructure, and curated event tables can already support continuous event-distance interactions without collapsing the daily cross-section to a narrow Boolean event window.",
+      "extra_guidance": "The previous hard-window search produced 18/18 rejections because Boolean event gates collapsed the cross-section. Every proposal must retain a daily base microstructure signal and add a continuous interaction using event_decay(days_to_next_*, half_life), with half_life in {5, 10, 20}. Use OFI, relative spread, realized volatility, trade count, quote count, or average trade size. Do not multiply by is_pre_*, is_near_*, or is_stabilization_window_active as the sole signal. Do not use first_hour_* fields because this loader is daily-only. Avoid Bloomberg-only anomalous lockup dates. Prefer forms such as base_rank + event_decay(distance, 10) * interaction_rank so non-event stocks remain in the cross-section.",
+      "validation_command": "make validate-hk-ipo-events ARGS=\"--llm openrouter --n-candidates 12 --n-cycles 3\"",
+      "validation_args": ["--data-source", "bigquery", "--universe", "configs/universes/hk_ipo.txt", "--start-date", "2025-12-12", "--end-date", "2026-06-26", "--regime", "lenient", "--llm", "openrouter", "--mock-preset", "hk_ipo_events", "--n-candidates", "12", "--n-cycles", "3", "--theme", "HK IPO continuous event-decay microstructure signals", "--extra-guidance", "The previous hard-window search produced 18/18 rejections because Boolean event gates collapsed the cross-section. Every proposal must retain a daily base microstructure signal and add a continuous interaction using event_decay(days_to_next_*, half_life), with half_life in {5, 10, 20}. Use OFI, relative spread, realized volatility, trade count, quote count, or average trade size. Do not multiply by is_pre_*, is_near_*, or is_stabilization_window_active as the sole signal. Do not use first_hour_* fields because this loader is daily-only. Avoid Bloomberg-only anomalous lockup dates. Prefer forms such as base_rank + event_decay(distance, 10) * interaction_rank so non-event stocks remain in the cross-section."],
+      "data_requirements": ["ipo_daily_prices", "micro_features_daily", "ipo_event_features_daily", "ipo_event_dates_curated"],
+      "success_criteria": ["At least one promoted factor survives lenient validation and holdout checks.", "Promoted factors contain a continuous event-decay interaction while retaining a non-event daily base signal.", "Failure breakdown identifies whether the next bottleneck is IC, rank IC, holdout, or turnover."],
+      "stop_conditions": ["Stop repeating this topic if promoted factors are generic or fail holdout repeatedly.", "Switch to event data review if new failures trace to missing or ambiguous event labels."]
     },
     {
       "topic_id": "hk_ipo_event_truth_review",
       "executor": "event_truth_audit",
       "theme": "HK IPO event truth and document review",
       "priority": 85,
-      "rationale": "Audit unresolved event terms before treating data gaps as research outcomes.",
-      "data_requirements": ["event_terms_needs_review", "bloomberg_lockup_anomalies"]
+      "rationale": "The event tables are usable and document coverage is complete, but 280 needs-review rows still require a deterministic backlog audit.",
+      "extra_guidance": "Use the data gaps to decide which HKEX/prospectus terms to review next. Prioritize missing or ambiguous greenshoe, stabilization, cornerstone, and lockup terms that affect the validation window.",
+      "validation_command": "uv run --extra gcp python -m scripts.audit_hk_ipo_event_truth",
+      "runner_module": "scripts.audit_hk_ipo_event_truth",
+      "data_requirements": ["event_terms_needs_review", "bloomberg_lockup_anomalies"],
+      "success_criteria": ["Needs-review rows that affect validation are resolved or marked unavailable.", "Bloomberg anomalies remain excluded from truth tables unless source-confirmed."],
+      "stop_conditions": ["Pause factor validation only if event truth gaps become blocking for selected dates."]
     },
     {
       "topic_id": "hk_ipo_cost_realism_oos",
       "executor": "replay_promoted",
       "theme": "HK IPO implementability and cost realism",
       "priority": 75,
-      "rationale": "Stress promoted candidates for costs, turnover, and holdout decay.",
-      "data_requirements": ["ipo_daily_prices", "micro_features_daily", "ipo_event_features_daily"]
+      "rationale": "Early lenient promotions are useful for exploration, but production-quality research needs post-cost, turnover, and holdout stress before any alpha claim.",
+      "extra_guidance": "Stress previously promoted event-conditioned factors for turnover, spread, liquidity, holdout decay, and post-cost quantile spread. Prefer lower-turnover variants that remain stable outside the first listing week.",
+      "validation_command": "make validate-hk-ipo-events ARGS=\"--llm openrouter --n-candidates 12 --n-cycles 3\"",
+      "validation_args": ["--data-source", "bigquery", "--universe", "configs/universes/hk_ipo.txt", "--start-date", "2025-12-12", "--end-date", "2026-06-26", "--regime", "lenient", "--llm", "openrouter", "--mock-preset", "hk_ipo_events", "--n-candidates", "12", "--n-cycles", "3", "--theme", "HK IPO implementability and cost realism", "--extra-guidance", "Stress previously promoted event-conditioned factors for turnover, spread, liquidity, holdout decay, and post-cost quantile spread. Prefer lower-turnover variants that remain stable outside the first listing week.", "--cost-bps", "15.0"],
+      "data_requirements": ["ipo_daily_prices", "micro_features_daily", "ipo_event_features_daily"],
+      "success_criteria": ["Promoted candidates retain positive post-cost quantile spread.", "Holdout rank IC does not flip sign.", "Turnover is explainable by event timing rather than noisy daily churn."],
+      "stop_conditions": ["If all candidates fail cost or holdout gates, return to feature engineering."]
     },
     {
       "topic_id": "hk_ipo_raw_tick_intraday_features",
       "executor": "raw_tick_materialization_plan",
       "theme": "HK IPO raw-tick intraday pressure features",
       "priority": 65,
-      "rationale": "Plan guarded materialization of first-hour and event-window tick features.",
-      "data_requirements": ["tick_manifest_target", "raw_tick_intraday_loop_gap", "nonpositive_tick_values"]
+      "rationale": "Tick-level TRADE/BID/ASK data is available, but the current validation loop mainly consumes daily materialized features. Intraday feature materialization is the next data-extension topic.",
+      "extra_guidance": "Design feature families that should be materialized from TRADE/BID/ASK ticks: first-hour OFI, opening-auction imbalance, quote-recovery speed, spread shock persistence, and event-window liquidity withdrawal.",
+      "validation_command": "uv run --extra gcp python -m scripts.plan_hk_ipo_raw_tick_materialization",
+      "runner_module": "scripts.plan_hk_ipo_raw_tick_materialization",
+      "data_requirements": ["tick_manifest_target", "raw_tick_intraday_loop_gap", "nonpositive_tick_values"],
+      "success_criteria": ["A reproducible SQL/materialization plan exists for first-hour and event-window features.", "Nonpositive tick rows are quantified by symbol/date/event_type before feature build."],
+      "stop_conditions": ["Do not use raw tick-derived intraday signals in validation until QA tables pass doctor checks."]
     }
   ],
   "post_run_transitions": {
     "on_promotion": {
-      "hk_ipo_event_conditioned_microstructure": "hk_ipo_cost_realism_oos"
+      "hk_ipo_event_conditioned_microstructure": {
+        "action": "switch_topic",
+        "next_topic_id": "hk_ipo_cost_realism_oos",
+        "rationale": "Event-conditioned microstructure produced promotions; next step is implementability, turnover, cost, and holdout stress rather than repeating the same candidate family."
+      }
     },
-    "on_data_gap": "hk_ipo_event_truth_review",
-    "stop_after_topics": ["hk_ipo_event_truth_review", "hk_ipo_cost_realism_oos", "hk_ipo_raw_tick_intraday_features"]
+    "on_data_gap": {
+      "hk_ipo_event_conditioned_microstructure": {
+        "action": "open_data_review",
+        "next_topic_id": "hk_ipo_event_truth_review",
+        "rationale": "No candidates promoted and failures point to missing metrics or event label sparsity; inspect event truth before more factor search."
+      }
+    },
+    "after_topic": {
+      "hk_ipo_event_truth_review": {
+        "action": "stop_completed",
+        "rationale": "Event-truth audit completed; stop the bounded run for deterministic review of blocking and backlog findings.",
+        "include_task_counts": true
+      },
+      "hk_ipo_cost_realism_oos": {
+        "action": "stop_completed",
+        "rationale": "Promoted discovery candidates were replayed under the cost-stress contract; stop this bounded run and inspect the deterministic report."
+      },
+      "hk_ipo_raw_tick_intraday_features": {
+        "action": "stop_completed",
+        "rationale": "Raw-tick SQL was validated and dry-run with read-only QA; stop before any operator-approved BigQuery materialization.",
+        "include_task_counts": true
+      }
+    }
   },
   "sql_templates": {
     "event_features_daily": "scripts/sql/ipo_event_features_daily.sql",

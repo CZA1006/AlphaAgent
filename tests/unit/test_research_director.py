@@ -8,8 +8,8 @@ from alpha_harness.director import (
     ResearchDirector,
     ResearchDirectorContext,
     ResearchExecutorKind,
-    build_hk_ipo_context,
 )
+from alpha_harness.markets.contexts import build_hk_ipo_context
 
 
 def test_hk_ipo_context_reads_recent_validation_counts(tmp_path) -> None:

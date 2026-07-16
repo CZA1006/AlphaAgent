@@ -150,12 +150,11 @@ def test_market_literal_auditor_flags_core_literal(tmp_path: Path) -> None:
         assert_no_market_literals(pkg)
 
 
-def test_market_literal_auditor_allows_pack_and_stage2_director(tmp_path: Path) -> None:
+def test_market_literal_auditor_allows_market_pack_only(tmp_path: Path) -> None:
     pkg = _write_module(tmp_path, "ok.py", "value = 1\n")
-    for directory in ("markets", "director"):
-        path = pkg / directory
-        path.mkdir()
-        (path / "configured.py").write_text('MARKET = "hk_ipo"\n')
+    path = pkg / "markets"
+    path.mkdir()
+    (path / "configured.py").write_text('MARKET = "hk_ipo"\n')
     assert scan_market_literals(pkg) == []
 
 
