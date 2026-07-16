@@ -100,6 +100,14 @@ class TestPrompts:
             assert field in prompt
         assert '"proposals"' in prompt  # JSON schema documented
 
+    def test_system_prompt_can_be_scoped_to_pack_fields(self) -> None:
+        prompt = build_system_prompt(
+            extra_fields=frozenset({"custom_signal"}),
+            extra_field_docs={"custom_signal": "Synthetic pack signal."},
+        )
+        assert "custom_signal  — Synthetic pack signal." in prompt
+        assert "ofi" not in prompt
+
     def test_user_prompt_includes_theme_and_related(self) -> None:
         related = [
             RelatedExperiment(

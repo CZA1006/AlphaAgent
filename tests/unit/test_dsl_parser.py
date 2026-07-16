@@ -3,8 +3,10 @@
 import pytest
 
 from alpha_harness.factors.dsl_parser import (
+    ALLOWED_FIELDS,
     DslParseError,
     parse_expression,
+    registered_dsl_fields,
     tokenize,
     validate_expression,
 )
@@ -49,6 +51,9 @@ class TestTokenizer:
 
 
 class TestParserValid:
+    def test_base_fields_are_market_agnostic(self) -> None:
+        assert frozenset({"open", "high", "low", "close", "volume", "vwap"}) == ALLOWED_FIELDS
+
     def test_field_reference(self) -> None:
         ast = parse_expression("close")
         assert ast == {"type": "field", "name": "close"}
@@ -274,3 +279,13 @@ class TestIntradayCandidateFields:
         ):
             ast = parse_expression(f"rank({field})")
             assert ast["args"][0] == {"type": "field", "name": field}
+
+    def test_explicit_pack_fields_are_isolated(self) -> None:
+        ast = parse_expression("rank(custom_signal)", extra_fields=frozenset({"custom_signal"}))
+        assert ast["args"][0] == {"type": "field", "name": "custom_signal"}
+
+        with pytest.raises(DslParseError, match="Unknown identifier"):
+            parse_expression("rank(ofi)", extra_fields=frozenset({"custom_signal"}))
+
+    def test_compatibility_fields_come_from_registered_packs(self) -> None:
+        assert "ofi" in registered_dsl_fields()

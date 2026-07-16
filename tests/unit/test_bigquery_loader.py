@@ -259,8 +259,11 @@ def test_event_features_pass_through_as_dsl_fields() -> None:
 
 
 def test_micro_fields_compile_in_dsl() -> None:
-    """The microstructure field names are whitelisted in the DSL."""
-    from alpha_harness.factors.dsl_parser import ALLOWED_FIELDS, parse_expression
+    """The microstructure field names are supplied by the market pack."""
+    from alpha_harness.factors.dsl_parser import parse_expression
+    from alpha_harness.markets import load_market_pack
+
+    extra_fields = load_market_pack("hk_ipo").dsl_fields
 
     for f in (
         "ofi",
@@ -271,14 +274,17 @@ def test_micro_fields_compile_in_dsl() -> None:
         "avg_trade_size",
         "n_quotes",
     ):
-        assert f in ALLOWED_FIELDS
+        assert f in extra_fields
     # A real microstructure factor must parse.
-    parse_expression("rank(ofi) * rank(-realized_vol)")
+    parse_expression("rank(ofi) * rank(-realized_vol)", extra_fields=extra_fields)
 
 
 def test_event_fields_compile_in_dsl() -> None:
-    """The curated IPO event feature names are whitelisted in the DSL."""
-    from alpha_harness.factors.dsl_parser import ALLOWED_FIELDS, parse_expression
+    """The curated IPO event feature names are supplied by the market pack."""
+    from alpha_harness.factors.dsl_parser import parse_expression
+    from alpha_harness.markets import load_market_pack
+
+    extra_fields = load_market_pack("hk_ipo").dsl_fields
 
     for f in (
         "days_since_listing",
@@ -291,8 +297,11 @@ def test_event_fields_compile_in_dsl() -> None:
         "is_pre_cornerstone_lockup_5d",
         "is_stabilization_window_active",
     ):
-        assert f in ALLOWED_FIELDS
-    parse_expression("rank(ofi) * is_pre_greenshoe_expiry_5d")
+        assert f in extra_fields
+    parse_expression(
+        "rank(ofi) * is_pre_greenshoe_expiry_5d",
+        extra_fields=extra_fields,
+    )
 
 
 # ── tick loader ────────────────────────────────────────────────────────────

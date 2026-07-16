@@ -43,6 +43,9 @@ class FactorDslCompiler:
           (e.g. "Momentum signal: expr: rank(ts_mean(close, 20))")
     """
 
+    def __init__(self, *, extra_fields: frozenset[str] | None = None) -> None:
+        self._extra_fields = extra_fields
+
     def compile(self, hypothesis: Hypothesis) -> FactorSpec:
         """Parse, validate, and compile a hypothesis into a FactorSpec.
 
@@ -53,7 +56,7 @@ class FactorDslCompiler:
 
         # Parse into AST
         try:
-            ast = parse_expression(expression)
+            ast = parse_expression(expression, extra_fields=self._extra_fields)
         except DslParseError as e:
             raise DslCompilationError(f"Failed to parse expression {expression!r}: {e}") from e
 

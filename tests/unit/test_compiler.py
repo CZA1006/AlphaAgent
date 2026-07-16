@@ -64,6 +64,17 @@ class TestFactorDslCompiler:
         with pytest.raises(DslCompilationError, match="Unknown function"):
             compiler.compile(h)
 
+    def test_compiles_explicit_pack_field(self) -> None:
+        compiler = FactorDslCompiler(extra_fields=frozenset({"custom_signal"}))
+        factor = compiler.compile(Hypothesis(text="rank(custom_signal)"))
+        assert factor.operator_tree is not None
+        assert factor.operator_tree["args"][0] == {"type": "field", "name": "custom_signal"}
+
+    def test_explicit_pack_does_not_inherit_other_market_fields(self) -> None:
+        compiler = FactorDslCompiler(extra_fields=frozenset())
+        with pytest.raises(DslCompilationError, match="Unknown identifier"):
+            compiler.compile(Hypothesis(text="rank(ofi)"))
+
     def test_rejects_empty_text(self) -> None:
         compiler = FactorDslCompiler()
         h = Hypothesis(text="")
