@@ -14,6 +14,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from alpha_harness.artifacts.store import LocalArtifactStore
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_RESEARCH_TASK_DIR = Path("artifacts/research_tasks")
@@ -119,8 +121,11 @@ class ResearchTaskReportWriter:
         self._base_dir = Path(base_dir)
 
     def write(self, report: ResearchTaskReport) -> Path:
-        path = self._base_dir / f"{report.task_id}.json"
-        _atomic_write_json(path, json.loads(report.model_dump_json()))
+        path = LocalArtifactStore.for_directory("research_tasks", self._base_dir).write(
+            "research_tasks",
+            report.task_id,
+            json.loads(report.model_dump_json()),
+        )
         self._upsert_index(report)
         return path
 

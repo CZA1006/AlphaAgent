@@ -33,6 +33,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from alpha_harness.artifacts.store import LocalArtifactStore
 from alpha_harness.combination import CombinationMethod, CombinationRecipe, recipe_id_for
 from alpha_harness.evaluators.persistence import FactorSelectionStrategy
 from alpha_harness.reports.validation import FactorThumbnail
@@ -239,9 +240,10 @@ class CombinationReportWriter:
             return None
 
     def _write(self, report: CombinationReport) -> Path:
-        path = self._base_dir / f"{report.cycle_id}.json"
         payload = json.loads(report.model_dump_json())
-        _atomic_write_json(path, payload)
+        path = LocalArtifactStore.for_directory("combinations", self._base_dir).write(
+            "combinations", report.cycle_id, payload
+        )
         self._upsert_index(report)
         logger.info("combination report written: %s", path)
         return path

@@ -19,6 +19,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from alpha_harness.artifacts import LocalArtifactStore
 from alpha_harness.director import (
     DEFAULT_VALIDATION_DIR,
     NextResearchAction,
@@ -313,11 +314,11 @@ def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
 
 
 def write_run_record(record: AutonomousRunRecord, artifact_dir: Path) -> Path:
-    path = artifact_dir / f"{record.run_id}.json"
+    store = LocalArtifactStore.for_directory("autonomous_runs", artifact_dir)
+    path = store.path("autonomous_runs", record.run_id)
     record.artifact_path = str(path)
     payload = json.loads(record.model_dump_json())
-    _atomic_write_json(path, payload)
-    return path
+    return store.write("autonomous_runs", record.run_id, payload)
 
 
 def run_autonomous_research(

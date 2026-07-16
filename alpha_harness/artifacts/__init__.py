@@ -9,6 +9,7 @@ from alpha_harness.artifacts.promoted import (
     read_index,
     record_from_payload,
 )
+from alpha_harness.artifacts.store import ArtifactKind, ArtifactStore, LocalArtifactStore
 from alpha_harness.artifacts.trail_registry import (
     DEFAULT_TRAIL_DIR,
     TRAIL_INDEX_NAME,
@@ -22,6 +23,9 @@ __all__ = [
     "DEFAULT_TRAIL_DIR",
     "PROMOTED_INDEX_NAME",
     "TRAIL_INDEX_NAME",
+    "ArtifactKind",
+    "ArtifactStore",
+    "LocalArtifactStore",
     "PromotedArtifactWriter",
     "TrailRegistryWriter",
     "index_path",

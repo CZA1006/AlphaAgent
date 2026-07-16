@@ -28,6 +28,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from alpha_harness.artifacts.store import LocalArtifactStore
 from alpha_harness.schemas.evaluation import EvaluationBundle
 from alpha_harness.schemas.experiment import (
     ExperimentDecision,
@@ -81,14 +82,7 @@ def read_artifact(
     unreadable.  The caller decides how to react (CLIs typically exit
     non-zero with a clear message).
     """
-    path = Path(base_dir) / f"{factor_id}.json"
-    if not path.is_file():
-        return None
-    try:
-        return dict(json.loads(path.read_text(encoding="utf-8")))
-    except (OSError, json.JSONDecodeError) as exc:
-        logger.warning("Failed to read promoted artifact %s: %s", path, exc)
-        return None
+    return LocalArtifactStore.for_directory("promoted", base_dir).read("promoted", factor_id)
 
 
 def record_from_payload(payload: dict[str, Any]) -> ExperimentRecord:
@@ -252,10 +246,10 @@ class PromotedArtifactWriter:
 
     def _write(self, record: ExperimentRecord) -> Path:
         factor_id = record.factor.id
-        artifact_path = self._base_dir / f"{factor_id}.json"
-
         payload = self._build_payload(record)
-        _atomic_write_json(artifact_path, payload)
+        artifact_path = LocalArtifactStore.for_directory("promoted", self._base_dir).write(
+            "promoted", factor_id, payload
+        )
         self._upsert_index(factor_id, self._build_index_entry(record, payload))
 
         # Round 4J — also record the trail in the standalone registry

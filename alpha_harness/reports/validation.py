@@ -31,6 +31,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from alpha_harness.artifacts.store import LocalArtifactStore
 from alpha_harness.combination import CombinationRecipe
 from alpha_harness.multiple_testing import (
     DEFAULT_FAMILYWISE_ALPHA,
@@ -418,11 +419,13 @@ def read_report(
     cycle_id: str,
 ) -> StrictValidationReport | None:
     """Load one full validation report by its exact cycle id."""
-    path = Path(base_dir) / f"{cycle_id}.json"
+    payload = LocalArtifactStore.for_directory("validations", base_dir).read(
+        "validations", cycle_id
+    )
     try:
-        return StrictValidationReport.model_validate_json(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
-        logger.warning("Unable to load validation report %s: %s", path, exc)
+        return StrictValidationReport.model_validate(payload) if payload is not None else None
+    except ValueError as exc:
+        logger.warning("Unable to load validation report %s: %s", cycle_id, exc)
         return None
 
 
@@ -491,9 +494,10 @@ class StrictValidationReportWriter:
             return None
 
     def _write(self, report: StrictValidationReport) -> Path:
-        path = self._base_dir / f"{report.cycle_id}.json"
         payload = json.loads(report.model_dump_json())
-        _atomic_write_json(path, payload)
+        path = LocalArtifactStore.for_directory("validations", self._base_dir).write(
+            "validations", report.cycle_id, payload
+        )
         self._upsert_index(report)
         logger.info("validation report written: %s", path)
         return path
