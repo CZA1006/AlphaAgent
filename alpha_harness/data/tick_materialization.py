@@ -76,14 +76,15 @@ def render_sql_template(
     *,
     project: str,
     dataset: str,
-    end_date: date,
+    end_date: date | None = None,
 ) -> str:
-    """Render only the three validated fields supported by committed SQL templates."""
+    """Render validated fields supported by committed SQL templates."""
     values = {
         "PROJECT": project,
         "DATASET": dataset,
-        "END_DATE": end_date.isoformat(),
     }
+    if end_date is not None:
+        values["END_DATE"] = end_date.isoformat()
     rendered = template
     for field, value in values.items():
         rendered = rendered.replace(f"{{{{{field}}}}}", value)

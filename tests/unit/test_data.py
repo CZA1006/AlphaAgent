@@ -624,6 +624,15 @@ class TestLoaderFactory:
         loader = create_equities_loader("parquet", base_path="/tmp/test")
         assert isinstance(loader, LocalEquitiesLoader)
 
+    def test_create_equities_loader_from_market_pack(self) -> None:
+        from alpha_harness.data.equities_loader import LocalEquitiesLoader
+        from alpha_harness.data.loader_factory import create_equities_loader
+        from alpha_harness.markets import load_market_pack
+
+        loader = create_equities_loader(market_pack=load_market_pack("us_equities_daily"))
+        assert isinstance(loader, LocalEquitiesLoader)
+        assert loader._base_path == Path("data/silver/equities")
+
     def test_create_local_crypto(self) -> None:
         from alpha_harness.data.crypto_loader import LocalCryptoLoader
         from alpha_harness.data.loader_factory import create_crypto_loader

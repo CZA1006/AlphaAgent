@@ -18,7 +18,7 @@ itself on that exact answer key:
 
 Usage::
 
-    GOOGLE_CLOUD_PROJECT=bloomberg-database-0629 \\
+    GOOGLE_CLOUD_PROJECT=<your-project> \\
     uv run python -m scripts.analysis.hk_ipo_persistence_selection \\
         --factors-file scripts/analysis/hk_ipo_micro_factors.txt
 """
@@ -26,7 +26,6 @@ Usage::
 from __future__ import annotations
 
 import argparse
-import os
 from datetime import date
 
 import numpy as np
@@ -51,6 +50,8 @@ from alpha_harness.evaluators.portfolio import (
 )
 from alpha_harness.evaluators.signal_quality import compute_mean_rank_ic
 from scripts.analysis.hk_ipo_micro_oos import (
+    DEFAULT_DATASET,
+    DEFAULT_PROJECT,
     HORIZON,
     LAG,
     _forward_returns,
@@ -163,12 +164,13 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Override; default = measured mean rel_spread/2 on the test window.",
     )
-    p.add_argument("--project", default=os.environ.get("GCP_PROJECT", "bloomberg-database-0629"))
+    p.add_argument("--project", default=DEFAULT_PROJECT)
+    p.add_argument("--dataset", default=DEFAULT_DATASET)
     args = p.parse_args(argv)
 
     syms = _load_universe(args.universe)
     exprs = _load_universe(args.factors_file)
-    loader = create_equities_loader(source="bigquery")
+    loader = create_equities_loader(source="bigquery", market_id="hk_ipo")
 
     def panel(win: str) -> pd.DataFrame:
         s, e = _win(win)
@@ -178,7 +180,7 @@ def main(argv: list[str] | None = None) -> int:
         return _prepare(df)
 
     train, test = panel(args.train), panel(args.test)
-    hsi_fwd = _hsi_forward(args.project)
+    hsi_fwd = _hsi_forward(args.project, args.dataset)
     half_spread = args.half_spread_bps
     if half_spread is None:
         half_spread = float(np.nanmean(test["rel_spread"])) * 1e4 / 2

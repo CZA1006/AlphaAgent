@@ -256,7 +256,7 @@ facade`, `Add ArtifactStore abstraction`.
 - [x] Stage 0: CI green on GitHub
 - [x] Stage 1: MarketPack registry + hk_ipo/us_equities packs
 - [x] Stage 1: DSL base/extra field split
-- [ ] Stage 1: SQL templating + loader defaults from pack
+- [x] Stage 1: SQL templating + loader defaults from pack
 - [ ] Stage 1: audit extended (no market literals in core) + fingerprint regression test
 - [ ] Stage 2: director topics + post-run transitions pack-driven
 - [ ] Stage 3: SDK facade + ArtifactStore + scripts as shims

@@ -3,20 +3,20 @@
 -- One output row per (stock_code, date) in ipo_daily_prices.
 -- Event dates come from ipo_event_dates_curated, not Bloomberg-only fields.
 
-CREATE OR REPLACE TABLE `bloomberg-database-0629.hk_ipo_research.ipo_event_features_daily` AS
+CREATE OR REPLACE TABLE `{{PROJECT}}.{{DATASET}}.ipo_event_features_daily` AS
 WITH calendar AS (
   SELECT DISTINCT stock_code, date
-  FROM `bloomberg-database-0629.hk_ipo_research.ipo_daily_prices`
+  FROM `{{PROJECT}}.{{DATASET}}.ipo_daily_prices`
 ),
 listing AS (
   SELECT stock_code, MIN(listing_date) AS listing_date
-  FROM `bloomberg-database-0629.hk_ipo_research.ipo_event_dates_curated`
+  FROM `{{PROJECT}}.{{DATASET}}.ipo_event_dates_curated`
   WHERE listing_date IS NOT NULL
   GROUP BY stock_code
 ),
 pricing AS (
   SELECT stock_code, MIN(event_date) AS pricing_date
-  FROM `bloomberg-database-0629.hk_ipo_research.ipo_event_dates_curated`
+  FROM `{{PROJECT}}.{{DATASET}}.ipo_event_dates_curated`
   WHERE event_type = 'pricing_date'
   GROUP BY stock_code
 ),
@@ -27,7 +27,7 @@ cornerstone AS (
     total_shares,
     total_pct_of_offer,
     total_pct_of_share_capital
-  FROM `bloomberg-database-0629.hk_ipo_research.ipo_event_dates_curated`
+  FROM `{{PROJECT}}.{{DATASET}}.ipo_event_dates_curated`
   WHERE event_type = 'cornerstone_lockup_expiry'
 ),
 cornerstone_next AS (
@@ -49,7 +49,7 @@ cornerstone_prev AS (
 greenshoe_expiry_next AS (
   SELECT c.stock_code, c.date, MIN(e.event_date) AS next_date
   FROM calendar c
-  JOIN `bloomberg-database-0629.hk_ipo_research.ipo_event_dates_curated` e
+  JOIN `{{PROJECT}}.{{DATASET}}.ipo_event_dates_curated` e
     ON c.stock_code = e.stock_code
     AND e.event_type = 'greenshoe_expiry'
     AND e.event_date >= c.date
@@ -58,7 +58,7 @@ greenshoe_expiry_next AS (
 greenshoe_expiry_prev AS (
   SELECT c.stock_code, c.date, MAX(e.event_date) AS prev_date
   FROM calendar c
-  JOIN `bloomberg-database-0629.hk_ipo_research.ipo_event_dates_curated` e
+  JOIN `{{PROJECT}}.{{DATASET}}.ipo_event_dates_curated` e
     ON c.stock_code = e.stock_code
     AND e.event_type = 'greenshoe_expiry'
     AND e.event_date <= c.date
@@ -67,7 +67,7 @@ greenshoe_expiry_prev AS (
 greenshoe_exercise_next AS (
   SELECT c.stock_code, c.date, MIN(e.event_date) AS next_date
   FROM calendar c
-  JOIN `bloomberg-database-0629.hk_ipo_research.ipo_event_dates_curated` e
+  JOIN `{{PROJECT}}.{{DATASET}}.ipo_event_dates_curated` e
     ON c.stock_code = e.stock_code
     AND e.event_type IN ('greenshoe_full_exercise', 'greenshoe_partial_exercise')
     AND e.event_date >= c.date
@@ -76,7 +76,7 @@ greenshoe_exercise_next AS (
 greenshoe_exercise_prev AS (
   SELECT c.stock_code, c.date, MAX(e.event_date) AS prev_date
   FROM calendar c
-  JOIN `bloomberg-database-0629.hk_ipo_research.ipo_event_dates_curated` e
+  JOIN `{{PROJECT}}.{{DATASET}}.ipo_event_dates_curated` e
     ON c.stock_code = e.stock_code
     AND e.event_type IN ('greenshoe_full_exercise', 'greenshoe_partial_exercise')
     AND e.event_date <= c.date
@@ -85,7 +85,7 @@ greenshoe_exercise_prev AS (
 stabilization_end_next AS (
   SELECT c.stock_code, c.date, MIN(e.event_date) AS next_date
   FROM calendar c
-  JOIN `bloomberg-database-0629.hk_ipo_research.ipo_event_dates_curated` e
+  JOIN `{{PROJECT}}.{{DATASET}}.ipo_event_dates_curated` e
     ON c.stock_code = e.stock_code
     AND e.event_type = 'stabilization_end'
     AND e.event_date >= c.date
@@ -94,7 +94,7 @@ stabilization_end_next AS (
 stabilization_end_prev AS (
   SELECT c.stock_code, c.date, MAX(e.event_date) AS prev_date
   FROM calendar c
-  JOIN `bloomberg-database-0629.hk_ipo_research.ipo_event_dates_curated` e
+  JOIN `{{PROJECT}}.{{DATASET}}.ipo_event_dates_curated` e
     ON c.stock_code = e.stock_code
     AND e.event_type = 'stabilization_end'
     AND e.event_date <= c.date
@@ -103,7 +103,7 @@ stabilization_end_prev AS (
 stabilization_start_prev AS (
   SELECT c.stock_code, c.date, MAX(e.event_date) AS prev_date
   FROM calendar c
-  JOIN `bloomberg-database-0629.hk_ipo_research.ipo_event_dates_curated` e
+  JOIN `{{PROJECT}}.{{DATASET}}.ipo_event_dates_curated` e
     ON c.stock_code = e.stock_code
     AND e.event_type = 'stabilization_start'
     AND e.event_date <= c.date

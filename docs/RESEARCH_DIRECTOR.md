@@ -81,11 +81,11 @@ make autonomous-researcher-hk-ipo-run              # --execute: actually run val
 make autonomous-researcher-hk-ipo-run ARGS="--llm openrouter --iterations 3 --cost-budget-usd 2"
 ```
 
-**Region gotcha:** the default `OPENROUTER_MODEL`
-(`anthropic/claude-sonnet-4.6`) is refused with 403 "provider Terms of
-Service" from this environment — every live run must override it, e.g.
-`export OPENROUTER_MODEL=deepseek/deepseek-chat-v3.1` (the model the
-case studies used).
+**Region requirement:** `OPENROUTER_MODEL` has no code default and must be
+set explicitly. The previously implicit `anthropic/claude-sonnet-4.6`
+model is refused with 403 "provider Terms of Service" from this environment.
+For example, the case studies used
+`export OPENROUTER_MODEL=deepseek/deepseek-chat-v3.1`.
 
 A USD cap now fails closed unless both pricing rates are explicit. Set them
 from the provider's current model pricing before using `--cost-budget-usd`:

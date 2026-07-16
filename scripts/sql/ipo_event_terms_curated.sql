@@ -5,18 +5,18 @@
 
 DECLARE latest_run_id STRING DEFAULT (
   SELECT run_id
-  FROM `bloomberg-database-0629.hk_ipo_research.ipo_event_terms_refill_candidate_staging`
+  FROM `{{PROJECT}}.{{DATASET}}.ipo_event_terms_refill_candidate_staging`
   GROUP BY run_id
   ORDER BY run_id DESC
   LIMIT 1
 );
 
-CREATE OR REPLACE TABLE `bloomberg-database-0629.hk_ipo_research.hkex_document_registry_curated` AS
+CREATE OR REPLACE TABLE `{{PROJECT}}.{{DATASET}}.hkex_document_registry_curated` AS
 SELECT *
-FROM `bloomberg-database-0629.hk_ipo_research.hkex_document_registry_refill_staging`
+FROM `{{PROJECT}}.{{DATASET}}.hkex_document_registry_refill_staging`
 WHERE run_id = latest_run_id;
 
-CREATE OR REPLACE TABLE `bloomberg-database-0629.hk_ipo_research.ipo_event_terms_needs_review` AS
+CREATE OR REPLACE TABLE `{{PROJECT}}.{{DATASET}}.ipo_event_terms_needs_review` AS
 WITH staged AS (
   SELECT
     c.*,
@@ -43,8 +43,8 @@ WITH staged AS (
         )
       )
     ) AS implausible_event_date
-  FROM `bloomberg-database-0629.hk_ipo_research.ipo_event_terms_refill_candidate_staging` c
-  LEFT JOIN `bloomberg-database-0629.hk_ipo_research.ipo_master` m
+  FROM `{{PROJECT}}.{{DATASET}}.ipo_event_terms_refill_candidate_staging` c
+  LEFT JOIN `{{PROJECT}}.{{DATASET}}.ipo_master` m
     ON c.stock_code = m.stock_code
   WHERE c.run_id = latest_run_id
 )
@@ -75,7 +75,7 @@ WHERE (
     OR (confidence IS NOT NULL AND confidence < 0.5)
   );
 
-CREATE OR REPLACE TABLE `bloomberg-database-0629.hk_ipo_research.ipo_event_terms_curated` AS
+CREATE OR REPLACE TABLE `{{PROJECT}}.{{DATASET}}.ipo_event_terms_curated` AS
 SELECT
   c.*,
   CASE
@@ -85,8 +85,8 @@ SELECT
     ELSE 9
   END AS source_priority_rank,
   CURRENT_TIMESTAMP() AS curated_at_utc
-FROM `bloomberg-database-0629.hk_ipo_research.ipo_event_terms_refill_candidate_staging` c
-LEFT JOIN `bloomberg-database-0629.hk_ipo_research.ipo_event_terms_needs_review` r
+FROM `{{PROJECT}}.{{DATASET}}.ipo_event_terms_refill_candidate_staging` c
+LEFT JOIN `{{PROJECT}}.{{DATASET}}.ipo_event_terms_needs_review` r
   ON c.run_id = r.run_id
   AND c.stock_code = r.stock_code
   AND c.event_type = r.event_type
@@ -95,7 +95,7 @@ LEFT JOIN `bloomberg-database-0629.hk_ipo_research.ipo_event_terms_needs_review`
 WHERE c.run_id = latest_run_id
   AND r.stock_code IS NULL;
 
-CREATE OR REPLACE TABLE `bloomberg-database-0629.hk_ipo_research.ipo_event_dates_curated` AS
+CREATE OR REPLACE TABLE `{{PROJECT}}.{{DATASET}}.ipo_event_dates_curated` AS
 WITH ranked AS (
   SELECT
     *,
@@ -103,7 +103,7 @@ WITH ranked AS (
       PARTITION BY stock_code, event_type, event_date
       ORDER BY source_priority_rank, confidence DESC, source_doc_id
     ) AS rn
-  FROM `bloomberg-database-0629.hk_ipo_research.ipo_event_terms_curated`
+  FROM `{{PROJECT}}.{{DATASET}}.ipo_event_terms_curated`
   WHERE event_date IS NOT NULL
 ),
 listing AS (

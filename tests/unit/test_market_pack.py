@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import json
+from datetime import date
 from pathlib import Path
 
 import pytest
 
 from alpha_harness.data.fingerprint import dataframe_fingerprint
 from alpha_harness.data.synthetic import generate_price_panel
+from alpha_harness.data.tick_materialization import render_sql_template
 from alpha_harness.markets import (
     MarketPackNotFoundError,
     list_market_packs,
@@ -68,3 +70,17 @@ def test_pre_market_pack_fingerprint_and_trail_baseline() -> None:
         "b6913c275483edadb84458fb79ea66ca89d23154f77c580240c6132aab3cf56e"
     )
     assert trail.trail_id == "5d7dda10ee5b7b90"
+
+
+def test_all_pack_sql_templates_render_without_market_literals() -> None:
+    pack = load_market_pack("hk_ipo")
+    for path_value in pack.sql_templates.values():
+        template = Path(path_value).read_text(encoding="utf-8")
+        rendered = render_sql_template(
+            template,
+            project="configured-project",
+            dataset="configured_dataset",
+            end_date=date(2026, 6, 26),
+        )
+        assert "{{" not in rendered
+        assert "configured-project.configured_dataset" in rendered

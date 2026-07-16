@@ -48,9 +48,10 @@ The live alpha hypothesis is the HK IPO order-flow track.
 - **Typed market-pack foundation (Productization P0 Stage 1)** — immutable
   Pydantic contracts and a read-only JSON registry now describe HK IPO and
   US-equities data, DSL fields, mock presets, director topics, transitions,
-  and SQL templates. Consumers remain on their existing defaults until each
-  Stage 1 migration is separately regression-checked. A fixed synthetic panel
-  pins the pre-migration data fingerprint and strict promotion trail id.
+  and SQL templates. The DSL, BigQuery loaders, SQL scripts, and LLM model
+  selection now consume explicit configuration while retaining compatibility
+  at existing CLI edges. A fixed synthetic panel pins the pre-migration data
+  fingerprint and strict promotion trail id.
 - **Safe factor DSL** — whitelisted fields + functions, typed AST, no
   `eval`/arbitrary code.  Deterministic, test-covered execution.
 - **Continuous event proximity** — `event_decay(distance, half_life)` maps

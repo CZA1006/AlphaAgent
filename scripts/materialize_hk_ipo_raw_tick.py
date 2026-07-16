@@ -11,6 +11,7 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
+from alpha_harness.data.loader_factory import resolve_market_data_location
 from alpha_harness.data.tick_materialization import (
     MaterializationExecutionMetadata,
     MaterializationPreconditionError,
@@ -19,6 +20,7 @@ from alpha_harness.data.tick_materialization import (
     validate_bigquery_identifier,
     validate_execution_approval,
 )
+from alpha_harness.markets import load_market_pack
 from alpha_harness.reports.research_task import (
     DEFAULT_RESEARCH_TASK_DIR,
     ResearchTaskReport,
@@ -27,8 +29,7 @@ from alpha_harness.reports.research_task import (
     failed_task_report,
 )
 
-DEFAULT_PROJECT = "bloomberg-database-0629"
-DEFAULT_DATASET = "hk_ipo_research"
+DEFAULT_PROJECT, DEFAULT_DATASET = resolve_market_data_location(load_market_pack("hk_ipo"))
 DEFAULT_END_DATE = date(2026, 6, 26)
 DEFAULT_SQL_PATH = Path("scripts/sql/micro_features_intraday_v1.sql")
 DEFAULT_POST_QA_SQL_PATH = Path("scripts/sql/micro_features_intraday_v1_post_qa.sql")
