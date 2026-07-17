@@ -28,6 +28,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from alpha_harness.artifacts.store import LocalArtifactStore
 from alpha_harness.schemas.experiment import PromotionTrail
 
 logger = logging.getLogger(__name__)
@@ -46,25 +47,7 @@ def index_path(base_dir: Path | str = DEFAULT_TRAIL_DIR) -> Path:
 
 def read_trails(base_dir: Path | str = DEFAULT_TRAIL_DIR) -> list[dict[str, Any]]:
     """Load every index row.  Returns ``[]`` when the file is absent."""
-    path = index_path(base_dir)
-    if not path.is_file():
-        return []
-    rows: list[dict[str, Any]] = []
-    with path.open("r", encoding="utf-8") as fh:
-        for i, line in enumerate(fh, 1):
-            stripped = line.strip()
-            if not stripped:
-                continue
-            try:
-                rows.append(json.loads(stripped))
-            except json.JSONDecodeError as exc:
-                logger.warning(
-                    "Skipping corrupt trail index line %d in %s: %s",
-                    i,
-                    path,
-                    exc,
-                )
-    return rows
+    return LocalArtifactStore.for_directory("trails", base_dir).list_index("trails")
 
 
 def read_trail(
@@ -72,14 +55,7 @@ def read_trail(
     base_dir: Path | str = DEFAULT_TRAIL_DIR,
 ) -> PromotionTrail | None:
     """Load the full :class:`PromotionTrail` for ``trail_id``, or ``None``."""
-    path = Path(base_dir) / f"{trail_id}.json"
-    if not path.is_file():
-        return None
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        logger.warning("Failed to read trail %s: %s", path, exc)
-        return None
+    payload = LocalArtifactStore.for_directory("trails", base_dir).read("trails", trail_id)
     if not isinstance(payload, dict) or not payload.get("trail_id"):
         return None
     return PromotionTrail.model_validate(payload)
@@ -173,7 +149,9 @@ class TrailRegistryWriter:
         wrote_full = False
         if not trail_path.is_file():
             payload = json.loads(trail.model_dump_json())
-            _atomic_write_json(trail_path, payload)
+            LocalArtifactStore.for_directory("trails", self._base_dir).write(
+                "trails", trail.trail_id, payload
+            )
             wrote_full = True
 
         idx_path = index_path(self._base_dir)

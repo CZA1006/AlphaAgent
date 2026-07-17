@@ -14,6 +14,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from alpha_harness.artifacts.store import LocalArtifactStore
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_RESEARCH_TASK_DIR = Path("artifacts/research_tasks")
@@ -72,28 +74,7 @@ class ResearchTaskReport(BaseModel):
 def read_index(
     base_dir: Path | str = DEFAULT_RESEARCH_TASK_DIR,
 ) -> list[dict[str, Any]]:
-    path = Path(base_dir) / RESEARCH_TASK_INDEX_NAME
-    if not path.is_file():
-        return []
-    rows: list[dict[str, Any]] = []
-    with path.open("r", encoding="utf-8") as fh:
-        for line_no, line in enumerate(fh, 1):
-            stripped = line.strip()
-            if not stripped:
-                continue
-            try:
-                payload = json.loads(stripped)
-            except json.JSONDecodeError as exc:
-                logger.warning(
-                    "Skipping corrupt research-task index line %d in %s: %s",
-                    line_no,
-                    path,
-                    exc,
-                )
-                continue
-            if isinstance(payload, dict):
-                rows.append(payload)
-    return rows
+    return LocalArtifactStore.for_directory("research_tasks", base_dir).list_index("research_tasks")
 
 
 def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
@@ -119,8 +100,11 @@ class ResearchTaskReportWriter:
         self._base_dir = Path(base_dir)
 
     def write(self, report: ResearchTaskReport) -> Path:
-        path = self._base_dir / f"{report.task_id}.json"
-        _atomic_write_json(path, json.loads(report.model_dump_json()))
+        path = LocalArtifactStore.for_directory("research_tasks", self._base_dir).write(
+            "research_tasks",
+            report.task_id,
+            json.loads(report.model_dump_json()),
+        )
         self._upsert_index(report)
         return path
 

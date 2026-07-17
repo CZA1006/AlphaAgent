@@ -35,7 +35,12 @@ class CombinationMethod(StrEnum):
     EQUAL_WEIGHT = "equal_weight"
 
 
-def compute_signal(expression: str, df: pd.DataFrame) -> pd.Series:
+def compute_signal(
+    expression: str,
+    df: pd.DataFrame,
+    *,
+    extra_fields: frozenset[str] | None = None,
+) -> pd.Series:
     """Compile + execute a DSL expression on ``df``; return the signal series.
 
     Mirrors the inner step of
@@ -43,7 +48,7 @@ def compute_signal(expression: str, df: pd.DataFrame) -> pd.Series:
     so combiners can produce per-factor series without spinning up a full
     research cycle.
     """
-    ast = parse_expression(expression)
+    ast = parse_expression(expression, extra_fields=extra_fields)
     return DslExecutor(df).execute(ast)
 
 

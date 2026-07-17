@@ -64,10 +64,12 @@ from alpha_harness.evaluators.persistence import (
 from alpha_harness.evaluators.promotion_judge import PromotionJudge
 from alpha_harness.evaluators.signal_quality import evaluate_precomputed_signal
 from alpha_harness.evaluators.walk_forward import WalkForwardEvaluator
+from alpha_harness.markets import list_market_packs
 from alpha_harness.multiple_testing import bonferroni_z_threshold_multiplier
 from alpha_harness.regimes import StrictRegime, get_regime
 from alpha_harness.reports import (
     DEFAULT_COMBINATION_DIR,
+    CombinationReport,
     CombinationReportWriter,
     FactorThumbnail,
     build_combination_report,
@@ -291,6 +293,7 @@ def _load_from_validation_report(
 
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("--market", choices=list_market_packs(), default="hk_ipo")
     p.add_argument(
         "--data-source",
         choices=["synthetic", "parquet", "polygon", "bigquery"],
@@ -647,19 +650,24 @@ def _select_component_indices(
     return indices[:top_k] if top_k is not None else indices
 
 
-def main(argv: list[str] | None = None) -> int:
+def _execute_combination(
+    argv: list[str] | None,
+    *,
+    dsl_fields: frozenset[str],
+    emit_output: bool,
+) -> tuple[int, CombinationReport | None]:
     args = _build_parser().parse_args(argv)
 
     if args.cost_bps is not None and args.cost_bps < 0:
         print("error: --cost-bps must be >= 0", file=sys.stderr)
-        return 2
+        return 2, None
 
     try:
         resolved = _resolve_expressions(args)
         df = _load_data(args)
     except (FileNotFoundError, ValueError, RuntimeError) as exc:
         print(f"error: {exc}", file=sys.stderr)
-        return 2
+        return 2, None
 
     expressions = resolved.expressions
     data_fingerprint = dataframe_fingerprint(df)
@@ -688,10 +696,10 @@ def main(argv: list[str] | None = None) -> int:
     component_thumbs: list[FactorThumbnail] = []
     for i, expr in enumerate(expressions):
         try:
-            sig = compute_signal(expr, df)
+            sig = compute_signal(expr, df, extra_fields=dsl_fields)
         except Exception as exc:
             print(f"error: failed to compile {expr!r}: {exc}", file=sys.stderr)
-            return 3
+            return 3, None
         signals.append(sig)
         factor_id = f"individual_{i}"
         request = _build_eval_request(
@@ -745,7 +753,7 @@ def main(argv: list[str] | None = None) -> int:
         )
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
-        return 2
+        return 2, None
     selected_set = set(selected_indices)
     for idx, item in enumerate(individuals):
         item["selected"] = idx in selected_set
@@ -949,11 +957,12 @@ def main(argv: list[str] | None = None) -> int:
         ),
     }
 
-    if args.json:
-        print(json.dumps(summary, indent=2, default=str))
-    else:
-        _print_summary(summary)
-    return 0
+    if emit_output:
+        if args.json:
+            print(json.dumps(summary, indent=2, default=str))
+        else:
+            _print_summary(summary)
+    return 0, report
 
 
 def _print_summary(s: dict[str, object]) -> None:
@@ -1002,6 +1011,14 @@ def _print_summary(s: dict[str, object]) -> None:
             f"rank_ic>={thresholds['adjusted_rank_ic']:.4f}",
         )
     print(f"{border}\n")
+
+
+def main(argv: list[str] | None = None) -> int:
+    from alpha_harness.sdk import CombinationRequest, combine_cli
+
+    effective_argv = list(sys.argv[1:] if argv is None else argv)
+    market_id = _build_parser().parse_args(effective_argv).market
+    return combine_cli(market_id, CombinationRequest(argv=tuple(effective_argv)))
 
 
 if __name__ == "__main__":

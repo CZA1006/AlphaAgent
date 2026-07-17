@@ -263,8 +263,7 @@ facade`, `Add ArtifactStore abstraction`.
 - [x] Stage 1: MarketPack registry + hk_ipo/us_equities packs
 - [x] Stage 1: DSL base/extra field split
 - [x] Stage 1: SQL templating + loader defaults from pack
-- [x] Stage 1: audit extended + fingerprint regression test (the Stage 2
-  `director/` boundary is explicitly exempt until its topic/policy migration)
+- [x] Stage 1: audit extended + fingerprint regression test
 - [x] Stage 2: director topics + post-run transitions pack-driven
-- [ ] Stage 3: SDK facade + ArtifactStore + scripts as shims
+- [x] Stage 3: SDK facade + ArtifactStore + scripts as shims
 - [x] Docs synced (PROJECT_STATUS, README, this checklist)
