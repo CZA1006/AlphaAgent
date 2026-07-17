@@ -30,7 +30,7 @@ def _normalize_golden_output(stdout: str) -> str:
         '"factor_id": "<ID>"',
         normalized,
     )
-    normalized = re.sub(r"\S*\.venv/bin/python3", "<PYTHON>", normalized)
+    normalized = re.sub(r"\S*\.venv/bin/python(?:3)?", "<PYTHON>", normalized)
     normalized = re.sub(r"--validation-dir [^ ]+", "--validation-dir <TMP>", normalized)
     return _FLOAT_TOKEN.sub(
         lambda match: format(float(match.group()), ".10g"),
@@ -55,6 +55,13 @@ def test_golden_float_normalization_rejects_sixth_significant_digit_change() -> 
     right = '{"ic": 0.123457789012345}'
 
     assert _normalize_golden_output(left) != _normalize_golden_output(right)
+
+
+def test_golden_python_path_normalization_covers_macos_and_linux() -> None:
+    macos = "/Users/runner/repo/.venv/bin/python3 -m scripts.validate_strict"
+    linux = "/home/runner/repo/.venv/bin/python -m scripts.validate_strict"
+
+    assert _normalize_golden_output(macos) == _normalize_golden_output(linux)
 
 
 def test_validate_strict_golden_output(capsys, tmp_path, monkeypatch) -> None:
