@@ -60,9 +60,8 @@ proposal context at the start of the next autonomous cycle.
 The architectural invariant is one-way: Hermes calls the typed Alpha Harness
 boundary, while `alpha_harness/` never imports Hermes runtime internals. The
 static auditor also prevents network or LLM access from entering deterministic
-evaluators. It additionally blocks market literals in the generic core, with a
-temporary exception for `director/`, whose topic and transition migration is
-the explicitly separate Productization P0 Stage 2.
+evaluators. It additionally blocks market literals throughout the generic core;
+director topics, context, and post-run transitions are loaded from market packs.
 
 ## What works today (post Round 4–10)
 

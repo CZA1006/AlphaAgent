@@ -9,14 +9,42 @@
   },
   "extra_dsl_fields": {},
   "mock_presets": ["default"],
+  "director_context": {
+    "plan_notes": "Use the parquet daily panel and universal OHLCV fields to exercise the market-pack base case."
+  },
   "director_topics": [
     {
       "topic_id": "us_equities_daily_price_volume",
       "theme": "US equity daily price and volume signals",
       "priority": 100,
-      "rationale": "Exercise the market-pack base case using universal OHLCV fields only."
+      "rationale": "Exercise the market-pack base case using universal OHLCV fields only.",
+      "validation_command": "uv run python -m scripts.validate_strict --market us_equities_daily",
+      "validation_args": ["--data-source", "parquet", "--universe", "configs/universes/sp50.txt", "--llm", "mock", "--mock-preset", "default", "--n-candidates", "12", "--n-cycles", "3", "--theme", "US equity daily price and volume signals"]
+    },
+    {
+      "topic_id": "us_equities_daily_cost_review",
+      "executor": "replay_promoted",
+      "theme": "US equity daily cost and holdout review",
+      "priority": 80,
+      "rationale": "Replay promoted daily factors under cost and holdout stress.",
+      "validation_command": "uv run python -m scripts.validate_strict --market us_equities_daily --candidate-source replay_promoted",
+      "validation_args": ["--data-source", "parquet", "--universe", "configs/universes/sp50.txt", "--llm", "mock", "--mock-preset", "default", "--n-candidates", "12", "--n-cycles", "3", "--theme", "US equity daily cost and holdout review", "--cost-bps", "10.0"]
     }
   ],
-  "post_run_transitions": {},
+  "post_run_transitions": {
+    "on_promotion": {
+      "us_equities_daily_price_volume": {
+        "action": "switch_topic",
+        "next_topic_id": "us_equities_daily_cost_review",
+        "rationale": "Daily price-volume research produced promotions; replay them under cost and holdout stress."
+      }
+    },
+    "after_topic": {
+      "us_equities_daily_cost_review": {
+        "action": "stop_completed",
+        "rationale": "The bounded US equities cost replay is complete; stop for deterministic review."
+      }
+    }
+  },
   "sql_templates": {}
 }

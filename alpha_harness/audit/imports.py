@@ -40,7 +40,7 @@ _FORBIDDEN_EVALUATOR_PREFIXES: tuple[str, ...] = (
 )
 
 EVALUATORS_DIR = HARNESS_PACKAGE_DIR / "evaluators"
-_MARKET_LITERAL_EXEMPT_DIRS = frozenset({"markets", "director"})
+_MARKET_LITERAL_EXEMPT_DIRS = frozenset({"markets"})
 _FORBIDDEN_MARKET_LITERALS = (
     "hk" + "_ipo",
     "bloomberg" + "-database-0629",
@@ -180,7 +180,7 @@ def assert_no_outbound_io_in_evaluators(root: Path | None = None) -> None:
 
 
 def scan_market_literals(root: Path | None = None) -> list[AuditViolation]:
-    """Return market literals outside packs and the Stage 2 director boundary."""
+    """Return market literals outside market packs."""
     scan_root = root or HARNESS_PACKAGE_DIR
     violations: list[AuditViolation] = []
     for path in _iter_py_files(scan_root):

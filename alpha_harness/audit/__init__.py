@@ -13,8 +13,7 @@ at PR review time.
   pure functions of their inputs; no network, no subprocess, no LLM
   SDKs.
 * :func:`assert_no_market_literals` — generic core modules must obtain
-  market identifiers from packs; the Stage 2 director boundary is
-  temporarily exempt.
+  market identifiers from packs.
 """
 
 from alpha_harness.audit.imports import (

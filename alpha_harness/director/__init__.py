@@ -10,7 +10,7 @@ from alpha_harness.director.research_director import (
     ResearchDirectorPlan,
     ResearchExecutorKind,
     ResearchTopicPlan,
-    build_hk_ipo_context,
+    build_market_context,
 )
 from alpha_harness.director.research_policy import (
     NextResearchAction,
@@ -39,7 +39,7 @@ __all__ = [
     "ResearchTaskReportSummary",
     "ResearchTopicPlan",
     "ValidationReportSummary",
-    "build_hk_ipo_context",
+    "build_market_context",
     "research_task_report_summary_from_payload",
     "validation_report_summary_from_payload",
 ]

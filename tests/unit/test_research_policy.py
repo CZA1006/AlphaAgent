@@ -10,6 +10,7 @@ from alpha_harness.director import (
     ValidationReportSummary,
     validation_report_summary_from_payload,
 )
+from alpha_harness.markets import load_market_pack
 
 
 def test_policy_switches_successful_event_microstructure_to_cost_realism() -> None:
@@ -242,3 +243,26 @@ def test_policy_rejects_unknown_market() -> None:
                 status="completed",
             )
         )
+
+
+def test_us_equities_transition_table_switches_without_market_branch() -> None:
+    pack = load_market_pack("us_equities_daily")
+    decision = ResearchPostRunPolicy().decide(
+        ResearchRunSummary(
+            market=pack.market_id,
+            selected_topic_id="us_equities_daily_price_volume",
+            status="completed",
+            validation_reports=[
+                ValidationReportSummary(
+                    cycle_id="us-cycle-1",
+                    n_proposals=3,
+                    n_promoted=1,
+                    n_rejected=2,
+                )
+            ],
+        ),
+        pack=pack,
+    )
+
+    assert decision.action == NextResearchAction.SWITCH_TOPIC
+    assert decision.next_topic_id == "us_equities_daily_cost_review"

@@ -53,8 +53,12 @@ The live alpha hypothesis is the HK IPO order-flow track.
   at existing CLI edges. A fixed synthetic panel pins the pre-migration data
   fingerprint and strict promotion trail id; a third-pack fixture proves
   pack load -> Parquet loader -> pack-only DSL field -> mock-LLM evaluation.
-  The static audit blocks market literals throughout the generic core. Its
-  only temporary exemption is `director/`, whose migration belongs to Stage 2.
+  The static audit blocks market literals throughout the generic core.
+- **Pack-driven director and post-run policy (Productization P0 Stage 2)** —
+  market packs now own director context, complete topic definitions, runner
+  modules, and typed transition tables. The autonomous researcher accepts any
+  registered market; HK IPO behavior is preserved while the US-equities pack
+  proves topic selection and promotion transitions without market-id branches.
 - **Safe factor DSL** — whitelisted fields + functions, typed AST, no
   `eval`/arbitrary code.  Deterministic, test-covered execution.
 - **Continuous event proximity** — `event_decay(distance, half_life)` maps

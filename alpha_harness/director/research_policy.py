@@ -8,6 +8,9 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from alpha_harness.markets.models import MarketPack, PostRunTransition
+from alpha_harness.markets.registry import load_market_pack
+
 
 class NextResearchAction(StrEnum):
     """Operator-safe action emitted after an autonomous validation run."""
@@ -68,9 +71,21 @@ class PostRunDecision(BaseModel):
 class ResearchPostRunPolicy:
     """Map deterministic validation outcomes to the next research action."""
 
-    def decide(self, summary: ResearchRunSummary) -> PostRunDecision:
-        if summary.market != "hk_ipo":
-            raise ValueError(f"unsupported research market: {summary.market}")
+    def decide(
+        self,
+        summary: ResearchRunSummary,
+        *,
+        pack: MarketPack | None = None,
+    ) -> PostRunDecision:
+        if pack is None:
+            try:
+                pack = load_market_pack(summary.market)
+            except LookupError as exc:
+                raise ValueError(f"unsupported research market: {summary.market}") from exc
+        if pack.market_id != summary.market:
+            raise ValueError(
+                f"market summary mismatch: pack={pack.market_id!r}, summary={summary.market!r}"
+            )
 
         total_promoted = sum(
             report.n_promoted
@@ -130,89 +145,73 @@ class ResearchPostRunPolicy:
                 total_rejected=total_rejected,
                 rejected_by_gate=rejected_by_gate,
             )
-        if summary.selected_topic_id == "hk_ipo_event_truth_review" and summary.task_reports:
-            blocking = sum(report.blocking_issue_count for report in summary.task_reports)
-            review = sum(report.review_issue_count for report in summary.task_reports)
-            return PostRunDecision(
-                action=NextResearchAction.STOP_COMPLETED,
-                rationale=(
-                    "Event-truth audit completed; stop the bounded run for deterministic "
-                    "review of blocking and backlog findings."
-                ),
-                evidence=[*evidence, f"task_blocking={blocking}", f"task_review={review}"],
-                total_promoted=total_promoted,
-                replay_survived=replay_survived,
-                total_rejected=total_rejected,
-                rejected_by_gate=rejected_by_gate,
-            )
-        if (
-            summary.selected_topic_id == "hk_ipo_raw_tick_intraday_features"
-            and summary.task_reports
-        ):
-            blocking = sum(report.blocking_issue_count for report in summary.task_reports)
-            review = sum(report.review_issue_count for report in summary.task_reports)
-            return PostRunDecision(
-                action=NextResearchAction.STOP_COMPLETED,
-                rationale=(
-                    "Raw-tick SQL was validated and dry-run with read-only QA; stop before "
-                    "any operator-approved BigQuery materialization."
-                ),
-                evidence=[*evidence, f"task_blocking={blocking}", f"task_review={review}"],
-                total_promoted=total_promoted,
-                replay_survived=replay_survived,
-                total_rejected=total_rejected,
-                rejected_by_gate=rejected_by_gate,
-            )
-        if (
-            total_promoted > 0
-            and summary.selected_topic_id == "hk_ipo_event_conditioned_microstructure"
-        ):
-            return PostRunDecision(
-                action=NextResearchAction.SWITCH_TOPIC,
-                next_topic_id="hk_ipo_cost_realism_oos",
-                rationale=(
-                    "Event-conditioned microstructure produced promotions; next step is "
-                    "implementability, turnover, cost, and holdout stress rather than "
-                    "repeating the same candidate family."
-                ),
+        after_topic = pack.post_run_transitions.after_topic.get(summary.selected_topic_id)
+        if after_topic is not None:
+            return self._transition_decision(
+                after_topic,
+                summary=summary,
                 evidence=evidence,
                 total_promoted=total_promoted,
                 replay_survived=replay_survived,
                 total_rejected=total_rejected,
                 rejected_by_gate=rejected_by_gate,
             )
-        if summary.selected_topic_id == "hk_ipo_cost_realism_oos":
-            return PostRunDecision(
-                action=NextResearchAction.STOP_COMPLETED,
-                rationale=(
-                    "Promoted discovery candidates were replayed under the cost-stress "
-                    "contract; stop this bounded run and inspect the deterministic report."
-                ),
-                evidence=evidence,
-                total_promoted=total_promoted,
-                replay_survived=replay_survived,
-                total_rejected=total_rejected,
-                rejected_by_gate=rejected_by_gate,
-            )
+        if total_promoted > 0:
+            transition = pack.post_run_transitions.on_promotion.get(summary.selected_topic_id)
+            if transition is not None:
+                return self._transition_decision(
+                    transition,
+                    summary=summary,
+                    evidence=evidence,
+                    total_promoted=total_promoted,
+                    replay_survived=replay_survived,
+                    total_rejected=total_rejected,
+                    rejected_by_gate=rejected_by_gate,
+                )
         if total_promoted == 0 and self._event_truth_blocked(rejected_by_gate):
-            return PostRunDecision(
-                action=NextResearchAction.OPEN_DATA_REVIEW,
-                next_topic_id="hk_ipo_event_truth_review",
-                rationale=(
-                    "No candidates promoted and failures point to missing metrics or event "
-                    "label sparsity; inspect event truth before more factor search."
-                ),
-                evidence=evidence,
-                total_promoted=total_promoted,
-                replay_survived=replay_survived,
-                total_rejected=total_rejected,
-                rejected_by_gate=rejected_by_gate,
-            )
+            transition = pack.post_run_transitions.on_data_gap.get(summary.selected_topic_id)
+            if transition is not None:
+                return self._transition_decision(
+                    transition,
+                    summary=summary,
+                    evidence=evidence,
+                    total_promoted=total_promoted,
+                    replay_survived=replay_survived,
+                    total_rejected=total_rejected,
+                    rejected_by_gate=rejected_by_gate,
+                )
         return PostRunDecision(
             action=NextResearchAction.CONTINUE_TOPIC,
             next_topic_id=summary.selected_topic_id,
             rationale="Validation remains productive enough to continue the selected topic.",
             evidence=evidence,
+            total_promoted=total_promoted,
+            replay_survived=replay_survived,
+            total_rejected=total_rejected,
+            rejected_by_gate=rejected_by_gate,
+        )
+
+    def _transition_decision(
+        self,
+        transition: PostRunTransition,
+        *,
+        summary: ResearchRunSummary,
+        evidence: list[str],
+        total_promoted: int,
+        replay_survived: int,
+        total_rejected: int,
+        rejected_by_gate: dict[str, int],
+    ) -> PostRunDecision:
+        transition_evidence = list(evidence)
+        if transition.include_task_counts:
+            blocking = sum(report.blocking_issue_count for report in summary.task_reports)
+            review = sum(report.review_issue_count for report in summary.task_reports)
+            transition_evidence.extend([f"task_blocking={blocking}", f"task_review={review}"])
+        return PostRunDecision(
+            action=NextResearchAction(transition.action),
+            next_topic_id=transition.next_topic_id,
+            rationale=transition.rationale,
+            evidence=transition_evidence,
             total_promoted=total_promoted,
             replay_survived=replay_survived,
             total_rejected=total_rejected,

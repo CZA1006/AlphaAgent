@@ -10,22 +10,22 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from pathlib import Path
 
 from alpha_harness.director import (
     DEFAULT_VALIDATION_DIR,
     ResearchDirector,
     ResearchDirectorPlan,
-    build_hk_ipo_context,
+    build_market_context,
 )
+from alpha_harness.markets import list_market_packs, load_market_pack
 
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--market",
-        choices=["hk_ipo"],
+        choices=list_market_packs(),
         default="hk_ipo",
         help="Research market/topic family to plan.",
     )
@@ -74,12 +74,9 @@ def _print_text(plan: ResearchDirectorPlan, *, top_n: int) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
-    if args.market != "hk_ipo":
-        print(f"error: unsupported market {args.market!r}", file=sys.stderr)
-        return 2
-
-    context = build_hk_ipo_context(validation_dir=Path(args.validation_dir))
-    plan = ResearchDirector().plan(context)
+    pack = load_market_pack(args.market)
+    context = build_market_context(pack, validation_dir=Path(args.validation_dir))
+    plan = ResearchDirector().plan(pack, context)
     if args.json:
         print(json.dumps(json.loads(plan.model_dump_json()), indent=2))
     else:
@@ -88,4 +85,4 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())

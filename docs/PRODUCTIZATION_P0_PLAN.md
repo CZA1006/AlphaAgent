@@ -265,6 +265,6 @@ facade`, `Add ArtifactStore abstraction`.
 - [x] Stage 1: SQL templating + loader defaults from pack
 - [x] Stage 1: audit extended + fingerprint regression test (the Stage 2
   `director/` boundary is explicitly exempt until its topic/policy migration)
-- [ ] Stage 2: director topics + post-run transitions pack-driven
+- [x] Stage 2: director topics + post-run transitions pack-driven
 - [ ] Stage 3: SDK facade + ArtifactStore + scripts as shims
 - [x] Docs synced (PROJECT_STATUS, README, this checklist)
