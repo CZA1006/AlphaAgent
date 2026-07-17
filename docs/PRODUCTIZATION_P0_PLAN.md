@@ -267,3 +267,37 @@ facade`, `Add ArtifactStore abstraction`.
 - [x] Stage 2: director topics + post-run transitions pack-driven
 - [x] Stage 3: SDK facade + ArtifactStore + scripts as shims
 - [x] Docs synced (PROJECT_STATUS, README, this checklist)
+
+---
+
+## Closeout — P0 accepted (2026-07-16)
+
+All stages merged to `main@24c10ed` (PRs #1–#3, chain-merged with CI
+green).  Independent acceptance sweep on the merged main:
+
+- **Literal sweep clean**: `rg "hk_ipo|bloomberg-database-0629"
+  alpha_harness --glob '!alpha_harness/markets/**'` returns nothing,
+  and an injected literal fails `make audit` with a clear message.
+- **`make check-full` green** (841 unit + 2 integration on macOS;
+  both CI jobs green on Linux), including 7/7 golden-output tests on
+  both platforms with the same golden files.
+- **SDK smoke**: `alpha_harness.sdk.plan("hk_ipo")` works from a REPL;
+  registry lists `hk_ipo` and `us_equities_daily`.
+- **Quantitative identity preserved** — the strongest closeout
+  evidence: the offline HK BigQuery smoke
+  (`make validate-hk-ipo-events ARGS="--no-write --json"`) reproduces
+  data fingerprint `6bf7ac53…672611`, byte-identical to the
+  fixed-snapshot replays recorded *before* the P0 refactor began.
+  The entire MarketPack/SDK migration changed zero statistical
+  outcomes.
+
+**What P0 delivered:** CI-guarded quality gates; a market-agnostic
+core with all market knowledge in versioned packs (enforced by the
+static audit, so the de-hardcoding cannot regress); pack-driven
+director topics and post-run transitions; a typed SDK facade with
+byte-compatible artifact storage.  Adding a new market now means
+writing one JSON pack — no core changes.
+
+**Explicitly deferred to P1:** report UI, second LLM provider +
+transport retries, Docker + user-facing getting-started docs, any
+HTTP serving layer.

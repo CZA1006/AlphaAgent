@@ -68,6 +68,17 @@ The live alpha hypothesis is the HK IPO order-flow track.
   JSON bytes; legacy readers and writers round-trip through the abstraction.
   Four mock/synthetic golden-output tests pin the major CLI stdout contracts.
   P0 adds no HTTP server or serving dependency.
+- **Productization P0 closed (2026-07-16)** — all four stages merged to
+  main via chain-reviewed PRs with CI green. Closeout acceptance on the
+  merged tree: literal sweep clean with the audit rule verified to bite,
+  full quality gates green on both platforms (same golden files), SDK
+  callable from a REPL, and the offline HK BigQuery smoke reproducing
+  data fingerprint `6bf7ac53…672611` — byte-identical to pre-refactor
+  fixed-snapshot replays, proving the migration changed zero statistical
+  outcomes. Adding a market is now one JSON pack, no core changes. P1
+  (report UI, second LLM provider, Docker/getting-started) is deferred
+  until real usage demands it; see
+  [`PRODUCTIZATION_P0_PLAN.md`](PRODUCTIZATION_P0_PLAN.md) closeout.
 - **Safe factor DSL** — whitelisted fields + functions, typed AST, no
   `eval`/arbitrary code.  Deterministic, test-covered execution.
 - **Continuous event proximity** — `event_decay(distance, half_life)` maps
