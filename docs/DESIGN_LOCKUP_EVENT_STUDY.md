@@ -12,7 +12,9 @@
 > residual (§9); and on the two larger event types, **greenshoe expiry
 > (56) and stabilization end (34): clean nulls** — and the run's real
 > product was catching 13 impossible curated event dates and hardening
-> the curation + script against them (§10).
+> the curation + script against them (§10).  The pre-registered
+> confirmation at **N = 27** (§11, 2026-07-17) returned null again and
+> the §9 OFI residual did not replicate: **the lockup lead is closed.**
 
 ---
 
@@ -334,3 +336,30 @@ contract now rejects impossible dates by construction, and the event
 study is robust to the exact failure modes (fat tails, missing
 placebo, contaminated timestamps) that produced three false leads in a
 row before controls caught them.
+
+---
+
+## 11. Pre-registered confirmation at N = 27 (2026-07-17): the lead is closed
+
+The July data update doubled the in-window sample exactly as §9
+projected (13 → 27 usable events).  Same script, same tests, one
+pre-registered read:
+
+| test | N = 13 (§9) | N = 27 | verdict |
+|---|---|---|---|
+| **H1** CAR[−1,+3] | +0.04 % (t = +0.01) | −1.76 % (t = −0.70), median −0.64 %, sign 13/27 (p = 1.00) | ❌ still nothing |
+| **H2** overhang scaling | −0.16 | −0.16 (N = 10) | ❌ |
+| **placebo** (τ₀ − 40 d) | −10.03 % | −3.22 % (t = −0.92) | placebo ≈ event: no expiry-specific effect |
+
+The §9 residual (post-event OFI net-sell run) **did not replicate**:
+τ = +1…+3 mean OFI is now *positive* — and the OFI series itself was
+revised by the tick re-ingestion (see the microstructure case study,
+Stage 6), so the residual rested partly on incomplete quote capture.
+The nominally significant pre-event OFI (−0.080, t = −2.46) is the
+panel-wide post-IPO net-sell drift, as before.
+
+**Verdict: with the sample doubled on a pre-registered one-shot read,
+the cornerstone-lockup-expiry hypothesis is closed as a null.**  No
+further re-runs are planned unless a qualitatively different sample
+(e.g. far larger unlock sizes) or a corrected event-microstructure
+dataset motivates a new pre-registration.

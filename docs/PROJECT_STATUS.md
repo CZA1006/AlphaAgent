@@ -23,13 +23,20 @@ every promotion is reproducible via a config-hash trail; survivors
 combine into baskets that can themselves be promoted and refined; and
 promoted work feeds the next cycle's prompt.  The architecture runs
 end-to-end against real DeepSeek + Qwen LLMs and real Polygon SP-50
-data.  **What is proven is that the harness measures alpha honestly;
-what is now also established is that on SP-50 daily OHLCV the loop does
-*not* produce alpha on average** — the predeclared 12-cell rolling
-robustness study (2026-07-15) found coin-flip Y2 outcomes and zero
-strict clears across two LLMs and three windows
+data.  **What is proven is that the harness measures alpha honestly.
+Every alpha hypothesis tested so far has resolved to null.**  On SP-50
+daily OHLCV, the predeclared 12-cell rolling robustness study
+(2026-07-15) found coin-flip Y2 outcomes and zero strict clears
 ([`CASE_STUDY_ROBUSTNESS_SP50.md`](CASE_STUDY_ROBUSTNESS_SP50.md)).
-The live alpha hypothesis is the HK IPO order-flow track.
+On HK IPO, the July data update's pre-registered confirmation
+(2026-07-17) killed the order-flow lead: the tick re-ingestion revealed
+the historical OFI series rested on incomplete quote capture (flagship
+in-sample edge +0.138 → +0.035 on completed data), the untouched fresh
+window was a rout for every factor and both selector baskets, and the
+lockup event study stayed null at N = 27
+([`CASE_STUDY_HK_IPO_MICRO.md`](CASE_STUDY_HK_IPO_MICRO.md) Stage 6).
+The project's value proposition is the instrument, not a discovered
+edge — which is precisely the productization thesis.
 
 ---
 
@@ -283,13 +290,21 @@ The live alpha hypothesis is the HK IPO order-flow track.
 - One out-of-sample-positive basket (case study v1, post-fix); two
   out-of-sample-negative baskets (v2, v3) — see the verdict table
   below.
-- **HK IPO tick microstructure** (real Bloomberg data in GCP BigQuery,
-  77 IPOs + 86.1 M-row target tick lake): the **first signal to survive
-  the full gauntlet** — disjoint OOS (10/12 factors persist, p ≈ 1.9 %)
-  **and** realistic 78 bps cost **and** long-only-implementable (4/12
-  positive net, incl. flagship `rank(ofi) - rank(rel_spread)`).  Modest
-  magnitude, ~40-day test window — promising, not yet confirmed; bottleneck is data
-  quantity.  See [`CASE_STUDY_HK_IPO_MICRO.md`](CASE_STUDY_HK_IPO_MICRO.md).
+- **HK IPO tick microstructure — lead killed by its own confirmation
+  protocol (2026-07-17)**: the original result (10/12 disjoint-OOS
+  persistence, 4/12 positive net at 78 bps, flagship
+  `rank(ofi) - rank(rel_spread)`) had survived every test available on
+  the frozen snapshot.  The July re-ingestion added +14 % more tick
+  events (almost all quotes) *for the same stocks and period*, revising
+  the OFI series: the flagship's in-sample edge fell +0.138 → +0.035
+  while count-based factors stayed bit-identical — **the edge was
+  substantially a quote-capture artifact**.  The untouched fresh window
+  (2026-06-27 → 07-17) then failed all 12 factors and both selector
+  baskets outright, and the lockup event study stayed null at N = 27.
+  Methodological product: capture completeness must be a versioned,
+  fingerprinted dataset property before any quote-derived result is
+  called a lead.  See
+  [`CASE_STUDY_HK_IPO_MICRO.md`](CASE_STUDY_HK_IPO_MICRO.md) Stage 6.
 - **HK IPO event data enrichment**: HKEX prospectus/allotment documents
   are now curated into exact event dates and daily event features
   (`ipo_event_dates_curated`, `ipo_event_features_daily`) for greenshoe,
@@ -397,22 +412,23 @@ gap, full-window beta estimation, is closed by causal rolling beta; the current
 HK IPO results are unchanged because their strict regime uses sector rather
 than beta neutralization.
 
-### 1. Data scaling — the actual prerequisite (decided)
+### 1. Data scaling — delivered (2026-07-17), with a decisive lesson
 
-The fragility in v2/v3 is most likely **starved-for-data**: 50
-survivorship-biased names × ~2y of daily bars gives the LLM almost no
-decorrelation budget and the judge almost no statistical power.  The
-scaling path is designed in
-[`DATA_INFRA_PLAN.md`](DATA_INFRA_PLAN.md): Bloomberg tick ingestion →
-cloud lake + access API → RAG → multi-market (HK …), built against the
-existing `loader_factory` / `DataRequest` seams.  Buildable now: tick
-schema, exporter interface + mock, cloud loader.  Blocked on a
-Bloomberg Terminal + cloud account: the real data itself.
+The July ingestion landed: daily panel → 2026-07-17, universe 77 → 128
+IPOs, tick lake 86.1 M → 111.8 M rows.  The pre-registered
+confirmation checklist was executed the same day and **closed the HK
+order-flow track** (see the case-study bullet above and Stage 6).  The
+enduring output is methodological: the re-ingestion *revised history*
+for quote-derived features, so **capture completeness is now a known
+first-order risk** — future dataset builds must fingerprint per-stock
+quote coverage so a revision like this is detected at ingestion time,
+not at confirmation time.
 
-**Decision:** data scaling precedes more autonomy, and the future
-autonomous research-director loop (Round 10) is **robustness-first** —
-every self-generated candidate basket auto-confirmed on a held-out
-window before it counts as alpha.
+**Remaining data queue:** HKEX prospectus/event refill for the 51 new
+IPOs (event truth tables still cover 75/128 stocks;
+`ipo_event_features_daily` is misaligned with the extended panel until
+rebuilt); regenerate the universe file; then any new HK research starts
+from a fresh pre-registration on the completed dataset.
 
 ### 2. Multi-run robustness study — RUN (2026-07-15): a systematic null
 

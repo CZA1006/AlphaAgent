@@ -1,11 +1,16 @@
-# Case Study — HK IPO tick microstructure (the first surviving signal)
+# Case Study — HK IPO tick microstructure (a surviving signal that did not survive confirmation)
 
-> The first AlphaAgent research where a signal survives the full honest
-> gauntlet: a disjoint train/test split **and** realistic transaction
-> cost **and** a long-only-implementable form.  It is also the project's
-> most nuanced result — promising but not yet a confirmed tradable
-> alpha, bottlenecked by data quantity.  Read this alongside the US
-> case studies (`CASE_STUDY_HONEST*.md`) — the contrast is the point.
+> **Final verdict (2026-07-17, Stage 6): the signal is dead.**  The
+> pre-registered confirmation on the July data update found that (a)
+> the tick re-ingestion **revised the historical OFI series itself** —
+> the original quote capture was incomplete, and on the completed data
+> the flagship's in-sample edge shrinks from +0.138 to +0.035 — and
+> (b) on the untouched fresh window every factor and both selector
+> baskets failed decisively.  Stages 1–5 below are preserved as the
+> honest record of how the lead was found, stress-tested, and finally
+> killed by its own confirmation protocol.  The enduring lesson is
+> §Stage 6's: **capture completeness is a first-order risk for
+> microstructure research.**
 
 Data: real Bloomberg HK IPO tick + daily, in GCP
 (`bloomberg-database-0629.hk_ipo_research`), 77 IPOs, daily panel
@@ -168,6 +173,63 @@ inert when the table is absent — a query against an expired candidate
 fails loudly).  Re-materialize and re-run when the OOS window
 lengthens; the `first_hour_n_trades` lead is the specific thing to
 check first.
+
+---
+
+## Stage 6 — Pre-registered confirmation (2026-07-17): the signal is dead
+
+The July data update landed: daily panel extended 2026-06-26 →
+2026-07-17, universe 77 → 128 IPOs, tick lake 86.1 M → 111.8 M rows.
+The pre-registered confirmation checklist was executed the same day
+(same 12 factors, same scripts, original 77-stock universe for
+comparability).  Two independent findings, both fatal:
+
+### Finding 1 — the re-ingestion revised history: the OFI edge was partly a capture artifact
+
+For the **same 77 stocks over the same period**, the rebuilt lake
+holds **98.1 M events vs 86.1 M** (+14 %), almost entirely additional
+*quote* events.  More quotes → different mids → different Lee-Ready
+trade signing → a revised OFI series.  The internal contrast is
+decisive — identical train window, identical universe:
+
+| factor (train rank-IC) | original capture | completed capture |
+|---|--:|--:|
+| `rank(ts_mean(n_trades,5)) − rank(avg_trade_size)` (count-based) | +0.1338 | **+0.1338** (bit-identical) |
+| `rank(ts_mean(high−low,5)) − rank(ts_mean(rel_spread,5))` (mildly quote-dep.) | +0.1403 | +0.1307 |
+| `rank(ofi) − rank(rel_spread)` (flagship) | +0.1381 | **+0.0351** |
+| three further OFI factors | +0.03…+0.04 | **sign-flipped in-sample** |
+
+Trade-derived quantities were stable; every quote-derived quantity
+moved; the OFI factors moved most.  **The flagship's documented edge
+was substantially an artifact of incomplete quote capture**, not (as
+the honest-but-wrong Stage 2 read had it) order-flow information the
+OHLCV bars couldn't see.
+
+### Finding 2 — the untouched fresh window (2026-06-27 → 2026-07-17) was a rout
+
+On the never-touched 14-trading-day window, all 12 factors had deeply
+negative long-only hedged net returns (−6.5 % to −14 % per 5 days, hit
+rates 0–14 %) — the IPO panel fell hard against HSI across the board,
+a regime event no factor tilt survives in long-only form.  The
+**selector arbitration** (pre-registered third test) returned "no
+winner": by-trainIC basket −0.2546 test rank-IC vs by-persistence
+−0.2780, both hit 0 %.  Persistence selection stays opt-in and is now
+moot for this factor set.
+
+### Verdict
+
+- The headline claim of this case study — "the first signal to survive
+  the full gauntlet" — **is withdrawn.**  It survived the gauntlet on
+  incomplete data and did not survive data completion plus one fresh
+  window.
+- The confirmation protocol worked exactly as designed: the lead was
+  pre-registered, re-tested once on new data, and killed — instead of
+  compounding into a false conviction.
+- **Methodological takeaway for any future microstructure work:**
+  quote-capture completeness must be a tracked, versioned property of
+  the dataset (the doctor already counts rows; it should fingerprint
+  coverage per stock-day), and any quote-derived result needs a
+  capture-stability check before it is called a lead.
 
 ---
 
