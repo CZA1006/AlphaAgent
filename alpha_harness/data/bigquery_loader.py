@@ -1,9 +1,7 @@
-"""BigQuery-backed equities loader for the HK IPO dataset.
+"""BigQuery-backed equities and tick loaders.
 
-Reads the ``ipo_daily_prices`` table (project ``bloomberg-database-0629``,
-dataset ``hk_ipo_research``) and maps it onto the harness's canonical
-OHLCV panel so the existing factor engine can run unchanged on HK IPO
-names.
+Reads pack-configured tables and maps them onto the harness's canonical
+panels so the existing factor engine can run unchanged.
 
 Column mapping (``ipo_daily_prices`` → harness):
 
@@ -32,7 +30,6 @@ Auth:
 from __future__ import annotations
 
 import logging
-import os
 from types import SimpleNamespace
 from typing import Any, Protocol
 
@@ -51,22 +48,6 @@ class _BigQueryClient(Protocol):
 
 logger = logging.getLogger(__name__)
 
-# Defaults for the HK IPO research dataset.  Overridable via env / ctor so
-# the loader isn't hard-wired to one project.
-DEFAULT_PROJECT = os.environ.get("GCP_PROJECT", "bloomberg-database-0629")
-DEFAULT_DATASET = os.environ.get("HK_IPO_DATASET", "hk_ipo_research")
-DEFAULT_PRICES_TABLE = "ipo_daily_prices"
-DEFAULT_MICRO_TABLE = "micro_features_daily"
-DEFAULT_EVENT_FEATURES_TABLE = "ipo_event_features_daily"
-DEFAULT_INTRADAY_TABLE = "micro_features_intraday_v1_candidate"
-DEFAULT_TICK_TABLE = "tick_events_ext"
-# 1 GiB scan cap — ipo_daily_prices is far smaller; this is a runaway guard.
-DEFAULT_MAX_BYTES_BILLED = int(os.environ.get("BQ_MAX_BYTES_BILLED", 1_073_741_824))
-# Tick pulls are materially larger; default to 5 GiB unless explicitly raised.
-DEFAULT_TICK_MAX_BYTES_BILLED = int(
-    os.environ.get("BQ_TICK_MAX_BYTES_BILLED", 5_368_709_120),
-)
-
 # ipo_daily_prices → canonical panel column names.
 _COLUMN_MAP = {
     "stock_code": "symbol",
@@ -77,67 +58,6 @@ _COLUMN_MAP = {
     "volume": "volume",
     "weighted_avg_px": "vwap",
 }
-
-# Per-(stock, day) microstructure columns from ``micro_features_daily``.
-# These ride the panel as extra DSL fields (LLM can propose factors like
-# ``rank(ofi) * rank(-realized_vol)``).  All nullable — a stock-day with
-# no tick coverage simply gets NaN and is skipped by the evaluator.
-_MICRO_COLUMNS = (
-    "ofi",  # order-flow imbalance (Lee-Ready signed volume)
-    "rel_spread",  # average relative bid-ask spread
-    "realized_vol",  # 1-minute-sampled intraday realized vol
-    "n_trades",  # trade count
-    "tick_volume",  # summed trade size
-    "avg_trade_size",  # mean trade size
-    "n_quotes",  # quote-update count (provision intensity)
-)
-
-# Candidate intraday v1 features from the operator-approved raw-tick
-# materialization (7-day-expiring candidate table, frozen at 2026-06-26).
-# Opt-in only: the table is provisional and may not exist — a query
-# against a missing/expired candidate fails loudly, never silently.
-# NULL first-hour values mean "no ticks in the first hour" (real
-# thinness for 84 % of such rows; ~0.5 % of the panel is capture gaps).
-_INTRADAY_COLUMNS = (
-    "first_hour_n_trades",
-    "first_hour_tick_volume",
-    "first_hour_ofi",
-    "first_hour_rel_spread",
-    "first_hour_realized_vol",
-    "first_hour_n_quotes",
-    "opening_auction_trade_share",
-    "prior_20d_first_hour_rel_spread",
-    "prior_20d_first_hour_tick_volume",
-    "first_hour_spread_shock",
-    "first_hour_liquidity_withdrawal",
-)
-
-# Curated IPO document/event features, one row per (stock, trading date),
-# generated from HKEX prospectus/allotment docs and refill staging tables.
-_EVENT_FEATURE_COLUMNS = (
-    "days_since_listing",
-    "days_since_pricing",
-    "days_to_next_cornerstone_lockup",
-    "days_since_prev_cornerstone_lockup",
-    "next_cornerstone_unlock_shares",
-    "next_cornerstone_unlock_pct_offer",
-    "next_cornerstone_unlock_pct_cap",
-    "days_to_next_greenshoe_expiry",
-    "days_since_prev_greenshoe_expiry",
-    "days_to_next_greenshoe_exercise",
-    "days_since_prev_greenshoe_exercise",
-    "days_to_next_stabilization_end",
-    "days_since_prev_stabilization_end",
-    "days_since_prev_stabilization_start",
-    "is_pre_greenshoe_expiry_5d",
-    "is_near_greenshoe_expiry_5d",
-    "is_near_greenshoe_exercise_5d",
-    "is_pre_cornerstone_lockup_5d",
-    "is_near_cornerstone_lockup_5d",
-    "is_pre_stabilization_end_5d",
-    "is_near_stabilization_end_5d",
-    "is_stabilization_window_active",
-)
 
 
 def _make_job_config(
@@ -171,7 +91,7 @@ def _make_job_config(
 
 
 class BigQueryEquitiesLoader:
-    """Load HK IPO daily bars from BigQuery ``ipo_daily_prices``.
+    """Load daily bars from pack-configured BigQuery tables.
 
     Conforms to the :class:`~alpha_harness.data.equities_loader.EquitiesLoader`
     protocol: ``load_bars(request, adjustment) -> (DataFrame, DataResult)``.
@@ -180,16 +100,19 @@ class BigQueryEquitiesLoader:
     def __init__(
         self,
         *,
-        project: str = DEFAULT_PROJECT,
-        dataset: str = DEFAULT_DATASET,
-        prices_table: str = DEFAULT_PRICES_TABLE,
-        micro_table: str = DEFAULT_MICRO_TABLE,
-        event_features_table: str = DEFAULT_EVENT_FEATURES_TABLE,
-        intraday_table: str = DEFAULT_INTRADAY_TABLE,
+        project: str,
+        dataset: str,
+        prices_table: str,
+        micro_table: str,
+        event_features_table: str,
+        intraday_table: str,
+        micro_columns: tuple[str, ...],
+        event_feature_columns: tuple[str, ...],
+        intraday_columns: tuple[str, ...],
+        max_bytes_billed: int,
         with_micro_features: bool = True,
         with_event_features: bool = True,
         with_intraday_features: bool = False,
-        max_bytes_billed: int = DEFAULT_MAX_BYTES_BILLED,
         client: _BigQueryClient | None = None,
     ) -> None:
         self._project = project
@@ -198,6 +121,9 @@ class BigQueryEquitiesLoader:
         self._micro_table = micro_table
         self._event_features_table = event_features_table
         self._intraday_table = intraday_table
+        self._micro_columns = micro_columns
+        self._event_feature_columns = event_feature_columns
+        self._intraday_columns = intraday_columns
         self._with_micro = with_micro_features
         self._with_event_features = with_event_features
         self._with_intraday = with_intraday_features
@@ -227,7 +153,7 @@ class BigQueryEquitiesLoader:
         request: DataRequest,
         adjustment: AdjustmentType = AdjustmentType.SPLIT_AND_DIVIDEND,
     ) -> tuple[pd.DataFrame, DataResult]:
-        """Load HK IPO daily OHLCV for the requested symbols + date range."""
+        """Load daily OHLCV for the requested symbols and date range."""
         df = self._query(request)
         df = self._to_panel(df, request, adjustment)
 
@@ -253,7 +179,7 @@ class BigQueryEquitiesLoader:
         # Parameterized — symbols + dates bound, never string-interpolated.
         if self._with_micro:
             fq_micro = f"`{self._project}.{self._dataset}.{self._micro_table}`"
-            micro_cols = ", ".join(f"m.{c}" for c in _MICRO_COLUMNS)
+            micro_cols = ", ".join(f"m.{c}" for c in self._micro_columns)
             select_cols.append(micro_cols)
             joins.append(
                 f"LEFT JOIN {fq_micro} m "
@@ -261,14 +187,14 @@ class BigQueryEquitiesLoader:
             )
         if self._with_event_features:
             fq_events = f"`{self._project}.{self._dataset}.{self._event_features_table}`"
-            event_cols = ", ".join(f"ef.{c}" for c in _EVENT_FEATURE_COLUMNS)
+            event_cols = ", ".join(f"ef.{c}" for c in self._event_feature_columns)
             select_cols.append(event_cols)
             joins.append(
                 f"LEFT JOIN {fq_events} ef ON p.stock_code = ef.stock_code AND p.date = ef.date",
             )
         if self._with_intraday:
             fq_intraday = f"`{self._project}.{self._dataset}.{self._intraday_table}`"
-            intraday_cols = ", ".join(f"i.{c}" for c in _INTRADAY_COLUMNS)
+            intraday_cols = ", ".join(f"i.{c}" for c in self._intraday_columns)
             select_cols.append(intraday_cols)
             joins.append(
                 f"LEFT JOIN {fq_intraday} i "
@@ -324,9 +250,9 @@ class BigQueryEquitiesLoader:
             "source",
             "frequency",
         ]
-        micro_present = [c for c in _MICRO_COLUMNS if c in raw.columns]
-        event_present = [c for c in _EVENT_FEATURE_COLUMNS if c in raw.columns]
-        intraday_present = [c for c in _INTRADAY_COLUMNS if c in raw.columns]
+        micro_present = [c for c in self._micro_columns if c in raw.columns]
+        event_present = [c for c in self._event_feature_columns if c in raw.columns]
+        intraday_present = [c for c in self._intraday_columns if c in raw.columns]
         cols = base_cols + micro_present + event_present + intraday_present
         if raw.empty:
             return pd.DataFrame(columns=cols)
@@ -358,16 +284,16 @@ class BigQueryEquitiesLoader:
 
 
 class BigQueryTickLoader:
-    """Load HK IPO TRADE/BID/ASK tick events from BigQuery."""
+    """Load TRADE/BID/ASK tick events from a pack-configured BigQuery table."""
 
     def __init__(
         self,
         *,
-        project: str = DEFAULT_PROJECT,
-        dataset: str = DEFAULT_DATASET,
-        tick_table: str = DEFAULT_TICK_TABLE,
+        project: str,
+        dataset: str,
+        tick_table: str,
+        max_bytes_billed: int,
         scope: str = "target",
-        max_bytes_billed: int = DEFAULT_TICK_MAX_BYTES_BILLED,
         client: _BigQueryClient | None = None,
     ) -> None:
         self._project = project

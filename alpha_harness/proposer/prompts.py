@@ -9,7 +9,10 @@ reject.
 
 from __future__ import annotations
 
-from alpha_harness.factors.dsl_parser import ALLOWED_FIELDS, ALLOWED_FUNCTIONS
+from collections.abc import Mapping
+
+from alpha_harness.factors.dsl_parser import ALLOWED_FUNCTIONS, resolve_allowed_fields
+from alpha_harness.markets import list_market_packs, load_market_pack
 from alpha_harness.proposer.schemas import ProposalRequest
 from alpha_harness.retrieval import RelatedExperiment
 
@@ -29,50 +32,31 @@ _FUNCTION_DOCS: dict[str, str] = {
     "zscore": "zscore(series)             — cross-sectional z-score",
 }
 
-# Short glossary for fields whose meaning isn't self-evident.  OHLCV are
-# universally understood and omitted; the microstructure fields (HK IPO
-# tick-derived, present only on the BigQuery panel) get a one-line gloss
-# so the model uses them sensibly.  Fields without an entry are listed
-# bare.
-_FIELD_DOCS: dict[str, str] = {
-    "ofi": "order-flow imbalance: signed volume / total volume in [-1,1] (>0 net buy)",
-    "rel_spread": "average relative bid-ask spread (liquidity / trading cost)",
-    "realized_vol": "intraday realized volatility from 1-minute sampled prices",
-    "n_trades": "number of trades that day (activity)",
-    "tick_volume": "summed trade size that day",
-    "avg_trade_size": "mean trade size (small = retail, large = institutional)",
-    "n_quotes": "number of quote updates (liquidity-provision intensity)",
-    "days_since_listing": "calendar days since listing date",
-    "days_since_pricing": "calendar days since IPO pricing date",
-    "days_to_next_cornerstone_lockup": "days until next cornerstone lockup expiry",
-    "days_since_prev_cornerstone_lockup": "days since previous cornerstone lockup expiry",
-    "next_cornerstone_unlock_shares": "shares unlocked at next cornerstone lockup expiry",
-    "next_cornerstone_unlock_pct_offer": "next cornerstone unlock size as percent of offer",
-    "next_cornerstone_unlock_pct_cap": "next cornerstone unlock size as percent of share capital",
-    "days_to_next_greenshoe_expiry": "days until greenshoe option expiry",
-    "days_since_prev_greenshoe_expiry": "days since previous greenshoe expiry",
-    "days_to_next_greenshoe_exercise": "days until next greenshoe exercise announcement",
-    "days_since_prev_greenshoe_exercise": "days since previous greenshoe exercise announcement",
-    "days_to_next_stabilization_end": "days until stabilization period end",
-    "days_since_prev_stabilization_end": "days since previous stabilization period end",
-    "days_since_prev_stabilization_start": "days since stabilization period start",
-    "is_pre_cornerstone_lockup_5d": "1 in the five days before cornerstone lockup expiry",
-    "is_near_cornerstone_lockup_5d": "1 within five days around cornerstone lockup expiry",
-    "is_pre_greenshoe_expiry_5d": "1 in the five days before greenshoe expiry",
-    "is_near_greenshoe_expiry_5d": "1 within five days around greenshoe expiry",
-    "is_near_greenshoe_exercise_5d": "1 within five days around greenshoe exercise",
-    "is_pre_stabilization_end_5d": "1 in the five days before stabilization end",
-    "is_near_stabilization_end_5d": "1 within five days around stabilization end",
-    "is_stabilization_window_active": "1 when the stabilization window is active",
-}
+
+def _registered_field_docs() -> dict[str, str]:
+    """Collect compatibility prompt documentation from registered packs."""
+    docs: dict[str, str] = {}
+    for market_id in list_market_packs():
+        docs.update(load_market_pack(market_id).extra_dsl_fields)
+    return docs
 
 
-def build_system_prompt() -> str:
+def build_system_prompt(
+    *,
+    extra_fields: frozenset[str] | None = None,
+    extra_field_docs: Mapping[str, str] | None = None,
+) -> str:
     """Return the system prompt describing the DSL and the required JSON shape."""
+    allowed_fields = resolve_allowed_fields(extra_fields)
+    field_docs = (
+        _registered_field_docs()
+        if extra_fields is None and extra_field_docs is None
+        else dict(extra_field_docs or {})
+    )
     # Render fields with a one-line gloss when we have one, bare otherwise.
     fields = "\n".join(
-        f"    - {name}" + (f"  — {_FIELD_DOCS[name]}" if name in _FIELD_DOCS else "")
-        for name in sorted(ALLOWED_FIELDS)
+        f"    - {name}" + (f"  — {field_docs[name]}" if name in field_docs else "")
+        for name in sorted(allowed_fields)
     )
 
     function_lines = "\n".join(

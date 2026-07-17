@@ -29,65 +29,15 @@ from typing import Any
 
 # ── Whitelists ───────────────────────────────────────────────────────────────
 
-# Core OHLCV fields (present in every market panel) plus the HK IPO
-# microstructure/event fields the BigQuery loader joins in.  These extra
-# fields are syntactically allowed everywhere but only resolve when the
-# panel actually carries them — on a parquet/synthetic panel such a factor
-# fails at execution and is rejected, never silently mis-evaluated.
+# Core OHLCV fields present in every market panel.
 ALLOWED_FIELDS = frozenset(
     {
-        # OHLCV
         "open",
         "high",
         "low",
         "close",
         "volume",
         "vwap",
-        # Microstructure (HK IPO tick-derived)
-        "ofi",
-        "rel_spread",
-        "realized_vol",
-        "n_trades",
-        "tick_volume",
-        "avg_trade_size",
-        "n_quotes",
-        # Event features (HKEX/prospectus-derived)
-        "days_since_listing",
-        "days_since_pricing",
-        "days_to_next_cornerstone_lockup",
-        "next_cornerstone_unlock_pct_offer",
-        "days_since_prev_cornerstone_lockup",
-        "next_cornerstone_unlock_shares",
-        "next_cornerstone_unlock_pct_cap",
-        "days_to_next_greenshoe_expiry",
-        "days_to_next_stabilization_end",
-        "days_since_prev_greenshoe_expiry",
-        "days_to_next_greenshoe_exercise",
-        "days_since_prev_greenshoe_exercise",
-        "days_since_prev_stabilization_end",
-        "days_since_prev_stabilization_start",
-        "is_pre_greenshoe_expiry_5d",
-        "is_pre_cornerstone_lockup_5d",
-        "is_near_greenshoe_expiry_5d",
-        "is_near_greenshoe_exercise_5d",
-        "is_near_cornerstone_lockup_5d",
-        "is_pre_stabilization_end_5d",
-        "is_near_stabilization_end_5d",
-        "is_stabilization_window_active",
-        # Intraday v1 candidate features (opt-in loader join against the
-        # 7-day-expiring micro_features_intraday_v1_candidate table; only
-        # resolve when the loader was built with_intraday_features=True)
-        "first_hour_n_trades",
-        "first_hour_tick_volume",
-        "first_hour_ofi",
-        "first_hour_rel_spread",
-        "first_hour_realized_vol",
-        "first_hour_n_quotes",
-        "opening_auction_trade_share",
-        "prior_20d_first_hour_rel_spread",
-        "prior_20d_first_hour_tick_volume",
-        "first_hour_spread_shock",
-        "first_hour_liquidity_withdrawal",
     }
 )
 
@@ -206,9 +156,10 @@ def tokenize(source: str) -> list[Token]:
 class Parser:
     """Recursive-descent parser that produces a dict-based AST."""
 
-    def __init__(self, tokens: list[Token]) -> None:
+    def __init__(self, tokens: list[Token], *, allowed_fields: frozenset[str]) -> None:
         self._tokens = tokens
         self._pos = 0
+        self._allowed_fields = allowed_fields
 
     def parse(self) -> dict[str, Any]:
         """Parse the full expression and return the AST root node."""
@@ -286,12 +237,12 @@ class Parser:
                 return self._function_call(name, tok.pos)
 
             # Field reference
-            if name in ALLOWED_FIELDS:
+            if name in self._allowed_fields:
                 return {"type": "field", "name": name}
 
             raise DslParseError(
                 f"Unknown identifier {name!r} at position {tok.pos}. "
-                f"Allowed fields: {sorted(ALLOWED_FIELDS)}. "
+                f"Allowed fields: {sorted(self._allowed_fields)}. "
                 f"Allowed functions: {sorted(ALLOWED_FUNCTIONS)}."
             )
 
@@ -329,7 +280,28 @@ class Parser:
 # ── Public API ───────────────────────────────────────────────────────────────
 
 
-def parse_expression(source: str) -> dict[str, Any]:
+def registered_dsl_fields() -> frozenset[str]:
+    """Return base fields plus every registered pack field for compatibility."""
+    from alpha_harness.markets import list_market_packs, load_market_pack
+
+    fields = set(ALLOWED_FIELDS)
+    for market_id in list_market_packs():
+        fields.update(load_market_pack(market_id).dsl_fields)
+    return frozenset(fields)
+
+
+def resolve_allowed_fields(extra_fields: frozenset[str] | None = None) -> frozenset[str]:
+    """Resolve explicit pack fields or the compatibility field set."""
+    if extra_fields is None:
+        return registered_dsl_fields()
+    return ALLOWED_FIELDS | extra_fields
+
+
+def parse_expression(
+    source: str,
+    *,
+    extra_fields: frozenset[str] | None = None,
+) -> dict[str, Any]:
     """Parse a DSL expression string into a dict-based AST.
 
     Raises DslParseError for syntactically invalid or disallowed expressions.
@@ -346,18 +318,22 @@ def parse_expression(source: str) -> dict[str, Any]:
     if not source or not source.strip():
         raise DslParseError("Empty expression")
     tokens = tokenize(source)
-    parser = Parser(tokens)
+    parser = Parser(tokens, allowed_fields=resolve_allowed_fields(extra_fields))
     return parser.parse()
 
 
-def validate_expression(source: str) -> list[str]:
+def validate_expression(
+    source: str,
+    *,
+    extra_fields: frozenset[str] | None = None,
+) -> list[str]:
     """Validate a DSL expression and return a list of errors (empty = valid).
 
     Does not raise — returns errors as strings for display.
     """
     errors: list[str] = []
     try:
-        ast = parse_expression(source)
+        ast = parse_expression(source, extra_fields=extra_fields)
         errors.extend(validate_ast(ast))
     except DslParseError as e:
         errors.append(str(e))

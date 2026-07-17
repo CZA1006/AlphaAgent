@@ -163,7 +163,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     symbols = _load_universe(args.universe)
-    loader = create_equities_loader(source="bigquery")
+    loader = create_equities_loader(source="bigquery", market_id="hk_ipo")
     df, _ = loader.load_bars(
         DataRequest(
             symbols=symbols,

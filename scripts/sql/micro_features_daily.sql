@@ -1,8 +1,8 @@
 -- Per-(stock, trading_date) microstructure features from the HK IPO tick lake.
 --
--- Source: hk_ipo_research.tick_events_ext (BID/ASK/TRADE events).
--- Target scope is tracked by hk_ipo_research.tick_manifest_target.
--- Output: hk_ipo_research.micro_features_daily — one row per ipo_daily_prices
+-- Source: {{DATASET}}.tick_events_ext (BID/ASK/TRADE events).
+-- Target scope is tracked by {{DATASET}}.tick_manifest_target.
+-- Output: {{DATASET}}.micro_features_daily — one row per ipo_daily_prices
 --         stock-day, with nullable tick-derived columns for days without ticks.
 --
 -- Quotes arrive as separate BID and ASK events, so best bid/ask are
@@ -13,14 +13,14 @@
 --
 -- Re-runnable: CREATE OR REPLACE.  One external-parquet scan.
 
-CREATE OR REPLACE TABLE `bloomberg-database-0629.hk_ipo_research.micro_features_daily` AS
+CREATE OR REPLACE TABLE `{{PROJECT}}.{{DATASET}}.micro_features_daily` AS
 WITH daily_calendar AS (
   SELECT DISTINCT stock_code, date AS trading_date
-  FROM `bloomberg-database-0629.hk_ipo_research.ipo_daily_prices`
+  FROM `{{PROJECT}}.{{DATASET}}.ipo_daily_prices`
 ),
 ev AS (
   SELECT stock_code, trading_date, time, event_type, value AS price, size
-  FROM `bloomberg-database-0629.hk_ipo_research.tick_events_ext`
+  FROM `{{PROJECT}}.{{DATASET}}.tick_events_ext`
   WHERE scope = 'target'
     AND value > 0
 ),

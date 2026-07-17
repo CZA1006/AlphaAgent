@@ -11,14 +11,17 @@ from __future__ import annotations
 
 import argparse
 import math
-import os
 
 import pandas as pd
+
+from alpha_harness.data.loader_factory import resolve_market_data_location
+from alpha_harness.markets import load_market_pack
 
 WIN = 10
 CAR_LO = -1
 CAR_HI = 3
 PLACEBO_SHIFT = 40
+DEFAULT_PROJECT, DEFAULT_DATASET = resolve_market_data_location(load_market_pack("hk_ipo"))
 
 # Curated extraction errors (e.g. a greenshoe "expiry" dated before listing)
 # otherwise snap onto the IPO day-1 pop at tau=0 and dominate the mean AR.
@@ -36,12 +39,16 @@ def _client(project: str):
     return bigquery.Client(project=project)
 
 
-def _pull(project: str, event_type: str) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+def _pull(
+    project: str,
+    dataset: str,
+    event_type: str,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     from google.cloud import bigquery
 
     bq = _client(project)
     events = bq.query(
-        """
+        f"""
         SELECT
           stock_code,
           event_type,
@@ -49,7 +56,7 @@ def _pull(project: str, event_type: str) -> tuple[pd.DataFrame, pd.DataFrame, pd
           listing_date,
           primary_source_doc_id AS source_doc_id,
           primary_source_url AS source_url
-        FROM `bloomberg-database-0629.hk_ipo_research.ipo_event_dates_curated`
+        FROM `{project}.{dataset}.ipo_event_dates_curated`
         WHERE event_type = @event_type
           AND event_date IS NOT NULL
         ORDER BY stock_code, event_date
@@ -63,26 +70,26 @@ def _pull(project: str, event_type: str) -> tuple[pd.DataFrame, pd.DataFrame, pd
     ).to_dataframe()
 
     daily = bq.query(
-        """
+        f"""
         SELECT
           p.stock_code,
           p.date,
           p.chg_pct_1d,
           mf.ofi,
           ef.next_cornerstone_unlock_pct_offer AS overhang
-        FROM `bloomberg-database-0629.hk_ipo_research.ipo_daily_prices` p
-        LEFT JOIN `bloomberg-database-0629.hk_ipo_research.micro_features_daily` mf
+        FROM `{project}.{dataset}.ipo_daily_prices` p
+        LEFT JOIN `{project}.{dataset}.micro_features_daily` mf
           ON p.stock_code = mf.stock_code AND p.date = mf.trading_date
-        LEFT JOIN `bloomberg-database-0629.hk_ipo_research.ipo_event_features_daily` ef
+        LEFT JOIN `{project}.{dataset}.ipo_event_features_daily` ef
           ON p.stock_code = ef.stock_code AND p.date = ef.date
         """,
         job_config=bigquery.QueryJobConfig(maximum_bytes_billed=400_000_000),
     ).to_dataframe()
 
     hsi = bq.query(
-        """
+        f"""
         SELECT date, chg_pct_1d AS hsi_ret
-        FROM `bloomberg-database-0629.hk_ipo_research.market_factors_daily`
+        FROM `{project}.{dataset}.market_factors_daily`
         WHERE factor_name = 'hang_seng_index'
         """,
         job_config=bigquery.QueryJobConfig(maximum_bytes_billed=100_000_000),
@@ -216,8 +223,8 @@ def _placebo_cars(
     return pd.Series(cars, dtype="float64")
 
 
-def run(project: str, event_type: str) -> None:
-    events, daily, hsi = _pull(project, event_type)
+def run(project: str, dataset: str, event_type: str) -> None:
+    events, daily, hsi = _pull(project, dataset, event_type)
     print(f"event_type: {event_type}")
     print(f"curated event dates: {len(events)}")
     events = _drop_implausible_events(events, event_type)
@@ -284,11 +291,12 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--project",
-        default=os.environ.get("GCP_PROJECT", "bloomberg-database-0629"),
+        default=DEFAULT_PROJECT,
     )
+    parser.add_argument("--dataset", default=DEFAULT_DATASET)
     parser.add_argument("--event-type", default="cornerstone_lockup_expiry")
     args = parser.parse_args(argv)
-    run(args.project, args.event_type)
+    run(args.project, args.dataset, args.event_type)
     return 0
 
 

@@ -9,9 +9,11 @@ import pytest
 from alpha_harness.audit import (
     AuditError,
     assert_clean_imports,
+    assert_no_market_literals,
     assert_no_outbound_io_in_evaluators,
     scan_clean_imports,
     scan_evaluator_io,
+    scan_market_literals,
 )
 
 # ── Real codebase passes ────────────────────────────────────────────────────
@@ -24,6 +26,10 @@ def test_real_codebase_imports_are_clean() -> None:
 
 def test_real_evaluators_have_no_outbound_io() -> None:
     assert_no_outbound_io_in_evaluators()
+
+
+def test_real_core_has_no_market_literals_outside_stage2_boundary() -> None:
+    assert_no_market_literals()
 
 
 # ── Boundary auditor ────────────────────────────────────────────────────────
@@ -130,6 +136,27 @@ def test_evaluator_auditor_skips_unparseable_files(tmp_path: Path) -> None:
     )
     # A SyntaxError shouldn't crash the auditor.
     assert scan_evaluator_io(root) == []
+
+
+# ── Market-literal auditor ─────────────────────────────────────────────────
+
+
+def test_market_literal_auditor_flags_core_literal(tmp_path: Path) -> None:
+    pkg = _write_module(tmp_path, "leak.py", 'MARKET = "hk_ipo"\n')
+    violations = scan_market_literals(pkg)
+    assert len(violations) == 1
+    assert violations[0].line == 1
+    with pytest.raises(AuditError, match="market literals belong in market packs"):
+        assert_no_market_literals(pkg)
+
+
+def test_market_literal_auditor_allows_pack_and_stage2_director(tmp_path: Path) -> None:
+    pkg = _write_module(tmp_path, "ok.py", "value = 1\n")
+    for directory in ("markets", "director"):
+        path = pkg / directory
+        path.mkdir()
+        (path / "configured.py").write_text('MARKET = "hk_ipo"\n')
+    assert scan_market_literals(pkg) == []
 
 
 # ── Violation message ──────────────────────────────────────────────────────

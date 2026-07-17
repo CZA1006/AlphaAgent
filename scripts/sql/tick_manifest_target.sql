@@ -4,7 +4,7 @@
 -- tick_manifest can include non-target capture and should not be used as
 -- the research universe contract.
 
-CREATE OR REPLACE TABLE `bloomberg-database-0629.hk_ipo_research.tick_manifest_target` AS
+CREATE OR REPLACE TABLE `{{PROJECT}}.{{DATASET}}.tick_manifest_target` AS
 SELECT
   scope,
   stock_code,
@@ -21,6 +21,6 @@ SELECT
   MIN(time) AS first_event_utc,
   MAX(time) AS last_event_utc,
   CURRENT_TIMESTAMP() AS built_at_utc
-FROM `bloomberg-database-0629.hk_ipo_research.tick_events_ext`
+FROM `{{PROJECT}}.{{DATASET}}.tick_events_ext`
 WHERE scope = 'target'
 GROUP BY scope, stock_code;

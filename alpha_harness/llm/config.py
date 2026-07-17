@@ -4,7 +4,7 @@ Env vars (see ``OpenRouterConfig.from_env``):
 
     * ``OPENROUTER_API_KEY``       — required for the real provider
     * ``OPENROUTER_BASE_URL``      — default ``https://openrouter.ai/api/v1``
-    * ``OPENROUTER_MODEL``         — default ``anthropic/claude-sonnet-4.6``
+    * ``OPENROUTER_MODEL``         — required model identifier
     * ``OPENROUTER_TEMPERATURE``   — default ``0.2``
     * ``OPENROUTER_TIMEOUT``       — HTTP timeout in seconds, default ``60``
     * ``OPENROUTER_HTTP_REFERER``  — optional attribution header
@@ -20,7 +20,6 @@ from dataclasses import dataclass
 from alpha_harness.llm.protocol import LLMError
 
 DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
-DEFAULT_MODEL = "anthropic/claude-sonnet-4.6"
 DEFAULT_TEMPERATURE = 0.2
 DEFAULT_TIMEOUT = 60.0
 
@@ -38,8 +37,8 @@ class OpenRouterConfig:
     """
 
     api_key: str
+    model: str
     base_url: str = DEFAULT_BASE_URL
-    model: str = DEFAULT_MODEL
     temperature: float = DEFAULT_TEMPERATURE
     timeout_seconds: float = DEFAULT_TIMEOUT
     http_referer: str | None = None
@@ -63,8 +62,14 @@ class OpenRouterConfig:
                 "for offline runs."
             )
 
+        model = source.get("OPENROUTER_MODEL", "").strip()
+        if not model:
+            raise LLMConfigError(
+                "OPENROUTER_MODEL is not set — choose an OpenRouter model "
+                "available in this region and set the env var explicitly."
+            )
+
         base_url = source.get("OPENROUTER_BASE_URL", DEFAULT_BASE_URL).strip()
-        model = source.get("OPENROUTER_MODEL", DEFAULT_MODEL).strip()
 
         try:
             temperature = float(source.get("OPENROUTER_TEMPERATURE", DEFAULT_TEMPERATURE))

@@ -9,6 +9,7 @@ import pandas as pd
 
 from alpha_harness.data.bigquery_loader import BigQueryEquitiesLoader, BigQueryTickLoader
 from alpha_harness.data.models import BarFrequency, DataRequest
+from alpha_harness.markets import load_market_pack
 
 
 class _FakeQueryJob:
@@ -33,6 +34,38 @@ class _FakeBQClient:
         self.last_sql = sql
         self.last_job_config = job_config
         return _FakeQueryJob(self._df)
+
+
+def _equities_loader(client: _FakeBQClient, **overrides: Any) -> BigQueryEquitiesLoader:
+    data = load_market_pack("hk_ipo").data
+    kwargs: dict[str, Any] = {
+        "project": data.project,
+        "dataset": data.dataset,
+        "prices_table": data.tables["prices"],
+        "micro_table": data.tables["micro"],
+        "event_features_table": data.tables["event_features"],
+        "intraday_table": data.tables["intraday"],
+        "micro_columns": data.join_columns["micro"],
+        "event_feature_columns": data.join_columns["event_features"],
+        "intraday_columns": data.join_columns["intraday"],
+        "max_bytes_billed": data.loader_kwargs["max_bytes_billed"],
+        "client": client,
+    }
+    kwargs.update(overrides)
+    return BigQueryEquitiesLoader(**kwargs)
+
+
+def _tick_loader(client: _FakeBQClient, **overrides: Any) -> BigQueryTickLoader:
+    data = load_market_pack("hk_ipo").data
+    kwargs: dict[str, Any] = {
+        "project": data.project,
+        "dataset": data.dataset,
+        "tick_table": data.tables["ticks"],
+        "max_bytes_billed": data.loader_kwargs["tick_max_bytes_billed"],
+        "client": client,
+    }
+    kwargs.update(overrides)
+    return BigQueryTickLoader(**kwargs)
 
 
 def _raw_rows() -> pd.DataFrame:
@@ -62,7 +95,7 @@ def _request() -> DataRequest:
 
 def test_load_bars_maps_columns_to_canonical_panel() -> None:
     client = _FakeBQClient(_raw_rows())
-    loader = BigQueryEquitiesLoader(client=client)
+    loader = _equities_loader(client)
     df, _meta = loader.load_bars(_request())
 
     # Canonical harness columns, in order.
@@ -95,7 +128,7 @@ def test_load_bars_maps_columns_to_canonical_panel() -> None:
 
 def test_load_bars_metadata_counts() -> None:
     client = _FakeBQClient(_raw_rows())
-    loader = BigQueryEquitiesLoader(client=client)
+    loader = _equities_loader(client)
     _df, meta = loader.load_bars(_request())
     assert meta.symbols_requested == 2
     assert meta.symbols_returned == 2  # 00068 + 00100
@@ -105,7 +138,7 @@ def test_load_bars_metadata_counts() -> None:
 
 def test_query_is_parameterized_and_cost_capped() -> None:
     client = _FakeBQClient(_raw_rows())
-    loader = BigQueryEquitiesLoader(client=client, max_bytes_billed=12345)
+    loader = _equities_loader(client, max_bytes_billed=12345)
     loader.load_bars(_request())
     # No raw symbol/date interpolation in the SQL — bound via parameters.
     assert "@symbols" in client.last_sql
@@ -118,7 +151,7 @@ def test_query_is_parameterized_and_cost_capped() -> None:
 def test_empty_result_returns_well_formed_empty_panel() -> None:
     empty = _raw_rows().iloc[0:0]
     client = _FakeBQClient(empty)
-    loader = BigQueryEquitiesLoader(client=client)
+    loader = _equities_loader(client)
     df, meta = loader.load_bars(_request())
     assert df.empty
     assert list(df.columns) == [
@@ -140,17 +173,21 @@ def test_empty_result_returns_well_formed_empty_panel() -> None:
 
 def test_nullable_vwap_survives_as_nan() -> None:
     client = _FakeBQClient(_raw_rows())
-    loader = BigQueryEquitiesLoader(client=client)
+    loader = _equities_loader(client)
     df, _meta = loader.load_bars(_request())
     vwap_00100 = df[df["symbol"] == "00100"]["vwap"].iloc[0]
     assert pd.isna(vwap_00100)
 
 
-def test_factory_returns_bigquery_loader() -> None:
+def test_factory_returns_bigquery_loader(monkeypatch: Any) -> None:
     from alpha_harness.data.loader_factory import create_equities_loader
 
+    monkeypatch.setenv("GCP_PROJECT", "env-project")
+    monkeypatch.setenv("HK_IPO_DATASET", "env_dataset")
     loader = create_equities_loader(source="bigquery")
     assert isinstance(loader, BigQueryEquitiesLoader)
+    assert loader._project == "env-project"
+    assert loader._dataset == "env_dataset"
 
 
 # ── microstructure feature join (Track B) ──────────────────────────────────
@@ -172,7 +209,7 @@ def _raw_rows_with_micro() -> pd.DataFrame:
 
 def test_micro_features_pass_through_as_dsl_fields() -> None:
     client = _FakeBQClient(_raw_rows_with_micro())
-    loader = BigQueryEquitiesLoader(client=client, with_micro_features=True)
+    loader = _equities_loader(client, with_micro_features=True)
     df, _meta = loader.load_bars(_request())
 
     # OHLCV columns first, micro columns appended.
@@ -196,8 +233,8 @@ def test_micro_features_pass_through_as_dsl_fields() -> None:
 
 def test_with_micro_features_false_uses_price_only_query() -> None:
     client = _FakeBQClient(_raw_rows())
-    loader = BigQueryEquitiesLoader(
-        client=client,
+    loader = _equities_loader(
+        client,
         with_micro_features=False,
         with_event_features=False,
     )
@@ -209,8 +246,8 @@ def test_with_micro_features_false_uses_price_only_query() -> None:
 
 def test_micro_query_joins_micro_table_when_enabled() -> None:
     client = _FakeBQClient(_raw_rows_with_micro())
-    loader = BigQueryEquitiesLoader(
-        client=client,
+    loader = _equities_loader(
+        client,
         with_micro_features=True,
         with_event_features=False,
     )
@@ -235,8 +272,8 @@ def _raw_rows_with_event_features() -> pd.DataFrame:
 
 def test_event_features_pass_through_as_dsl_fields() -> None:
     client = _FakeBQClient(_raw_rows_with_event_features())
-    loader = BigQueryEquitiesLoader(
-        client=client,
+    loader = _equities_loader(
+        client,
         with_micro_features=False,
         with_event_features=True,
     )
@@ -259,8 +296,11 @@ def test_event_features_pass_through_as_dsl_fields() -> None:
 
 
 def test_micro_fields_compile_in_dsl() -> None:
-    """The microstructure field names are whitelisted in the DSL."""
-    from alpha_harness.factors.dsl_parser import ALLOWED_FIELDS, parse_expression
+    """The microstructure field names are supplied by the market pack."""
+    from alpha_harness.factors.dsl_parser import parse_expression
+    from alpha_harness.markets import load_market_pack
+
+    extra_fields = load_market_pack("hk_ipo").dsl_fields
 
     for f in (
         "ofi",
@@ -271,14 +311,17 @@ def test_micro_fields_compile_in_dsl() -> None:
         "avg_trade_size",
         "n_quotes",
     ):
-        assert f in ALLOWED_FIELDS
+        assert f in extra_fields
     # A real microstructure factor must parse.
-    parse_expression("rank(ofi) * rank(-realized_vol)")
+    parse_expression("rank(ofi) * rank(-realized_vol)", extra_fields=extra_fields)
 
 
 def test_event_fields_compile_in_dsl() -> None:
-    """The curated IPO event feature names are whitelisted in the DSL."""
-    from alpha_harness.factors.dsl_parser import ALLOWED_FIELDS, parse_expression
+    """The curated IPO event feature names are supplied by the market pack."""
+    from alpha_harness.factors.dsl_parser import parse_expression
+    from alpha_harness.markets import load_market_pack
+
+    extra_fields = load_market_pack("hk_ipo").dsl_fields
 
     for f in (
         "days_since_listing",
@@ -291,8 +334,11 @@ def test_event_fields_compile_in_dsl() -> None:
         "is_pre_cornerstone_lockup_5d",
         "is_stabilization_window_active",
     ):
-        assert f in ALLOWED_FIELDS
-    parse_expression("rank(ofi) * is_pre_greenshoe_expiry_5d")
+        assert f in extra_fields
+    parse_expression(
+        "rank(ofi) * is_pre_greenshoe_expiry_5d",
+        extra_fields=extra_fields,
+    )
 
 
 # ── tick loader ────────────────────────────────────────────────────────────
@@ -335,7 +381,7 @@ def _raw_tick_rows() -> pd.DataFrame:
 
 def test_tick_loader_maps_raw_bid_ask_trade_events() -> None:
     client = _FakeBQClient(_raw_tick_rows())
-    loader = BigQueryTickLoader(client=client)
+    loader = _tick_loader(client)
     df, meta = loader.load_ticks(_tick_request())
 
     assert list(df["event_type"]) == ["BID", "ASK", "TRADE"]
@@ -349,7 +395,7 @@ def test_tick_loader_maps_raw_bid_ask_trade_events() -> None:
 
 def test_tick_query_is_parameterized_scope_filtered_and_cost_capped() -> None:
     client = _FakeBQClient(_raw_tick_rows())
-    loader = BigQueryTickLoader(client=client, max_bytes_billed=123456)
+    loader = _tick_loader(client, max_bytes_billed=123456)
     loader.load_ticks(_tick_request(), event_types=("TRADE",), limit=10)
 
     assert "@scope" in client.last_sql
@@ -363,7 +409,7 @@ def test_tick_query_is_parameterized_scope_filtered_and_cost_capped() -> None:
 
 def test_tick_loader_requires_tick_frequency() -> None:
     client = _FakeBQClient(_raw_tick_rows())
-    loader = BigQueryTickLoader(client=client)
+    loader = _tick_loader(client)
     daily_request = DataRequest(
         symbols=["00068"],
         start=date(2026, 3, 2),
@@ -392,7 +438,7 @@ def _raw_rows_with_intraday() -> pd.DataFrame:
 
 def test_intraday_features_off_by_default() -> None:
     client = _FakeBQClient(_raw_rows())
-    loader = BigQueryEquitiesLoader(client=client)
+    loader = _equities_loader(client)
     df, _ = loader.load_bars(_request())
     assert client.last_sql is not None
     assert "micro_features_intraday_v1_candidate" not in client.last_sql
@@ -401,8 +447,8 @@ def test_intraday_features_off_by_default() -> None:
 
 def test_intraday_query_joins_candidate_table_when_enabled() -> None:
     client = _FakeBQClient(_raw_rows_with_intraday())
-    loader = BigQueryEquitiesLoader(
-        client=client,
+    loader = _equities_loader(
+        client,
         with_micro_features=False,
         with_event_features=False,
         with_intraday_features=True,
@@ -416,8 +462,8 @@ def test_intraday_query_joins_candidate_table_when_enabled() -> None:
 
 def test_intraday_features_pass_through_as_dsl_fields() -> None:
     client = _FakeBQClient(_raw_rows_with_intraday())
-    loader = BigQueryEquitiesLoader(
-        client=client,
+    loader = _equities_loader(
+        client,
         with_micro_features=False,
         with_event_features=False,
         with_intraday_features=True,

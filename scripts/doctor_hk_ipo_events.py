@@ -7,8 +7,10 @@ import subprocess
 import sys
 from dataclasses import dataclass
 
-PROJECT = "bloomberg-database-0629"
-DATASET = "hk_ipo_research"
+from alpha_harness.data.loader_factory import resolve_market_data_location
+from alpha_harness.markets import load_market_pack
+
+PROJECT, DATASET = resolve_market_data_location(load_market_pack("hk_ipo"))
 
 
 @dataclass

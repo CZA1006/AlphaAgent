@@ -170,6 +170,12 @@ fingerprint/trail id from a fixed synthetic configuration.
   using a pack field → run one evaluation cycle end-to-end with the
   mock LLM.
 
+Implementation note (2026-07-16): the first command also matches the Director
+APIs and transition literals that this work order assigns to Stage 2. Stage 1
+therefore audits all generic core modules except `markets/` and `director/`;
+removing that named exemption is part of the Stage 2 acceptance, not this
+stage.
+
 ---
 
 ## Stage 2 — Director and post-run policy become pack-driven
@@ -254,10 +260,11 @@ facade`, `Add ArtifactStore abstraction`.
 ## Progress checklist
 
 - [x] Stage 0: CI green on GitHub
-- [ ] Stage 1: MarketPack registry + hk_ipo/us_equities packs
-- [ ] Stage 1: DSL base/extra field split
-- [ ] Stage 1: SQL templating + loader defaults from pack
-- [ ] Stage 1: audit extended (no market literals in core) + fingerprint regression test
+- [x] Stage 1: MarketPack registry + hk_ipo/us_equities packs
+- [x] Stage 1: DSL base/extra field split
+- [x] Stage 1: SQL templating + loader defaults from pack
+- [x] Stage 1: audit extended + fingerprint regression test (the Stage 2
+  `director/` boundary is explicitly exempt until its topic/policy migration)
 - [ ] Stage 2: director topics + post-run transitions pack-driven
 - [ ] Stage 3: SDK facade + ArtifactStore + scripts as shims
-- [ ] Docs synced (PROJECT_STATUS, README, this checklist)
+- [x] Docs synced (PROJECT_STATUS, README, this checklist)

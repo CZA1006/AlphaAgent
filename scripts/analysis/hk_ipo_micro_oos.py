@@ -19,7 +19,7 @@ joined in) and HSI from ``market_factors_daily``.  Needs ADC auth
 
 Usage::
 
-    GOOGLE_CLOUD_PROJECT=bloomberg-database-0629 \\
+    GOOGLE_CLOUD_PROJECT=<your-project> \\
     uv run python -m scripts.analysis.hk_ipo_micro_oos \\
         --factors-file factors.txt \\
         --train 2025-12-12:2026-04-30 --test 2026-05-01:2026-06-26
@@ -34,10 +34,15 @@ import numpy as np
 import pandas as pd
 
 from alpha_harness.combination import compute_signal
-from alpha_harness.data.loader_factory import create_equities_loader
+from alpha_harness.data.loader_factory import (
+    create_equities_loader,
+    resolve_market_data_location,
+)
 from alpha_harness.data.models import BarFrequency, DataRequest
+from alpha_harness.markets import load_market_pack
 
 LAG, HORIZON, N_QUANTILES = 1, 5, 5
+DEFAULT_PROJECT, DEFAULT_DATASET = resolve_market_data_location(load_market_pack("hk_ipo"))
 
 
 def _win(s: str) -> tuple[date, date]:
@@ -51,13 +56,13 @@ def _load_universe(path: str) -> list[str]:
     ]
 
 
-def _hsi_forward(project: str) -> dict[date, float]:
+def _hsi_forward(project: str, dataset: str = DEFAULT_DATASET) -> dict[date, float]:
     """HSI forward return per trading date, keyed by plain date (tz-robust)."""
     from google.cloud import bigquery
 
     bq = bigquery.Client(project=project)
     df = bq.query(
-        "SELECT date, px_last FROM hk_ipo_research.market_factors_daily "
+        f"SELECT date, px_last FROM `{project}.{dataset}.market_factors_daily` "
         "WHERE factor_name='hang_seng_index' ORDER BY date",
     ).to_dataframe()
     s = df.assign(date=pd.to_datetime(df["date"])).set_index("date")["px_last"].sort_index()
@@ -140,8 +145,6 @@ def _long_only(
 
 
 def main(argv: list[str] | None = None) -> int:
-    import os
-
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--factors-file", required=True)
     p.add_argument("--universe", default="configs/universes/hk_ipo.txt")
@@ -153,7 +156,8 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Override; default = measured mean rel_spread/2 on the test window.",
     )
-    p.add_argument("--project", default=os.environ.get("GCP_PROJECT", "bloomberg-database-0629"))
+    p.add_argument("--project", default=DEFAULT_PROJECT)
+    p.add_argument("--dataset", default=DEFAULT_DATASET)
     p.add_argument(
         "--with-intraday",
         action="store_true",
@@ -164,12 +168,11 @@ def main(argv: list[str] | None = None) -> int:
 
     syms = _load_universe(args.universe)
     exprs = _load_universe(args.factors_file)
-    if args.with_intraday:
-        from alpha_harness.data.bigquery_loader import BigQueryEquitiesLoader
-
-        loader = BigQueryEquitiesLoader(with_intraday_features=True)
-    else:
-        loader = create_equities_loader(source="bigquery")
+    loader = create_equities_loader(
+        source="bigquery",
+        market_id="hk_ipo",
+        with_intraday_features=args.with_intraday,
+    )
 
     def panel(win: str) -> pd.DataFrame:
         s, e = _win(win)
@@ -178,7 +181,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         return df
 
-    hsi_fwd = _hsi_forward(args.project)
+    hsi_fwd = _hsi_forward(args.project, args.dataset)
     per_factor_oos(
         panel(args.train),
         panel(args.test),

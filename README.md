@@ -23,8 +23,12 @@ The original Phase 1 architecture focuses on:
 
 The active empirical program also includes HK IPO equities, where BigQuery
 panels join daily prices, tick-derived microstructure, and curated event data.
-The data model is designed to support additional asset classes later (ETFs,
-futures, options metadata, FX, rates, commodities).
+Market-specific data locations, table contracts, DSL fields, and SQL templates
+live in typed, versioned `MarketPack` files under `configs/markets/`. The
+`us_equities_daily` pack is the OHLCV-only base case; new packs can be added
+without changing loaders or the DSL parser. The data model is designed to
+support additional asset classes later (ETFs, futures, options metadata, FX,
+rates, commodities).
 
 ## Core principle
 
@@ -56,7 +60,9 @@ proposal context at the start of the next autonomous cycle.
 The architectural invariant is one-way: Hermes calls the typed Alpha Harness
 boundary, while `alpha_harness/` never imports Hermes runtime internals. The
 static auditor also prevents network or LLM access from entering deterministic
-evaluators.
+evaluators. It additionally blocks market literals in the generic core, with a
+temporary exception for `director/`, whose topic and transition migration is
+the explicitly separate Productization P0 Stage 2.
 
 ## What works today (post Round 4–10)
 
@@ -116,7 +122,7 @@ Every research artifact is queryable from a CLI:
 | `make list-factors` | Browse the promoted-factor zoo (`--lineage`, `--diff-trails`, …) |
 | `make list-cycles` | Browse cycle audit reports |
 | `make list-trails` | Browse the standalone promotion-trail registry (Round 4J) |
-| `make audit` | Static import auditor (no `hermes.*` in harness, no network in evaluators) |
+| `make audit` | Static boundary audit (runtime imports, evaluator I/O, and core market literals) |
 | `make smoke` / `check-full` | End-to-end integration smoke + full quality gate |
 
 ### Agent loop on real data

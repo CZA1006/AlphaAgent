@@ -36,7 +36,7 @@ class TestProtocol:
     def test_openrouter_client_satisfies_protocol(self) -> None:
         transport = httpx.MockTransport(lambda r: httpx.Response(200, json={}))
         client = OpenRouterClient(
-            OpenRouterConfig(api_key="sk-test"),
+            OpenRouterConfig(api_key="sk-test", model="test/model"),
             http_client=httpx.Client(transport=transport),
         )
         assert isinstance(client, LLMClient)
@@ -59,13 +59,9 @@ class TestOpenRouterConfig:
         assert cfg.temperature == 0.5
         assert cfg.base_url == "https://openrouter.ai/api/v1"
 
-    def test_from_env_defaults(self) -> None:
-        from alpha_harness.llm.config import DEFAULT_MODEL
-
-        cfg = OpenRouterConfig.from_env({"OPENROUTER_API_KEY": "sk-xxx"})
-        assert cfg.model == DEFAULT_MODEL
-        assert cfg.temperature == 0.2
-        assert cfg.timeout_seconds == 60.0
+    def test_missing_model_raises(self) -> None:
+        with pytest.raises(LLMConfigError, match="OPENROUTER_MODEL"):
+            OpenRouterConfig.from_env({"OPENROUTER_API_KEY": "sk-xxx"})
 
     def test_missing_api_key_raises(self) -> None:
         with pytest.raises(LLMConfigError, match="OPENROUTER_API_KEY"):
@@ -77,12 +73,19 @@ class TestOpenRouterConfig:
 
     def test_bad_temperature_raises(self) -> None:
         with pytest.raises(LLMConfigError, match="OPENROUTER_TEMPERATURE"):
-            OpenRouterConfig.from_env({"OPENROUTER_API_KEY": "sk", "OPENROUTER_TEMPERATURE": "hot"})
+            OpenRouterConfig.from_env(
+                {
+                    "OPENROUTER_API_KEY": "sk",
+                    "OPENROUTER_MODEL": "test/model",
+                    "OPENROUTER_TEMPERATURE": "hot",
+                }
+            )
 
     def test_base_url_trailing_slash_stripped(self) -> None:
         cfg = OpenRouterConfig.from_env(
             {
                 "OPENROUTER_API_KEY": "sk",
+                "OPENROUTER_MODEL": "test/model",
                 "OPENROUTER_BASE_URL": "https://example.com/v1/",
             }
         )
@@ -127,7 +130,9 @@ def _ok_body(content: str = "hi there", model: str = "anthropic/claude-3.5-sonne
 class TestOpenRouterClient:
     def test_complete_parses_response(self) -> None:
         http = httpx.Client(transport=_mock_transport(body=_ok_body("hello world")))
-        client = OpenRouterClient(OpenRouterConfig(api_key="sk"), http_client=http)
+        client = OpenRouterClient(
+            OpenRouterConfig(api_key="sk", model="test/model"), http_client=http
+        )
 
         response = client.complete(LLMRequest(messages=[LLMMessage(role="user", content="hi")]))
 
@@ -141,9 +146,9 @@ class TestOpenRouterClient:
         body["usage"]["cost"] = 0.000321
         http = httpx.Client(transport=_mock_transport(body=body))
 
-        response = OpenRouterClient(OpenRouterConfig(api_key="sk"), http_client=http).complete(
-            LLMRequest(messages=[LLMMessage(role="user", content="hi")])
-        )
+        response = OpenRouterClient(
+            OpenRouterConfig(api_key="sk", model="test/model"), http_client=http
+        ).complete(LLMRequest(messages=[LLMMessage(role="user", content="hi")]))
 
         assert response.usage["cost"] == pytest.approx(0.000321)
 
@@ -152,6 +157,7 @@ class TestOpenRouterClient:
         http = httpx.Client(transport=_mock_transport(body=_ok_body(), captured=captured))
         cfg = OpenRouterConfig(
             api_key="sk-123",
+            model="test/model",
             http_referer="https://alpha.test",
             app_title="alpha-agent-tests",
         )
@@ -190,27 +196,33 @@ class TestOpenRouterClient:
 
     def test_http_error_wrapped(self) -> None:
         http = httpx.Client(transport=_mock_transport(status=500, text="boom"))
-        client = OpenRouterClient(OpenRouterConfig(api_key="sk"), http_client=http)
+        client = OpenRouterClient(
+            OpenRouterConfig(api_key="sk", model="test/model"), http_client=http
+        )
 
         with pytest.raises(OpenRouterError, match="500"):
             client.complete(LLMRequest(messages=[LLMMessage(role="user", content="hi")]))
 
     def test_malformed_body_raises(self) -> None:
         http = httpx.Client(transport=_mock_transport(status=200, text="not json"))
-        client = OpenRouterClient(OpenRouterConfig(api_key="sk"), http_client=http)
+        client = OpenRouterClient(
+            OpenRouterConfig(api_key="sk", model="test/model"), http_client=http
+        )
 
         with pytest.raises(OpenRouterError, match="non-JSON"):
             client.complete(LLMRequest(messages=[LLMMessage(role="user", content="hi")]))
 
     def test_empty_choices_raises(self) -> None:
         http = httpx.Client(transport=_mock_transport(body={"choices": []}))
-        client = OpenRouterClient(OpenRouterConfig(api_key="sk"), http_client=http)
+        client = OpenRouterClient(
+            OpenRouterConfig(api_key="sk", model="test/model"), http_client=http
+        )
 
         with pytest.raises(OpenRouterError, match="no choices"):
             client.complete(LLMRequest(messages=[LLMMessage(role="user", content="hi")]))
 
     def test_context_manager_closes_owned_client(self) -> None:
-        with OpenRouterClient(OpenRouterConfig(api_key="sk")) as client:
+        with OpenRouterClient(OpenRouterConfig(api_key="sk", model="test/model")) as client:
             assert client is not None
         # Nothing to assert — just verifying the dunder methods are wired.
 
