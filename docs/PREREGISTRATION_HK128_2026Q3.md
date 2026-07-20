@@ -95,3 +95,62 @@ LLM ≤ $1 total; BigQuery reads under existing loader caps; no writes
 to non-artifact tables; no re-runs of any test against an observed
 window.  Results appended below after execution; the confirmation
 section is appended ~2026-08-28.
+
+---
+
+# RESULTS (appended 2026-07-20, same day as registration)
+
+## P1 — discovery: zero promotions out of 108 candidates; confirmation phase void
+
+Two runs, both with schema-v6 family pressure and the strict gate stack:
+
+1. `autonomous-hk_ipo-20260720T102938Z-33285e6d` — the registered make
+   command.  **Protocol deviation (recorded):** the hk_ipo pack's topic
+   definition pins `--end-date 2026-06-26`, so this run evaluated the
+   128-stock panel only through 06-26.  Result: 2 iterations × 3
+   cycles × 12 = **72 candidates, 0 promoted**; the runner stopped
+   itself on the no-promote policy.
+2. `prereg-hk128-p1-full-window` — supplementary run at the registered
+   window (2025-12-12 → **2026-07-17**), panel fingerprint
+   `a32719bf…30ff21e`: 3 cycles × 12 = **36 candidates, 0 promoted**.
+
+**Primary result: the loop promotes nothing on the completed 128-stock
+dataset.  Per the registered protocol, the future-window confirmation
+phase is void.**  Follow-up (config debt, not research): topic
+`validation_args` should derive the end date from the data snapshot
+rather than pinning it.
+
+## S1 — listing-age regime: NOT SUPPORTED (opposite sign)
+
+Completed panel, 128 stocks, registered decision rule:
+
+| factor | 31–90 d | 91+ d |
+|---|---|---|
+| `rank(ts_mean(ofi,10))` | **−0.0406** (t = −1.98, 119 d) | −0.0079 (t = −0.39, 79 d) |
+| `rank(ts_mean(ofi,20))` | **−0.0212** (t = −1.02, 119 d) | −0.0193 (t = −0.97, 79 d) |
+
+The registered (+, −) pattern does not appear anywhere; the 31–90 d
+bucket is *negative* under both smoothings — nearly significantly so
+in the wrong direction for the 10-day version.  The post-hoc age
+pattern observed on the old incomplete capture was a phantom.
+**S1 rejected and closed.**
+
+## S2 — factor family on the 51 never-analyzed stocks: family stays dead
+
+Full-history read, measured half-spread 45.5 bps: **10/12 factors have
+negative rank-IC** (two-sided sign test p = 0.039), flagship
+`rank(ofi) − rank(rel_spread)` = −0.111; long-only hedged net negative
+for 10/12.  The completed capture on fresh names does not rescue the
+family.  (The systematic negative lean is an unregistered observation:
+recorded, not claimed.)
+
+## Ledger
+
+All three registered tests executed once, no re-runs against observed
+windows.  LLM cost within the $1 budget (provider-reported figures in
+the run artifacts).  **Net scientific position after this
+registration: the completed HK dataset yields no promotable signal
+from this factor vocabulary and closes both retained secondary
+hypotheses.**  Any further HK work needs a genuinely new hypothesis
+class (new features, new mechanism), not another pass of this
+vocabulary.
