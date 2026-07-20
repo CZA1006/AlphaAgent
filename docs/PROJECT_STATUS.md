@@ -424,11 +424,18 @@ first-order risk** — future dataset builds must fingerprint per-stock
 quote coverage so a revision like this is detected at ingestion time,
 not at confirmation time.
 
-**Remaining data queue:** HKEX prospectus/event refill for the 51 new
-IPOs (event truth tables still cover 75/128 stocks;
-`ipo_event_features_daily` is misaligned with the extended panel until
-rebuilt); regenerate the universe file; then any new HK research starts
-from a fresh pre-registration on the completed dataset.
+**Data queue cleared (2026-07-20):** the Bloomberg-side refill run
+`20260717_153047` delivered a full-snapshot staging update (all 75
+original stocks carried forward with only additive changes, +2,094
+terms; 125/128 stocks covered — 03774/06051/07489 pending documents)
+and **closed every tick capture gap** (0 volume>0/no-tick stock-days
+remain).  Downstream rebuild completed with the sanity filters:
+curated event dates 593 → 933 with the original 593 preserved
+verbatim (backup table `ipo_event_dates_curated_bak_20260717` kept),
+30 implausible dates routed to review, `ipo_event_features_daily`
+realigned to the 8,754-row panel exactly, and the universe file
+regenerated to 128 names.  Any new HK research now starts from a
+fresh pre-registration on this completed dataset.
 
 ### 2. Multi-run robustness study — RUN (2026-07-15): a systematic null
 
