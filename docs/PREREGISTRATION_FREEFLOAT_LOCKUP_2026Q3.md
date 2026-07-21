@@ -81,3 +81,38 @@ read is descriptive and reported in full regardless of sign.  No LLM
 cost (deterministic BigQuery analysis under existing loader caps); no
 writes to non-artifact tables; no re-runs of the confirmation test
 against an observed window.
+
+---
+
+# EXPLORATORY RESULTS (appended 2026-07-21; contaminated — cannot promote)
+
+Ran `scripts/analysis/lockup_freefloat_split.py` on the 27 in-window
+events with free-float data (median split at free_float_pct = 51.7%;
+low_float N = 14, high_float N = 13):
+
+| bucket | CAR[−1,+3] | median | sign | post-event OFI (τ 0..+3) |
+|---|---|---|---|---|
+| low_float | −0.68 % (t = −0.22) | +2.63 % | 8/14 pos | −0.007 (t = −0.20) |
+| high_float | −2.92 % (t = −0.70) | −1.06 % | 5/13 pos | **+0.220 (t = +2.46)** |
+
+**low−high interaction = +2.24 % (t = +0.43).**
+
+**The exploratory read runs *against* hypothesis H, not for it:**
+
+- The registered direction was a *negative* low−high interaction (low
+  float more negative).  Observed interaction is **positive** — the
+  low-float bucket is the *less* negative one, with a positive median.
+- Nothing is significant (both buckets |t| < 0.7; interaction
+  t = +0.43).
+- The only significant number is high_float post-event OFI = +0.22
+  (net *buying*, τ = 0..+3) — the opposite of a selling signature, and
+  a lone significant cell out of many is expected under the
+  forking-paths caveat.
+
+**Read:** free-float conditioning does not reveal the hypothesized
+concentration of lockup selling pressure; if anything the sign is
+reversed.  The prior for H on the future confirmation window is now
+weak.  The registered decision rule is left in place and will still be
+evaluated once, honestly, on post-2026-07-17 events — but the
+exploratory evidence suggests H will not survive.  Recorded as a
+near-dead lead pending the one-shot future test.
