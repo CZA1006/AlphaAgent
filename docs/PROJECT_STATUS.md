@@ -437,6 +437,22 @@ realigned to the 8,754-row panel exactly, and the universe file
 regenerated to 128 names.  Any new HK research now starts from a
 fresh pre-registration on this completed dataset.
 
+**Two dead leads recorded (2026-07-21), so they are not re-attempted:**
+- *Free-float-conditioned lockup effect* (pre-registered,
+  [`PREREGISTRATION_FREEFLOAT_LOCKUP_2026Q3.md`](PREREGISTRATION_FREEFLOAT_LOCKUP_2026Q3.md)):
+  exploratory read runs *against* the hypothesis — low−high CAR
+  interaction +2.24 % (t = +0.43) where a negative was predicted,
+  nothing significant.  The one-shot future-window confirmation rule
+  stays registered but the prior is now weak.
+- *Cornerstone-%-of-offer → early post-IPO drift*: **no clean
+  confirmation path** — all 53 stocks with cornerstone-% data are in
+  the original universe; the 51 new IPOs have zero coverage, and this
+  is a one-shot-per-IPO cross-section (unlike lockup events it does not
+  recur), so confirmation needs *future* IPOs + 20 trading days.
+  Exploratory corr is weak and non-monotone (Spearman +0.16; tertile
+  means +0.8 % / +14.8 % / +6.2 %, middle bucket strongest).  Not
+  pre-registered; not worth pursuing at current data scale.
+
 ### 2. Multi-run robustness study — RUN (2026-07-15): a systematic null
 
 The designed experiment exists (`scripts/robustness_study.py`,
